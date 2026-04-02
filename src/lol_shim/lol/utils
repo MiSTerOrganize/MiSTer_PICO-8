@@ -1,0 +1,61 @@
+//
+//  lol_shim — Lolengine replacement for MiSTer FPGA port
+//
+//  <lol/utils> — String utilities used by zepto8 core
+//
+//  Provides: ends_with(str, suffix), tolower(str), split(str, delim)
+//  Used by: cart.cpp, vm.cpp, private.cpp
+//
+
+#pragma once
+
+#include <string>
+#include <vector>
+#include <algorithm>
+#include <cctype>
+
+namespace lol
+{
+
+// Check if string ends with suffix
+// Usage: lol::ends_with(name, ".p8")
+[[nodiscard]] static inline bool ends_with(std::string const &str, std::string const &suffix)
+{
+    if (suffix.size() > str.size())
+        return false;
+    return str.compare(str.size() - suffix.size(), suffix.size(), suffix) == 0;
+}
+
+// Convert string to lowercase (returns new string)
+// Usage: lol::tolower(name)
+[[nodiscard]] static inline std::string tolower(std::string str)
+{
+    std::transform(str.begin(), str.end(), str.begin(),
+                   [](unsigned char c) { return std::tolower(c); });
+    return str;
+}
+
+// Split string by single character delimiter
+// Usage: lol::split(result, '\n')
+[[nodiscard]] static inline std::vector<std::string> split(std::string const &str, char delim)
+{
+    std::vector<std::string> result;
+    std::string current;
+    for (char c : str)
+    {
+        if (c == delim)
+        {
+            result.push_back(current);
+            current.clear();
+        }
+        else
+        {
+            current += c;
+        }
+    }
+    if (!current.empty())
+        result.push_back(current);
+    return result;
+}
+
+} // namespace lol

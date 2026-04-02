@@ -1,0 +1,52 @@
+//
+//  lol_shim — Lolengine replacement for MiSTer FPGA port
+//
+//  <lol/file> — File I/O functions used by zepto8 core
+//
+//  Provides: file::read(path, string&), file::write(path, string)
+//  Used by: cart.cpp, vm.cpp, textfile.cpp
+//
+
+#pragma once
+
+#include <string>
+#include <fstream>
+#include <sstream>
+#include <cstdio>
+
+namespace lol
+{
+
+struct file
+{
+    // Read entire file into a std::string. Returns true on success.
+    // lolengine signature: static bool read(std::string const &path, std::string &out)
+    static bool read(std::string const &path, std::string &out)
+    {
+        std::ifstream f(path, std::ios::binary);
+        if (!f.is_open())
+            return false;
+
+        std::ostringstream ss;
+        ss << f.rdbuf();
+        if (f.fail() && !f.eof())
+            return false;
+
+        out = ss.str();
+        return true;
+    }
+
+    // Write a std::string to a file. Returns true on success.
+    // lolengine signature: static bool write(std::string const &path, std::string const &data)
+    static bool write(std::string const &path, std::string const &data)
+    {
+        std::ofstream f(path, std::ios::binary | std::ios::trunc);
+        if (!f.is_open())
+            return false;
+
+        f.write(data.data(), data.size());
+        return f.good();
+    }
+};
+
+} // namespace lol

@@ -1,0 +1,22 @@
+//
+//  lol_shim — Lolengine replacement for MiSTer FPGA port
+//
+//  <lol/algo/suffix_array> — Suffix array from step library
+//
+//  Used by: pico8/code.cpp (pxa_compress for cart saving)
+//  The step suffix_array.hpp is header-only (181 lines).
+//
+
+#pragma once
+
+#include "../private/push_macros.h"
+#include "../3rdparty/step/suffix_array.hpp"
+#include "../private/pop_macros.h"
+
+namespace lol
+{
+
+template<class T = char, class Size = size_t, class Compare = std::less<>>
+using suffix_array = step::suffix_array<T, Size, Compare>;
+
+} // namespace lol

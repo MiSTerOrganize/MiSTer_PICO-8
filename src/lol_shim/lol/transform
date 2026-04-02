@@ -1,0 +1,19 @@
+//
+//  lol_shim — Lolengine replacement for MiSTer FPGA port
+//
+//  <lol/transform> — Stub (mat4 only used by player.cpp which we drop)
+//
+
+#pragma once
+
+namespace lol
+{
+
+struct mat4
+{
+    static mat4 ortho(float, float, float, float, float, float) { return {}; }
+    constexpr mat4() = default;
+    explicit constexpr mat4(float) {}
+};
+
+} // namespace lol

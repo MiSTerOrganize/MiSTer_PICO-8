@@ -1,0 +1,17 @@
+//
+//  lol_shim — Lolengine replacement for MiSTer FPGA port
+//
+//  <lol/pegtl> — Redirect to vendored PEGTL headers
+//
+//  zepto8 includes PEGTL via:
+//    #include <lol/pegtl>                            → tao/pegtl.hpp
+//    #include <lol/3rdparty/pegtl/include/tao/...>   → direct paths
+//
+//  We set up a symlink so lol_shim/lol/3rdparty/pegtl points to the
+//  actual PEGTL tree from the lolengine submodule. This file then
+//  just includes the main pegtl.hpp from that location.
+//
+
+#pragma once
+
+#include "3rdparty/pegtl/include/tao/pegtl.hpp"

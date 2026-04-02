@@ -1,0 +1,99 @@
+name: Build MiSTer ARM
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-arm:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm
+
+      - name: Build in ARM container
+        run: |
+          docker run --rm --platform linux/arm/v7 \
+            -v ${{ github.workspace }}:/build \
+            -w /build \
+            arm32v7/debian:bullseye-slim \
+            bash -c '
+              set -e
+
+              apt-get update -qq
+              apt-get install -y -qq g++ cmake make wget libasound2-dev >/dev/null 2>&1
+
+              # ── Step 1: Build SDL 1.2.15 as static library ──────────────
+              SDL_PREFIX=/tmp/sdl12
+              if [ ! -f "$SDL_PREFIX/lib/libSDL.a" ]; then
+                echo "=== Building SDL 1.2.15 (static, fbcon, ALSA) ==="
+                cd /tmp
+                wget -q https://www.libsdl.org/release/SDL-1.2.15.tar.gz
+                tar xzf SDL-1.2.15.tar.gz
+                cd SDL-1.2.15
+                ./configure \
+                  --prefix=$SDL_PREFIX \
+                  --disable-video-x11 \
+                  --disable-video-opengl \
+                  --disable-cdrom \
+                  --disable-shared \
+                  --enable-static \
+                  --disable-pulseaudio \
+                  --disable-esd \
+                  --enable-alsa \
+                  --enable-video-fbcon \
+                  --quiet
+                make -j$(nproc) --quiet
+                make install --quiet
+                echo "SDL built: $(du -h $SDL_PREFIX/lib/libSDL.a | cut -f1)"
+              fi
+
+              # ── Step 2: Build MiSTer_PICO-8 ─────────────────────────────
+              echo "=== Building MiSTer_PICO-8 ==="
+              cd /build
+              mkdir -p build-arm && cd build-arm
+              cmake .. \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_C_FLAGS="-mcpu=cortex-a9 -mtune=cortex-a9 -mfloat-abi=hard -mfpu=neon" \
+                -DCMAKE_CXX_FLAGS="-mcpu=cortex-a9 -mtune=cortex-a9 -mfloat-abi=hard -mfpu=neon" \
+                -DSDL_STATIC_PREFIX=$SDL_PREFIX
+              make -j$(nproc)
+
+              echo "=== Binary info ==="
+              ls -lh PICO-8
+            '
+
+      - name: Package release
+        run: |
+          mkdir -p release-staging/PICO-8/Carts release-staging/PICO-8/Saves release-staging/PICO-8/pico8 release-staging/Scripts
+          cp build-arm/PICO-8 release-staging/PICO-8/
+          cp src/pico8/bios.p8 release-staging/PICO-8/pico8/
+          cp Scripts/pico-8.sh release-staging/Scripts/
+          cp Scripts/Install_pico-8.sh release-staging/Scripts/
+          cp README.md release-staging/
+          cp LICENSE release-staging/
+          chmod +x release-staging/PICO-8/PICO-8 release-staging/Scripts/*.sh
+          cd release-staging && zip -r ../MiSTer-PICO-8-release.zip PICO-8/ Scripts/ README.md LICENSE
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MiSTer-PICO-8-release
+          path: MiSTer-PICO-8-release.zip
+
+      - name: Create release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: MiSTer-PICO-8-release.zip

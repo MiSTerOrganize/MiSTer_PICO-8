@@ -1,0 +1,257 @@
+//
+//  lol_shim — Lolengine replacement for MiSTer FPGA port
+//
+//  <lol/vector> — Vector types used by zepto8 core
+//
+//  Provides: ivec2, ivec3, i16vec2, u8vec2, u8vec4, vec2, vec3, vec4
+//  with the subset of operations zepto8 actually uses:
+//    - Component access (.x/.y/.z/.w and .r/.g/.b/.a)
+//    - .rgb swizzle on vec4/u8vec4 returning vec3/u8vec3-like
+//    - Arithmetic: +, -, *, / (component-wise and scalar)
+//    - Construction: from components, from other vec types (explicit cast)
+//    - Free functions: dot(), sqlength()
+//
+
+#pragma once
+
+#include <cstdint>
+#include <cmath>
+
+namespace lol
+{
+
+// ── Forward declarations ──────────────────────────────────────────────
+
+struct vec3;
+struct vec4;
+
+// ── u8vec2 / i16vec2 — pure aggregates ────────────────────────────────
+// These appear inside anonymous structs in unions (memory.h), so they
+// MUST be trivial aggregates with no user-provided constructors.
+// zepto8 never calls u8vec2(...) or i16vec2(...) constructor syntax.
+
+struct u8vec2
+{
+    uint8_t x, y;
+};
+
+struct i16vec2
+{
+    int16_t x, y;
+};
+
+// ── ivec2 / vec2 — with constructors ─────────────────────────────────
+// These are used with constructor syntax: ivec2(128, 64) etc.
+// They never appear in anonymous aggregates.
+
+struct ivec2
+{
+    int x, y;
+
+    constexpr ivec2() : x(0), y(0) {}
+    explicit constexpr ivec2(int v) : x(v), y(v) {}
+    constexpr ivec2(int x_, int y_) : x(x_), y(y_) {}
+
+    int  operator[](int i) const { return (&x)[i]; }
+    int& operator[](int i)       { return (&x)[i]; }
+
+    ivec2 operator+(ivec2 const &o) const { return { x+o.x, y+o.y }; }
+    ivec2 operator-(ivec2 const &o) const { return { x-o.x, y-o.y }; }
+    ivec2 operator*(int s) const { return { x*s, y*s }; }
+    ivec2 operator/(int s) const { return { x/s, y/s }; }
+
+    bool operator==(ivec2 const &o) const { return x == o.x && y == o.y; }
+    bool operator!=(ivec2 const &o) const { return !(*this == o); }
+};
+
+struct vec2
+{
+    float x, y;
+
+    constexpr vec2() : x(0), y(0) {}
+    explicit constexpr vec2(float v) : x(v), y(v) {}
+    constexpr vec2(float x_, float y_) : x(x_), y(y_) {}
+
+    // Convert from ivec2
+    constexpr vec2(ivec2 const &v) : x(float(v.x)), y(float(v.y)) {}
+
+    float  operator[](int i) const { return (&x)[i]; }
+    float& operator[](int i)       { return (&x)[i]; }
+
+    vec2 operator+(vec2 const &o) const { return { x+o.x, y+o.y }; }
+    vec2 operator-(vec2 const &o) const { return { x-o.x, y-o.y }; }
+    vec2 operator*(float s) const { return { x*s, y*s }; }
+    vec2 operator/(float s) const { return { x/s, y/s }; }
+};
+
+// ── ivec3 ─────────────────────────────────────────────────────────────
+
+struct ivec3
+{
+    int x, y, z;
+
+    constexpr ivec3() : x(0), y(0), z(0) {}
+    explicit constexpr ivec3(int v) : x(v), y(v), z(v) {}
+    constexpr ivec3(int x_, int y_, int z_) : x(x_), y(y_), z(z_) {}
+
+    int  operator[](int i) const { return (&x)[i]; }
+    int& operator[](int i)       { return (&x)[i]; }
+
+    ivec3 operator+(ivec3 const &o) const { return { x+o.x, y+o.y, z+o.z }; }
+    ivec3 operator-(ivec3 const &o) const { return { x-o.x, y-o.y, z-o.z }; }
+    ivec3 operator*(ivec3 const &o) const { return { x*o.x, y*o.y, z*o.z }; }
+    ivec3 operator/(ivec3 const &o) const { return { x/o.x, y/o.y, z/o.z }; }
+};
+
+static inline int dot(ivec3 const &a, ivec3 const &b)
+{
+    return a.x*b.x + a.y*b.y + a.z*b.z;
+}
+
+// ── vec3 ──────────────────────────────────────────────────────────────
+
+struct vec3
+{
+    union { float x, r, s; };
+    union { float y, g, t; };
+    union { float z, b, p; };
+
+    constexpr vec3() : x(0), y(0), z(0) {}
+    explicit constexpr vec3(float v) : x(v), y(v), z(v) {}
+    constexpr vec3(float x_, float y_, float z_) : x(x_), y(y_), z(z_) {}
+
+    float  operator[](int i) const { return (&x)[i]; }
+    float& operator[](int i)       { return (&x)[i]; }
+
+    vec3 operator+(vec3 const &o) const { return { x+o.x, y+o.y, z+o.z }; }
+    vec3 operator-(vec3 const &o) const { return { x-o.x, y-o.y, z-o.z }; }
+    vec3 operator*(float s) const { return { x*s, y*s, z*s }; }
+    vec3 operator/(float s) const { return { x/s, y/s, z/s }; }
+    vec3 operator-() const { return { -x, -y, -z }; }
+};
+
+static inline float dot(vec3 const &a, vec3 const &b)
+{
+    return a.x*b.x + a.y*b.y + a.z*b.z;
+}
+
+static inline float sqlength(vec3 const &a)
+{
+    return dot(a, a);
+}
+
+// ── u8vec4 ────────────────────────────────────────────────────────────
+//
+// Needs .rgb returning a vec3 (float), matching lolengine's swizzle
+// which returns vec_t<uint8_t,3> — but zepto8 only uses .rgb in
+// palette::best() where the u8vec4 is first converted to vec4 via
+// vec4(u8vec4) / 255.f, so .rgb is always called on a vec4 (float).
+// On u8vec4 itself, .rgb is never accessed directly — we provide it
+// anyway for safety.
+
+struct u8vec3
+{
+    uint8_t x, y, z;
+
+    constexpr u8vec3() : x(0), y(0), z(0) {}
+    constexpr u8vec3(uint8_t x_, uint8_t y_, uint8_t z_) : x(x_), y(y_), z(z_) {}
+
+    uint8_t  operator[](int i) const { return (&x)[i]; }
+    uint8_t& operator[](int i)       { return (&x)[i]; }
+};
+
+struct u8vec4
+{
+    union { uint8_t x, r, s; };
+    union { uint8_t y, g, t; };
+    union { uint8_t z, b, p; };
+    union { uint8_t w, a, q; };
+
+    constexpr u8vec4() : x(0), y(0), z(0), w(0) {}
+    explicit constexpr u8vec4(uint8_t v) : x(v), y(v), z(v), w(v) {}
+    constexpr u8vec4(uint8_t x_, uint8_t y_, uint8_t z_, uint8_t w_)
+        : x(x_), y(y_), z(z_), w(w_) {}
+
+    uint8_t  operator[](int i) const { return (&x)[i]; }
+    uint8_t& operator[](int i)       { return (&x)[i]; }
+
+    // .rgb swizzle — returns u8vec3 (not commonly used on u8vec4 in zepto8)
+    u8vec3 get_rgb() const { return { x, y, z }; }
+
+    // Arithmetic (component-wise, used by cart.cpp PNG encode/decode)
+    u8vec4 operator*(int s) const { return { uint8_t(x*s), uint8_t(y*s), uint8_t(z*s), uint8_t(w*s) }; }
+    u8vec4 operator/(int s) const { return { uint8_t(x/s), uint8_t(y/s), uint8_t(z/s), uint8_t(w/s) }; }
+    u8vec4 operator/(u8vec4 const &o) const { return { uint8_t(x/o.x), uint8_t(y/o.y), uint8_t(z/o.z), uint8_t(w/o.w) }; }
+    u8vec4 operator+(u8vec4 const &o) const { return { uint8_t(x+o.x), uint8_t(y+o.y), uint8_t(z+o.z), uint8_t(w+o.w) }; }
+
+    bool operator==(u8vec4 const &o) const { return x==o.x && y==o.y && z==o.z && w==o.w; }
+    bool operator!=(u8vec4 const &o) const { return !(*this == o); }
+};
+
+// ── vec4 ──────────────────────────────────────────────────────────────
+//
+// Key requirement: vec4(u8vec4) explicit constructor for type conversion,
+// vec4 / scalar, and .rgb swizzle returning a vec3.
+
+struct vec4
+{
+    union { float x, r, s; };
+    union { float y, g, t; };
+    union { float z, b, p; };
+    union { float w, a, q; };
+
+    constexpr vec4() : x(0), y(0), z(0), w(0) {}
+    explicit constexpr vec4(float v) : x(v), y(v), z(v), w(v) {}
+    constexpr vec4(float x_, float y_, float z_, float w_)
+        : x(x_), y(y_), z(z_), w(w_) {}
+
+    // Construct from vec3 + w
+    constexpr vec4(vec3 const &xyz, float w_)
+        : x(xyz.x), y(xyz.y), z(xyz.z), w(w_) {}
+
+    // Explicit type-converting constructor: vec4(u8vec4) etc.
+    explicit constexpr vec4(u8vec4 const &v)
+        : x(float(v.x)), y(float(v.y)), z(float(v.z)), w(float(v.w)) {}
+
+    float  operator[](int i) const { return (&x)[i]; }
+    float& operator[](int i)       { return (&x)[i]; }
+
+    // .rgb swizzle — returns a vec3
+    vec3 get_rgb() const { return { x, y, z }; }
+
+    // Arithmetic
+    vec4 operator+(vec4 const &o) const { return { x+o.x, y+o.y, z+o.z, w+o.w }; }
+    vec4 operator-(vec4 const &o) const { return { x-o.x, y-o.y, z-o.z, w-o.w }; }
+    vec4 operator*(float s) const { return { x*s, y*s, z*s, w*s }; }
+    vec4 operator/(float s) const { return { x/s, y/s, z/s, w/s }; }
+};
+
+static inline float dot(vec4 const &a, vec4 const &b)
+{
+    return a.x*b.x + a.y*b.y + a.z*b.z + a.w*b.w;
+}
+
+static inline float sqlength(vec4 const &a)
+{
+    return dot(a, a);
+}
+
+} // namespace lol
+
+// ── .rgb property trick ──────────────────────────────────────────────
+//
+// lolengine uses a union-based swizzle where .rgb is a member.
+// We can't do that without the full swizzle machinery. Instead, zepto8
+// only uses `.rgb` in two places:
+//
+//   pico8.h:  lol::vec3 delta = c.rgb - get(n).rgb;
+//             where c is lol::vec4
+//
+// We use a macro to redirect .rgb to .get_rgb(). This is fragile but
+// the usage is extremely limited and audited.
+//
+// IMPORTANT: This must be defined AFTER the struct definitions above.
+// If this causes issues, the alternative is to patch the two lines in
+// pico8.h to use .get_rgb() directly.
+
+#define rgb get_rgb()

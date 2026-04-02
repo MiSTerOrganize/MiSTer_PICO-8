@@ -1,0 +1,67 @@
+//
+//  lol_shim — Lolengine replacement for MiSTer FPGA port
+//
+//  <lol/math> — Math functions and constants used by zepto8 core
+//
+//  Provides: clamp, mix, round, rand, F_TAU, F_PI, F_PI_2
+//
+
+#pragma once
+
+#include <cmath>
+#include <cstdlib>
+#include <algorithm>
+
+namespace lol
+{
+
+// ── Constants ─────────────────────────────────────────────────────────
+// Matching the LOL_MATH_CONSTANT macro output from lolengine
+
+static constexpr long double LD_TAU  = 6.28318530717958647692528676655900576839433879875L;
+static constexpr double      D_TAU   = (double)LD_TAU;
+static constexpr float       F_TAU   = (float)LD_TAU;
+
+static constexpr long double LD_PI   = 3.14159265358979323846264338327950288419716939937L;
+static constexpr double      D_PI    = (double)LD_PI;
+static constexpr float       F_PI    = (float)LD_PI;
+
+static constexpr long double LD_PI_2 = 1.57079632679489661923132169163975144209858469968L;
+static constexpr double      D_PI_2  = (double)LD_PI_2;
+static constexpr float       F_PI_2  = (float)LD_PI_2;
+
+// ── clamp ─────────────────────────────────────────────────────────────
+// lol::clamp(x, lo, hi) — used in gfx.cpp, sfx.cpp
+
+template<typename T>
+[[nodiscard]] static inline T clamp(T x, T lo, T hi)
+{
+    return x < lo ? lo : (x > hi ? hi : x);
+}
+
+// ── mix (lerp) ────────────────────────────────────────────────────────
+// lol::mix(a, b, t) — returns a + (b - a) * t
+// Used in gfx.cpp (double), sfx.cpp (float)
+
+template<typename T>
+[[nodiscard]] static inline T mix(T a, T b, T t)
+{
+    return a + (b - a) * t;
+}
+
+// ── round ─────────────────────────────────────────────────────────────
+// lol::round() — used in gfx.cpp
+
+using std::round;
+
+// ── rand ──────────────────────────────────────────────────────────────
+// lol::rand(lo, hi) — returns a random float in [lo, hi]
+// Used in synth.cpp for noise waveform generation
+
+[[nodiscard]] static inline float rand(float lo, float hi)
+{
+    float t = (float)std::rand() / (float)RAND_MAX;
+    return lo + t * (hi - lo);
+}
+
+} // namespace lol

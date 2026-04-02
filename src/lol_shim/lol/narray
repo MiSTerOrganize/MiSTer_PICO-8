@@ -1,0 +1,61 @@
+//
+//  lol_shim — Lolengine replacement for MiSTer FPGA port
+//
+//  <lol/narray> — Minimal array2d<T>
+//
+//  Provides: array2d<T> with resize(), clear(), data(), operator(x,y)
+//  Used by: libretro.cpp framebuffer (and our mister_main.cpp)
+//
+
+#pragma once
+
+#include "vector" // lol::ivec2
+#include <vector>
+#include <cassert>
+
+namespace lol
+{
+
+template<typename T>
+class array2d
+{
+public:
+    array2d() : m_w(0), m_h(0) {}
+
+    void resize(ivec2 size)
+    {
+        m_w = size.x;
+        m_h = size.y;
+        m_data.resize(m_w * m_h);
+    }
+
+    void clear()
+    {
+        m_data.clear();
+        m_w = m_h = 0;
+    }
+
+    T *data() { return m_data.data(); }
+    T const *data() const { return m_data.data(); }
+
+    T &operator()(int x, int y)
+    {
+        assert(x >= 0 && x < m_w && y >= 0 && y < m_h);
+        return m_data[y * m_w + x];
+    }
+
+    T const &operator()(int x, int y) const
+    {
+        assert(x >= 0 && x < m_w && y >= 0 && y < m_h);
+        return m_data[y * m_w + x];
+    }
+
+    int width() const { return m_w; }
+    int height() const { return m_h; }
+
+private:
+    int m_w, m_h;
+    std::vector<T> m_data;
+};
+
+} // namespace lol

@@ -1,0 +1,20 @@
+//
+//  lol_shim — Lolengine replacement for MiSTer FPGA port
+//
+//  <lol/color> — Stub (not used by core emulation)
+//
+
+#pragma once
+
+#include "vector"
+
+namespace lol
+{
+
+struct color
+{
+    static constexpr vec4 black = vec4(0.f, 0.f, 0.f, 1.f);
+    static constexpr vec4 white = vec4(1.f, 1.f, 1.f, 1.f);
+};
+
+} // namespace lol

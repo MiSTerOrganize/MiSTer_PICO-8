@@ -1,0 +1,59 @@
+//
+//  lol_shim — Lolengine replacement for MiSTer FPGA port
+//
+//  <lol/msg> — Logging functions used by zepto8 core
+//
+//  Provides: msg::error(), msg::info(), msg::debug()
+//  All map to fprintf(stderr, ...) with printf-style varargs.
+//
+
+#pragma once
+
+#include <cstdio>
+#include <cstdarg>
+
+namespace lol
+{
+
+struct msg
+{
+    static void error(char const *fmt, ...)
+    {
+        va_list args;
+        va_start(args, fmt);
+        fprintf(stderr, "[error] ");
+        vfprintf(stderr, fmt, args);
+        va_end(args);
+    }
+
+    static void info(char const *fmt, ...)
+    {
+        va_list args;
+        va_start(args, fmt);
+        vfprintf(stderr, fmt, args);
+        va_end(args);
+    }
+
+    static void warn(char const *fmt, ...)
+    {
+        va_list args;
+        va_start(args, fmt);
+        fprintf(stderr, "[warn] ");
+        vfprintf(stderr, fmt, args);
+        va_end(args);
+    }
+
+    static void debug(char const *fmt, ...)
+    {
+#ifndef NDEBUG
+        va_list args;
+        va_start(args, fmt);
+        vfprintf(stderr, fmt, args);
+        va_end(args);
+#else
+        (void)fmt;
+#endif
+    }
+};
+
+} // namespace lol
