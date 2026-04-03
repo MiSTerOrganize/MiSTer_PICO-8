@@ -359,6 +359,11 @@ int main(int argc, char **argv)
     }
 
     if (cart_path.empty()) {
+        if (enable_native_video) {
+            fprintf(stderr, "Error: -nativevideo requires a cart path (no browser without SDL video)\n");
+            fprintf(stderr, "Usage: PICO-8 -nativevideo -data /media/fat/PICO-8/ Carts/game.p8\n");
+            return 1;
+        }
         // No cart specified — will show browser after SDL init
     }
     if (target_fps < 10) target_fps = 10;
@@ -385,25 +390,36 @@ int main(int argc, char **argv)
     signal(SIGTERM, signal_handler);
 
     // ── Init SDL ──────────────────────────────────────────────────────
-    // MUST include SDL_INIT_AUDIO even though we don't use SDL audio
-    // MUST include SDL_INIT_JOYSTICK for SDL_JoystickGetHat/GetAxis polling
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_JOYSTICK) < 0) {
-        fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
-        return 1;
-    }
+    // In native video mode, skip SDL video init entirely — /dev/fb0 doesn't
+    // work when a custom FPGA core is loaded instead of the Menu core.
+    // We only need SDL for joystick input.
+    SDL_Surface *screen = NULL;
 
-    // vmode is set by pico-8.sh launcher script (320x240 rgb16)
-    // Redundant call here as fallback for direct invocation
-    if (system("vmode -r 320 240 rgb16 > /dev/null 2>&1") != 0) {
-        // vmode not available — script handles this, safe to ignore
-    }
+    if (enable_native_video) {
+        if (SDL_Init(SDL_INIT_JOYSTICK) < 0) {
+            fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
+            return 1;
+        }
+    } else {
+        // Normal mode: full SDL init with video and audio
+        if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_JOYSTICK) < 0) {
+            fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
+            return 1;
+        }
 
-    SDL_Surface *screen = SDL_SetVideoMode(SCREEN_W, SCREEN_H, SCREEN_BPP, SDL_SWSURFACE);
-    if (!screen) {
-        fprintf(stderr, "SDL_SetVideoMode failed: %s\n", SDL_GetError());
-        SDL_Quit(); return 1;
+        // vmode is set by pico-8.sh launcher script (320x240 rgb16)
+        // Redundant call here as fallback for direct invocation
+        if (system("vmode -r 320 240 rgb16 > /dev/null 2>&1") != 0) {
+            // vmode not available — script handles this, safe to ignore
+        }
+
+        screen = SDL_SetVideoMode(SCREEN_W, SCREEN_H, SCREEN_BPP, SDL_SWSURFACE);
+        if (!screen) {
+            fprintf(stderr, "SDL_SetVideoMode failed: %s\n", SDL_GetError());
+            SDL_Quit(); return 1;
+        }
+        SDL_ShowCursor(SDL_DISABLE);
     }
-    SDL_ShowCursor(SDL_DISABLE);
 
     // Open SDL joystick for state polling (hat, axis, buttons)
     if (SDL_NumJoysticks() > 0) {
@@ -419,25 +435,30 @@ int main(int argc, char **argv)
     }
 
     // Startup screen clear (3 frames, proven pattern)
-    for (int i = 0; i < 3; i++) {
-        SDL_FillRect(screen, NULL, 0);
-        SDL_Flip(screen);
+    if (screen) {
+        for (int i = 0; i < 3; i++) {
+            SDL_FillRect(screen, NULL, 0);
+            SDL_Flip(screen);
+        }
+        clear_borders(screen);
     }
-    clear_borders(screen);
 
     // ── SDL audio init (for video stability) then close ───────────────
     // SDL_OpenAudio with real callback required for internal timer/event
     // state. Close immediately so it doesn't compete with ALSA.
-    SDL_AudioSpec desired;
-    memset(&desired, 0, sizeof(desired));
-    desired.freq = AUDIO_RATE;
-    desired.format = AUDIO_S16LSB;
-    desired.channels = AUDIO_CHANNELS;
-    desired.samples = 512;
-    desired.callback = DummyAudioCallback;
-    if (SDL_OpenAudio(&desired, nullptr) == 0) {
-        SDL_PauseAudio(0);
-        SDL_CloseAudio(); // Close immediately — prevents competing with ALSA
+    // Skip in native video mode — no SDL video means this isn't needed.
+    if (screen) {
+        SDL_AudioSpec desired;
+        memset(&desired, 0, sizeof(desired));
+        desired.freq = AUDIO_RATE;
+        desired.format = AUDIO_S16LSB;
+        desired.channels = AUDIO_CHANNELS;
+        desired.samples = 512;
+        desired.callback = DummyAudioCallback;
+        if (SDL_OpenAudio(&desired, nullptr) == 0) {
+            SDL_PauseAudio(0);
+            SDL_CloseAudio(); // Close immediately — prevents competing with ALSA
+        }
     }
 
     // ── Init direct ALSA audio ────────────────────────────────────────
@@ -637,10 +658,18 @@ int main(int argc, char **argv)
         cart_path.clear();
         g_return_to_browser = false;
 
+        // In native video mode, exit after game ends (no cart browser)
+        if (enable_native_video) {
+            g_running = false;
+            break;
+        }
+
         // Clear screen before returning to browser
-        for (int i = 0; i < 3; i++) {
-            SDL_FillRect(screen, NULL, 0);
-            SDL_Flip(screen);
+        if (screen) {
+            for (int i = 0; i < 3; i++) {
+                SDL_FillRect(screen, NULL, 0);
+                SDL_Flip(screen);
+            }
         }
 
     } // end of browser/game while loop
