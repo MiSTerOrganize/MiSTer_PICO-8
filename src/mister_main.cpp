@@ -390,16 +390,20 @@ int main(int argc, char **argv)
     signal(SIGTERM, signal_handler);
 
     // ── Init SDL ──────────────────────────────────────────────────────
-    // In native video mode, skip SDL video init entirely — /dev/fb0 doesn't
-    // work when a custom FPGA core is loaded instead of the Menu core.
-    // We only need SDL for joystick input.
+    // In native video mode, use SDL's dummy video driver — this gives us
+    // the event system for joystick input without touching /dev/fb0
+    // (which doesn't work when a custom FPGA core is loaded).
     SDL_Surface *screen = NULL;
 
     if (enable_native_video) {
-        if (SDL_Init(SDL_INIT_JOYSTICK) < 0) {
+        setenv("SDL_VIDEODRIVER", "dummy", 1);
+        if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_JOYSTICK) < 0) {
             fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
             return 1;
         }
+        // Create a dummy surface — SDL needs this for the event pump
+        screen = SDL_SetVideoMode(SCREEN_W, SCREEN_H, SCREEN_BPP, SDL_SWSURFACE);
+        // screen may be NULL with dummy driver — that's okay
     } else {
         // Normal mode: full SDL init with video and audio
         if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_JOYSTICK) < 0) {
