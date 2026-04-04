@@ -32,6 +32,9 @@
 #define NV_BUF1_OFFSET      0x00008100u
 #define NV_JOY_OFFSET       0x00000008u
 #define NV_JOY_ANALOG_OFFSET 0x0000000Cu
+#define NV_CART_CTRL_OFFSET  0x00000010u
+#define NV_CART_DATA_OFFSET  0x00010000u
+#define NV_CART_MAX_SIZE     0x00040000u  /* 256KB max cart size */
 #define NV_FRAME_WIDTH      128
 #define NV_FRAME_HEIGHT     128
 #define NV_FRAME_BYTES      (NV_FRAME_WIDTH * NV_FRAME_HEIGHT * 2)  /* 32,768 */
@@ -126,4 +129,26 @@ uint16_t NativeVideoWriter_ReadAnalog(void) {
     if (!ddr_base) return 0;
     volatile uint32_t *analog = (volatile uint32_t *)(ddr_base + NV_JOY_ANALOG_OFFSET);
     return (uint16_t)(*analog & 0xFFFF);
+}
+
+uint32_t NativeVideoWriter_CheckCart(void) {
+    if (!ddr_base) return 0;
+    volatile uint32_t *ctrl = (volatile uint32_t *)(ddr_base + NV_CART_CTRL_OFFSET);
+    return *ctrl;
+}
+
+uint32_t NativeVideoWriter_ReadCart(void* buf, uint32_t max_size) {
+    if (!ddr_base || !buf) return 0;
+    uint32_t file_size = NativeVideoWriter_CheckCart();
+    if (file_size == 0) return 0;
+    if (file_size > max_size) file_size = max_size;
+    if (file_size > NV_CART_MAX_SIZE) file_size = NV_CART_MAX_SIZE;
+    memcpy(buf, (const void *)(ddr_base + NV_CART_DATA_OFFSET), file_size);
+    return file_size;
+}
+
+void NativeVideoWriter_AckCart(void) {
+    if (!ddr_base) return;
+    volatile uint32_t *ctrl = (volatile uint32_t *)(ddr_base + NV_CART_CTRL_OFFSET);
+    *ctrl = 0;
 }

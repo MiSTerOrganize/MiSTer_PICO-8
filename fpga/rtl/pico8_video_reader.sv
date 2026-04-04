@@ -31,9 +31,9 @@ module pico8_video_reader (
     input  wire [63:0] ddr_dout,
     input  wire        ddr_dout_ready,
     output reg         ddr_rd,
-    output wire [63:0] ddr_din,
+    output reg  [63:0] ddr_din,
     output wire  [7:0] ddr_be,
-    output wire        ddr_we,
+    output reg         ddr_we,
 
     // Pixel output (clk_vid domain)
     input  wire        clk_vid,
@@ -48,6 +48,10 @@ module pico8_video_reader (
     input  wire        new_line,
     input  wire  [8:0] vcount,
 
+    // Joystick input (from hps_io, clk_sys domain = ddr_clk domain)
+    input  wire [31:0] joystick_0,
+    input  wire [15:0] joystick_l_analog_0,
+
     // Pixel output
     output reg   [7:0] r_out,
     output reg   [7:0] g_out,
@@ -58,14 +62,13 @@ module pico8_video_reader (
     output wire        frame_ready
 );
 
-// Unused DDR3 write signals
-assign ddr_din = 64'd0;
+// DDR3 byte enable (always all bytes)
 assign ddr_be  = 8'hFF;
-assign ddr_we  = 1'b0;
 
 // ── DDR3 Address Constants ────────────────────────────────────────────
 // 29-bit qword addresses = physical >> 3
 localparam [28:0] CTRL_ADDR   = 29'h07400000;  // 0x3A000000 >> 3
+localparam [28:0] JOY_ADDR    = 29'h07400001;  // 0x3A000008 >> 3 (joystick data)
 localparam [28:0] BUF0_ADDR   = 29'h07400020;  // 0x3A000100 >> 3
 localparam [28:0] BUF1_ADDR   = 29'h07401020;  // 0x3A008100 >> 3
 localparam [7:0]  LINE_BURST  = 8'd32;         // 128px * 2B / 8 = 32 beats
@@ -143,6 +146,7 @@ localparam [3:0] ST_READ_LINE    = 4'd4;
 localparam [3:0] ST_WAIT_LINE    = 4'd5;
 localparam [3:0] ST_LINE_DONE    = 4'd6;
 localparam [3:0] ST_WAIT_DISPLAY = 4'd7;
+localparam [3:0] ST_WRITE_JOY   = 4'd8;
 
 reg  [3:0]  state;
 reg  [31:0] ctrl_word;
@@ -174,6 +178,8 @@ always @(posedge ddr_clk) begin
     if (reset) begin
         state              <= ST_IDLE;
         ddr_rd             <= 1'b0;
+        ddr_we             <= 1'b0;
+        ddr_din            <= 64'd0;
         ddr_burstcnt       <= 8'd1;
         ddr_addr           <= 29'd0;
         ctrl_word          <= 32'd0;
@@ -195,6 +201,7 @@ always @(posedge ddr_clk) begin
         fifo_wr <= 1'b0;
         if (fifo_aclr_cnt != 4'd0) fifo_aclr_cnt <= fifo_aclr_cnt - 4'd1;
         if (!ddr_busy) ddr_rd <= 1'b0;
+        if (!ddr_busy) ddr_we <= 1'b0;
 
         // Beat capture (runs in parallel with state machine)
         if (state == ST_WAIT_LINE && ddr_dout_ready) begin
@@ -207,7 +214,18 @@ always @(posedge ddr_clk) begin
         case (state)
             ST_IDLE: begin
                 if (enable_ddr && new_frame_ddr)
-                    state <= ST_POLL_CTRL;
+                    state <= ST_WRITE_JOY;
+            end
+
+            ST_WRITE_JOY: begin
+                // Write joystick_0 to DDR3 so ARM can read it
+                if (!ddr_busy) begin
+                    ddr_addr     <= JOY_ADDR;
+                    ddr_din      <= {32'd0, joystick_0};
+                    ddr_burstcnt <= 8'd1;
+                    ddr_we       <= 1'b1;
+                    state        <= ST_POLL_CTRL;
+                end
             end
 
             ST_POLL_CTRL: begin

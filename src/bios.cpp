@@ -23,7 +23,7 @@ namespace z8::pico8
 
 bios::bios()
 {
-    char const *filename = "pico8/bios.p8";
+    char const *filename = "boot.rom";
 
     // Initialize BIOS
     if (!m_cart.load(filename))

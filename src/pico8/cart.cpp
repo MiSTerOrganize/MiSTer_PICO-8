@@ -59,6 +59,10 @@ bool cart::load(std::string const &filename)
     if (lol::ends_with(lol::tolower(filename), ".js") && load_js(filename))
         return true;
 
+    // .rom or unknown extension: try all formats (MiSTer BIOS convention)
+    if (load_p8(filename)) return true;
+    if (load_png(filename)) return true;
+
     return false;
 }
 

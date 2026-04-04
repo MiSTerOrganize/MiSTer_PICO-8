@@ -41,7 +41,11 @@ module pico8_video_top (
     // Control
     input  wire        enable,        // from ARM: activate native video
     output wire        active,        // module is outputting valid video
-    output wire        vsync_out      // active-low vsync for frame sync
+    output wire        vsync_out,     // active-low vsync for frame sync
+
+    // Joystick (from hps_io, written to DDR3 for ARM)
+    input  wire [31:0] joystick_0,
+    input  wire [15:0] joystick_l_analog_0
 );
 
 // ── Timing Generator ──────────────────────────────────────────────────
@@ -99,7 +103,10 @@ pico8_video_reader reader (
     .b_out          (reader_b),
 
     .enable         (enable),
-    .frame_ready    (reader_frame_ready)
+    .frame_ready    (reader_frame_ready),
+
+    .joystick_0     (joystick_0),
+    .joystick_l_analog_0 (joystick_l_analog_0)
 );
 
 // ── Output assignments ────────────────────────────────────────────────

@@ -359,18 +359,19 @@ int main(int argc, char **argv)
     }
 
     if (cart_path.empty()) {
-        if (enable_native_video) {
-            fprintf(stderr, "Error: -nativevideo requires a cart path (no browser without SDL video)\n");
-            fprintf(stderr, "Usage: PICO-8 -nativevideo -data /media/fat/PICO-8/ Carts/game.p8\n");
-            return 1;
-        }
-        // No cart specified — will show browser after SDL init
+        // No cart specified — will show browser (SDL mode) or wait for OSD (native video)
     }
     if (target_fps < 10) target_fps = 10;
     if (target_fps > 60) target_fps = 60;
 
     // Data path: for bios.p8 resolution. Defaults to binary's directory.
-    if (data_dir.empty()) data_dir = get_exe_dir();
+    // In native video mode, default to MiSTer setname folder.
+    if (data_dir.empty()) {
+        if (enable_native_video)
+            data_dir = "/media/fat/games/PICO8/";
+        else
+            data_dir = get_exe_dir();
+    }
     lol::sys::set_data_path(data_dir);
 
     // Set ZEPTO8_BASE_DIR for save/config path resolution.
@@ -486,34 +487,78 @@ int main(int argc, char **argv)
     // Cart browser opens /dev/input/js0 directly when needed
 
     // ── Cart browser / game loop ──────────────────────────────────────
-    // If no cart specified, show visual browser. After a game exits,
-    // return to the browser for another selection.
+    // Normal mode: show visual cart browser
+    // Native video mode: wait for cart from OSD file browser via DDR3
 
     std::string carts_dir = data_dir + "Carts";
 
     while (g_running)
     {
-        // Show cart browser if no cart path
+        // Get cart path
         if (cart_path.empty()) {
-            // Close SDL joystick so cart browser can use /dev/input/js0 directly
-            if (g_sdl_joystick) {
-                SDL_JoystickClose(g_sdl_joystick);
-                g_sdl_joystick = NULL;
-            }
+            if (have_native_video) {
+                // Poll DDR3 for cart loaded via OSD file browser
+                fprintf(stderr, "Waiting for cart from OSD file browser...\n");
+                while (g_running) {
+                    uint32_t cart_size = NativeVideoWriter_CheckCart();
+                    if (cart_size > 0) {
+                        fprintf(stderr, "Cart received: %u bytes\n", cart_size);
 
-            // Open direct fd for cart browser
-            int browser_joy_fd = open("/dev/input/js0", O_RDONLY | O_NONBLOCK);
-            cart_path = run_cart_browser(screen, carts_dir, browser_joy_fd);
-            if (browser_joy_fd >= 0) close(browser_joy_fd);
+                        // Read cart data from DDR3
+                        uint8_t *cart_buf = (uint8_t *)malloc(cart_size);
+                        if (!cart_buf) {
+                            fprintf(stderr, "Failed to allocate %u bytes for cart\n", cart_size);
+                            NativeVideoWriter_AckCart();
+                            continue;
+                        }
+                        uint32_t actual = NativeVideoWriter_ReadCart(cart_buf, cart_size);
+                        NativeVideoWriter_AckCart();
 
-            if (cart_path.empty()) {
-                g_running = false;
-                break; // User quit from browser
-            }
+                        // Detect format: PNG starts with 0x89504E47
+                        const char *tmp_path;
+                        if (actual >= 8 && cart_buf[0] == 0x89 && cart_buf[1] == 0x50 &&
+                            cart_buf[2] == 0x4E && cart_buf[3] == 0x47)
+                            tmp_path = "/tmp/pico8_osd_cart.p8.png";
+                        else
+                            tmp_path = "/tmp/pico8_osd_cart.p8";
 
-            // Reopen SDL joystick for gameplay
-            if (SDL_NumJoysticks() > 0) {
-                g_sdl_joystick = SDL_JoystickOpen(0);
+                        // Save to temp file
+                        FILE *f = fopen(tmp_path, "wb");
+                        if (f) {
+                            fwrite(cart_buf, 1, actual, f);
+                            fclose(f);
+                            cart_path = std::string(tmp_path);
+                            fprintf(stderr, "Cart saved to %s\n", tmp_path);
+                        } else {
+                            fprintf(stderr, "Failed to write temp cart file\n");
+                        }
+                        free(cart_buf);
+                        break;
+                    }
+
+                    // Keep rendering black frame so FPGA has valid timing
+                    usleep(16000); // ~60fps polling
+                }
+                if (cart_path.empty()) break; // quit was requested
+            } else {
+                // SDL cart browser (normal fbcon mode)
+                if (g_sdl_joystick) {
+                    SDL_JoystickClose(g_sdl_joystick);
+                    g_sdl_joystick = NULL;
+                }
+
+                int browser_joy_fd = open("/dev/input/js0", O_RDONLY | O_NONBLOCK);
+                cart_path = run_cart_browser(screen, carts_dir, browser_joy_fd);
+                if (browser_joy_fd >= 0) close(browser_joy_fd);
+
+                if (cart_path.empty()) {
+                    g_running = false;
+                    break;
+                }
+
+                if (SDL_NumJoysticks() > 0) {
+                    g_sdl_joystick = SDL_JoystickOpen(0);
+                }
             }
         }
 
@@ -676,12 +721,6 @@ int main(int argc, char **argv)
         // Reset flags for next game
         cart_path.clear();
         g_return_to_browser = false;
-
-        // In native video mode, exit after game ends (no cart browser)
-        if (enable_native_video) {
-            g_running = false;
-            break;
-        }
 
         // Clear screen before returning to browser
         if (screen) {

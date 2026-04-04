@@ -53,6 +53,19 @@ uint32_t NativeVideoWriter_ReadJoystick(void);
 /// Returns 0 if native video is not active.
 uint16_t NativeVideoWriter_ReadAnalog(void);
 
+/// Check if a new cart has been loaded via OSD file browser.
+/// Returns file size in bytes if a new cart is available, 0 otherwise.
+uint32_t NativeVideoWriter_CheckCart(void);
+
+/// Read cart data from DDR3 into the provided buffer.
+/// @param buf     Destination buffer (must be at least max_size bytes)
+/// @param max_size Maximum bytes to read
+/// @return Actual bytes read
+uint32_t NativeVideoWriter_ReadCart(void* buf, uint32_t max_size);
+
+/// Clear the cart control word so the FPGA knows the ARM has read the cart.
+void NativeVideoWriter_AckCart(void);
+
 #ifdef __cplusplus
 }
 #endif

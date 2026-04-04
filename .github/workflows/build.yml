@@ -76,15 +76,14 @@ jobs:
 
       - name: Package release
         run: |
-          mkdir -p release-staging/PICO-8/Carts release-staging/PICO-8/Saves release-staging/PICO-8/pico8 release-staging/Scripts
+          mkdir -p release-staging/PICO-8 release-staging/games/PICO8/Carts release-staging/games/PICO8/Saves release-staging/Scripts
           cp build-arm/PICO-8 release-staging/PICO-8/
-          cp src/pico8/bios.p8 release-staging/PICO-8/pico8/
+          cp src/pico8/bios.p8 release-staging/games/PICO8/boot.rom
           cp Scripts/pico-8.sh release-staging/Scripts/
-          cp Scripts/Install_pico-8.sh release-staging/Scripts/
           cp README.md release-staging/
           cp LICENSE release-staging/
           chmod +x release-staging/PICO-8/PICO-8 release-staging/Scripts/*.sh
-          cd release-staging && zip -r ../MiSTer-PICO-8-release.zip PICO-8/ Scripts/ README.md LICENSE
+          cd release-staging && zip -r ../MiSTer-PICO-8-release.zip PICO-8/ games/ Scripts/ README.md LICENSE
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
