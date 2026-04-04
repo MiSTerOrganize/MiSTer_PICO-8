@@ -499,20 +499,6 @@ int main(int argc, char **argv)
             if (have_native_video) {
                 // Poll DDR3 for cart loaded via OSD file browser
                 fprintf(stderr, "Waiting for cart from OSD file browser...\n");
-                
-                // Debug: dump first 32 bytes of DDR3 control region
-                {
-                    volatile uint32_t *dbg = (volatile uint32_t *)ddr_base;
-                    fprintf(stderr, "DDR3 region dump:\n");
-                    fprintf(stderr, "  +0x00 (ctrl):  0x%08X\n", dbg[0]);
-                    fprintf(stderr, "  +0x04:         0x%08X\n", dbg[1]);
-                    fprintf(stderr, "  +0x08 (joy):   0x%08X\n", dbg[2]);
-                    fprintf(stderr, "  +0x0C:         0x%08X\n", dbg[3]);
-                    fprintf(stderr, "  +0x10 (cart):  0x%08X\n", dbg[4]);
-                    fprintf(stderr, "  +0x14:         0x%08X\n", dbg[5]);
-                    fprintf(stderr, "  +0x18:         0x%08X\n", dbg[6]);
-                    fprintf(stderr, "  +0x1C:         0x%08X\n", dbg[7]);
-                }
                 int poll_count = 0;
                 while (g_running) {
                     uint32_t cart_size = NativeVideoWriter_CheckCart();
