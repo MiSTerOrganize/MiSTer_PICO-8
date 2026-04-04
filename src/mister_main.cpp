@@ -569,35 +569,11 @@ int main(int argc, char **argv)
             // Uses MiSTer's standard button mapping (configured via OSD).
             // Bit layout: 0=right, 1=left, 2=down, 3=up, 4=O, 5=X, 6=Pause
             uint32_t joy = NativeVideoWriter_ReadJoystick();
-            uint16_t analog_raw = NativeVideoWriter_ReadAnalog();
 
-            // Analog stick: X=[7:0] signed, Y=[15:8] signed, -127..+127
-            int8_t analog_x = (int8_t)(analog_raw & 0xFF);
-            int8_t analog_y = (int8_t)((analog_raw >> 8) & 0xFF);
-
-            // Debug: log analog values once per second to see what FPGA sends
-            static int analog_debug_count = 0;
-            if (++analog_debug_count >= 60) {
-                fprintf(stderr, "Joy: digital=0x%08X analog_raw=0x%04X X=%d Y=%d\n",
-                        joy, analog_raw, analog_x, analog_y);
-                analog_debug_count = 0;
-            }
-
-            // Merge analog stick into digital directions (threshold ~40%)
-            int dir_right = (joy >> 0) & 1;
-            int dir_left  = (joy >> 1) & 1;
-            int dir_down  = (joy >> 2) & 1;
-            int dir_up    = (joy >> 3) & 1;
-
-            if (analog_x >  50) dir_right = 1;
-            if (analog_x < -50) dir_left  = 1;
-            if (analog_y >  50) dir_down  = 1;
-            if (analog_y < -50) dir_up    = 1;
-
-            g_vm->button(0, 0, dir_left);
-            g_vm->button(0, 1, dir_right);
-            g_vm->button(0, 2, dir_up);
-            g_vm->button(0, 3, dir_down);
+            g_vm->button(0, 0, (joy >> 1) & 1);  // bit 1 = left  → PICO-8 btn 0
+            g_vm->button(0, 1, (joy >> 0) & 1);  // bit 0 = right → PICO-8 btn 1
+            g_vm->button(0, 2, (joy >> 3) & 1);  // bit 3 = up    → PICO-8 btn 2
+            g_vm->button(0, 3, (joy >> 2) & 1);  // bit 2 = down  → PICO-8 btn 3
             g_vm->button(0, 4, (joy >> 4) & 1);  // bit 4 = O     → PICO-8 btn 4
             g_vm->button(0, 5, (joy >> 5) & 1);  // bit 5 = X     → PICO-8 btn 5
             g_vm->button(0, 6, (joy >> 6) & 1);  // bit 6 = Pause → PICO-8 btn 6
