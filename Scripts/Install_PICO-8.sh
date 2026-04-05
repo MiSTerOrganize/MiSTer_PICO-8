@@ -1,30 +1,59 @@
 #!/bin/bash
-# Install_PICO-8.sh — One-time setup for PICO-8 on MiSTer
+# Install_PICO-8.sh — Downloads and installs PICO-8 for MiSTer
 #
-# Run this once from the MiSTer Scripts menu.
-# After that, just load the PICO-8 core from the console menu.
+# Run from MiSTer Scripts menu. Downloads the latest release,
+# installs all files, and sets up auto-launch.
+# After install, just load the PICO-8 core from the console menu.
 #
 
-BINARY=/media/fat/PICO-8/PICO-8
-PICO8_DIR=/media/fat/games/PICO-8
+REPO="MiSTerOrganize/MiSTer_PICO-8_NativeVideo"
+RELEASE_URL="https://github.com/$REPO/releases/latest/download/MiSTer-PICO-8-release.zip"
+TMP_ZIP="/tmp/pico8_install.zip"
+TMP_DIR="/tmp/pico8_install"
 STARTUP=/media/fat/linux/user-startup.sh
 DAEMON_TAG="pico8_autolaunch"
 
-echo "Installing PICO-8..."
+echo "=== PICO-8 Installer for MiSTer ==="
+echo ""
 
-# Create directories
-mkdir -p "$PICO8_DIR/Carts" "$PICO8_DIR/Saves"
-
-# Make binary executable
-chmod +x "$BINARY"
-
-# Check required files
-if [ ! -f "$BINARY" ]; then
-    echo "Error: $BINARY not found"
+# Download latest release
+echo "Downloading PICO-8..."
+wget -q --show-progress -O "$TMP_ZIP" "$RELEASE_URL"
+if [ $? -ne 0 ]; then
+    echo "Error: Download failed. Check your internet connection."
+    rm -f "$TMP_ZIP"
     exit 1
 fi
-if [ ! -f "$PICO8_DIR/boot.rom" ]; then
-    echo "Error: $PICO8_DIR/boot.rom not found"
+
+# Extract to SD card root
+echo "Installing files..."
+rm -rf "$TMP_DIR"
+mkdir -p "$TMP_DIR"
+unzip -q -o "$TMP_ZIP" -d "$TMP_DIR"
+
+# Copy files to correct locations
+cp -r "$TMP_DIR"/_Console /media/fat/
+cp -r "$TMP_DIR"/PICO-8 /media/fat/
+cp -r "$TMP_DIR"/games /media/fat/
+cp -r "$TMP_DIR"/config /media/fat/
+
+# Make binary executable
+chmod +x /media/fat/PICO-8/PICO-8
+
+# Create Carts and Saves folders
+mkdir -p /media/fat/games/PICO-8/Carts /media/fat/games/PICO-8/Saves
+
+# Clean up
+rm -f "$TMP_ZIP"
+rm -rf "$TMP_DIR"
+
+# Check required files
+if [ ! -f /media/fat/PICO-8/PICO-8 ]; then
+    echo "Error: Binary not found after install"
+    exit 1
+fi
+if [ ! -f /media/fat/games/PICO-8/boot.rom ]; then
+    echo "Error: boot.rom not found after install"
     exit 1
 fi
 
@@ -72,7 +101,9 @@ done
 ) &
 
 echo ""
-echo "PICO-8 installed!"
+echo "=== PICO-8 installed successfully! ==="
+echo ""
 echo "Load the PICO-8 core from the console menu to play."
 echo "Use the MiSTer OSD to load carts."
+echo "Place .p8 and .p8.png carts in: games/PICO-8/Carts/"
 echo ""
