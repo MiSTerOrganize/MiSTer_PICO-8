@@ -6,7 +6,7 @@
 # core from the console menu.
 #
 
-REPO="MiSTerOrganize/MiSTer_PICO-8_NativeVideo"
+REPO="MiSTerOrganize/MiSTer_PICO-8"
 BRANCH="main"
 BASE_URL="https://raw.githubusercontent.com/$REPO/$BRANCH"
 
