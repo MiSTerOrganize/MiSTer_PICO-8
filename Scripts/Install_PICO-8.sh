@@ -26,7 +26,14 @@ mkdir -p /media/fat/docs/PICO-8
 FAIL=0
 
 echo "  Downloading FPGA core..."
-wget -q --show-progress -O /media/fat/_Console/PICO-8.rbf "$BASE_URL/_Console/PICO-8.rbf" || FAIL=1
+# Remove old versions
+rm -f /media/fat/_Console/PICO-8_*.rbf /media/fat/_Console/PICO-8.rbf
+# Get the RBF filename from the repo (it's dated like PICO-8_20260406.rbf)
+RBF_NAME=$(wget -q -O - "https://api.github.com/repos/$REPO/contents/_Console" | grep -o '"PICO-8_[0-9]*.rbf"' | tr -d '"')
+if [ -z "$RBF_NAME" ]; then
+    RBF_NAME="PICO-8.rbf"
+fi
+wget -q --show-progress -O "/media/fat/_Console/$RBF_NAME" "$BASE_URL/_Console/$RBF_NAME" || FAIL=1
 
 echo "  Downloading ARM binary..."
 wget -q --show-progress -O /media/fat/PICO-8/PICO-8 "$BASE_URL/PICO-8/PICO-8" || FAIL=1
