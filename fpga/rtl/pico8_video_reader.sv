@@ -107,6 +107,7 @@ wire new_frame_ddr = ~new_frame_sync[1] & new_frame_sync[0];
 
 // Latch new_frame so it can't be missed during cart writes
 reg new_frame_pending;
+reg synced;  // Set after first ctrl read — prevents displaying stale DDR3 data
 
 // ── CDC: new_line ─────────────────────────────────────────────────────
 reg [1:0] new_line_sync;
@@ -235,6 +236,7 @@ always @(posedge ddr_clk) begin
         cart_dl_prev        <= 1'b0;
         cart_loading        <= 1'b0;
         new_frame_pending   <= 1'b0;
+        synced              <= 1'b0;
     end
     else begin
         fifo_wr <= 1'b0;
@@ -387,7 +389,15 @@ always @(posedge ddr_clk) begin
             end
 
             ST_CHECK_CTRL: begin
-                if (ctrl_word[31:2] != prev_frame_counter) begin
+                if (!synced) begin
+                    // First read after reset — capture stale DDR3 counter
+                    // without displaying anything. Prevents showing old game
+                    // data that persists in DDR3 across reboots.
+                    prev_frame_counter <= ctrl_word[31:2];
+                    synced <= 1'b1;
+                    state <= ST_IDLE;
+                end
+                else if (ctrl_word[31:2] != prev_frame_counter) begin
                     // New frame available
                     prev_frame_counter <= ctrl_word[31:2];
                     active_buffer      <= ctrl_word[0];
