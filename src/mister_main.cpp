@@ -706,12 +706,21 @@ int main(int argc, char **argv)
         } // end SDL input path
 
         // Check if VM requested exit or user pressed Back — return to browser
-        if (!g_vm->is_running() || g_return_to_browser)
+        if (!g_vm->is_running() || g_return_to_browser) {
+            fprintf(stderr, "Game ending: vm_running=%d return_to_browser=%d\n",
+                    g_vm->is_running() ? 1 : 0, g_return_to_browser ? 1 : 0);
             game_running = false;
+        }
 
         // Check for new cart loaded via OSD during gameplay (hot-swap)
         if (have_native_video && game_running) {
             uint32_t new_cart_size = NativeVideoWriter_CheckCart();
+            // Debug: log cart check once per second
+            static int dbg_count = 0;
+            if (++dbg_count >= 60) {
+                fprintf(stderr, "Game loop cart check: ctrl=0x%08X\n", new_cart_size);
+                dbg_count = 0;
+            }
             if (new_cart_size > 0) {
                 fprintf(stderr, "Hot-swap cart received: %u bytes\n", new_cart_size);
                 uint8_t *cart_buf = (uint8_t *)malloc(new_cart_size);
@@ -760,9 +769,15 @@ int main(int argc, char **argv)
     }
 
         // Game ended — clean up for next cart
-        if (audio_started)
+        fprintf(stderr, "Game loop exited. hot_swap=%d cart_path='%s'\n",
+                hot_swap ? 1 : 0, cart_path.c_str());
+        if (audio_started) {
+            fprintf(stderr, "Stopping audio thread...\n");
             audio_thread_stop();
+            fprintf(stderr, "Audio thread stopped.\n");
+        }
         g_vm.reset();
+        fprintf(stderr, "VM reset.\n");
 
         // Reset flags for next game
         // Don't clear cart_path if a hot-swap cart was loaded (it's already set)
