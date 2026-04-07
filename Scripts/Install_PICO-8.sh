@@ -93,8 +93,8 @@ DAEMON
 echo "Auto-launcher installed."
 
 # Kill old daemon and start new one
-pkill -f "PICO-8.*nativevideo" 2>/dev/null
-pkill -f "pico8_autolaunch" 2>/dev/null
+# Kill old binary and daemon
+killall PICO-8 2>/dev/null
 (
 LAST_CORE=""
 while true; do
