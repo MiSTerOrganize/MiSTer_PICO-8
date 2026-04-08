@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <csignal>
 #include <cmath>
+#include <cerrno>
 #include <string>
 #include <memory>
 
@@ -96,10 +97,19 @@ static void signal_handler(int sig)
 {
     (void)sig;
     g_running = false;
-    // Immediately silence audio hardware so it doesn't keep playing
-    // after the process exits (e.g., when daemon kills us on core switch)
-    if (g_pcm && p_snd_pcm_drop)
-        p_snd_pcm_drop(g_pcm);
+    g_audio_running = false;  // stop audio thread loop
+    // Immediately silence and close audio hardware so it doesn't keep
+    // playing after the process exits (e.g., when daemon kills us on core switch)
+    if (g_pcm) {
+        if (p_snd_pcm_drop) p_snd_pcm_drop(g_pcm);
+        // Write silence to flush hardware DMA buffer
+        int16_t silence[512];
+        memset(silence, 0, sizeof(silence));
+        if (p_snd_pcm_prepare) p_snd_pcm_prepare(g_pcm);
+        if (p_snd_pcm_writei) p_snd_pcm_writei(g_pcm, silence, 512);
+        if (p_snd_pcm_close) p_snd_pcm_close(g_pcm);
+        g_pcm = nullptr;
+    }
 }
 
 static bool alsa_init()
@@ -499,6 +509,7 @@ int main(int argc, char **argv)
     std::string carts_dir = data_dir + "Carts";
 
     // Check if a hot-swap cart was queued by a previous instance
+    fprintf(stderr, "=== Process started, PID=%d ===\n", getpid());
     {
         FILE *nf = fopen("/tmp/pico8_next_cart.txt", "r");
         if (nf) {
@@ -509,7 +520,7 @@ int main(int argc, char **argv)
                 if (nl) *nl = '\0';
                 if (buf[0]) {
                     cart_path = std::string(buf);
-                    fprintf(stderr, "Hot-swap resume: loading %s\n", buf);
+                    fprintf(stderr, "Hot-swap resume: loading %s (PID=%d)\n", buf, getpid());
                 }
             }
             fclose(nf);
@@ -611,6 +622,7 @@ int main(int argc, char **argv)
 
         g_vm->load(cart_path);
         g_vm->run();
+        fprintf(stderr, "=== Game started: %s (PID=%d) ===\n", cart_path.c_str(), getpid());
 
         // Start audio thread
         bool audio_started = false;
@@ -734,12 +746,14 @@ int main(int argc, char **argv)
             game_running = false;
 
         // Check for new cart loaded via OSD during gameplay (hot-swap)
-        // Instead of trying to reload in-process, save the cart and restart.
-        // The daemon automatically restarts us with a fresh process.
+        // Save the cart to a temp file, fully shutdown, then execl() to
+        // replace this process with a fresh instance. Same PID — daemon
+        // doesn't notice. All state is guaranteed clean.
         if (have_native_video && game_running) {
             uint32_t new_cart_size = NativeVideoWriter_CheckCart();
             if (new_cart_size > 0) {
                 fprintf(stderr, "Hot-swap: new cart detected (%u bytes), restarting...\n", new_cart_size);
+                fprintf(stderr, "Hot-swap: PID=%d, saving cart and calling execl\n", getpid());
                 uint8_t *cart_buf = (uint8_t *)malloc(new_cart_size);
                 if (cart_buf) {
                     uint32_t actual = NativeVideoWriter_ReadCart(cart_buf, new_cart_size);
@@ -770,23 +784,39 @@ int main(int argc, char **argv)
                     NativeVideoWriter_AckCart();
                 }
 
-                // Flush saves by destroying VM, then exit cleanly.
-                // Don't shutdown video — FPGA keeps showing last frame
-                // while daemon restarts us. User sees old game freeze,
-                // then new game appears.
+                // Full shutdown, then replace process with fresh instance.
+                // execl() replaces this process entirely — all memory freed,
+                // all threads killed, all file descriptors closed by kernel.
+                // Same PID, so daemon doesn't even notice.
                 if (audio_started) {
-                    audio_thread_stop();
+                    g_audio_running = false;
                     if (g_pcm && p_snd_pcm_drop)
                         p_snd_pcm_drop(g_pcm);
+                    pthread_join(g_audio_thread, nullptr);
                 }
-                // Close ALSA device so audio hardware stops completely
+                // Write silence then close ALSA to stop hardware DMA
                 if (g_pcm) {
+                    int16_t silence[AUDIO_BUF_SAMPLES];
+                    memset(silence, 0, sizeof(silence));
+                    p_snd_pcm_prepare(g_pcm);
+                    p_snd_pcm_writei(g_pcm, silence, AUDIO_BUF_SAMPLES);
                     p_snd_pcm_close(g_pcm);
                     g_pcm = nullptr;
                 }
                 g_vm.reset();  // flushes cartdata saves to disk
-                fprintf(stderr, "Hot-swap: exiting for clean restart.\n");
-                _exit(0);  // daemon will restart us
+                // Don't call NativeVideoWriter_Shutdown() — keep last frame
+                // on screen while new process starts
+                if (alsa_lib) { dlclose(alsa_lib); alsa_lib = nullptr; }
+                SDL_CloseAudio();
+                SDL_Quit();
+
+                fprintf(stderr, "Hot-swap: restarting process. PID=%d\n", getpid());
+                execl("/media/fat/games/PICO-8/PICO-8", "PICO-8",
+                      "-nativevideo", "-data", "/media/fat/games/PICO-8/",
+                      (char *)NULL);
+                // execl only returns on failure
+                fprintf(stderr, "Hot-swap: execl FAILED! errno=%d\n", errno);
+                _exit(1);
             }
         }
 
@@ -809,6 +839,7 @@ int main(int argc, char **argv)
     }
 
         // Game ended — clean up for next cart
+        fprintf(stderr, "=== Game ended (PID=%d) ===\n", getpid());
         if (audio_started) {
             audio_thread_stop();
             if (g_pcm && p_snd_pcm_drop) {
