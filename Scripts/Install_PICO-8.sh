@@ -13,11 +13,16 @@ BASE_URL="https://raw.githubusercontent.com/$REPO/$BRANCH"
 echo "=== PICO-8 Installer for MiSTer ==="
 echo ""
 
-# Stop running PICO-8 binary before updating
+# ── Kill ALL existing PICO-8 processes and daemons ─────────────────
+# This is critical — old daemons spawn duplicate processes
 killall PICO-8 2>/dev/null
+killall pico8_daemon.sh 2>/dev/null
+kill $(cat /tmp/pico8_arm.pid 2>/dev/null) 2>/dev/null
+rm -f /tmp/pico8_arm.pid /tmp/pico8_next_cart.txt
+rm -rf /tmp/pico8_daemon.lock
 sleep 1
 
-# Download files from GitHub repo
+# ── Download files from GitHub repo ───────────────────────────────
 echo "Downloading PICO-8..."
 
 mkdir -p /media/fat/_Console
@@ -42,6 +47,9 @@ wget -q --show-progress -O /media/fat/games/PICO-8/PICO-8 "$BASE_URL/games/PICO-
 echo "  Downloading BIOS..."
 wget -q --show-progress -O /media/fat/games/PICO-8/boot.rom "$BASE_URL/games/PICO-8/boot.rom" || FAIL=1
 
+echo "  Downloading daemon..."
+wget -q --show-progress -O /media/fat/games/PICO-8/pico8_daemon.sh "$BASE_URL/games/PICO-8/pico8_daemon.sh" || FAIL=1
+
 echo "  Downloading controller map..."
 wget -q --show-progress -O /media/fat/config/inputs/PICO-8_input_045e_0b12_v3.map "$BASE_URL/config/inputs/PICO-8_input_045e_0b12_v3.map" || FAIL=1
 
@@ -54,77 +62,35 @@ if [ "$FAIL" -ne 0 ]; then
     exit 1
 fi
 
-# Make binary executable
+# Make files executable
 chmod +x /media/fat/games/PICO-8/PICO-8
+chmod +x /media/fat/games/PICO-8/pico8_daemon.sh
 
 # Remove old binary location if it exists
 rm -rf /media/fat/PICO-8
 
-# Install auto-launcher into user-startup.sh
+# ── Install daemon into user-startup.sh ───────────────────────────
 STARTUP=/media/fat/linux/user-startup.sh
-DAEMON_TAG="pico8_autolaunch"
 
-# Remove old daemon if present (might have wrong path)
-if grep -q "$DAEMON_TAG" "$STARTUP" 2>/dev/null; then
-    # Remove old daemon block
-    sed -i "/$DAEMON_TAG/,/^) &$/d" "$STARTUP"
+# Remove ALL old PICO-8 daemon entries (inline blocks and launcher lines)
+if [ -f "$STARTUP" ]; then
+    # Remove old inline daemon blocks
+    sed -i '/pico8_autolaunch/,/^) \&$/d' "$STARTUP"
+    # Remove old daemon launcher lines
+    sed -i '/pico8_daemon\.sh/d' "$STARTUP"
+    # Remove old comment lines
+    sed -i '/PICO-8 auto-launch/d' "$STARTUP"
 fi
 
-cat >> "$STARTUP" << 'DAEMON'
-
-# pico8_autolaunch — auto-start PICO-8 emulator when core loads
-(
-LAST_CORE=""
-while true; do
-    CUR=$(cat /tmp/CORENAME 2>/dev/null)
-    if [ "$CUR" = "PICO-8" ]; then
-        if [ "$LAST_CORE" != "PICO-8" ]; then
-            # Initial core load — FPGA just loaded, needs settling time
-            kill $(cat /tmp/pico8_arm.pid 2>/dev/null) 2>/dev/null
-            sleep 1
-            taskset 03 /media/fat/games/PICO-8/PICO-8 -nativevideo -data /media/fat/games/PICO-8/ > /dev/null 2>&1 &
-            echo $! > /tmp/pico8_arm.pid
-        elif ! kill -0 $(cat /tmp/pico8_arm.pid 2>/dev/null) 2>/dev/null; then
-            # Process died (hot-swap or crash) — FPGA already running, restart fast
-            taskset 03 /media/fat/games/PICO-8/PICO-8 -nativevideo -data /media/fat/games/PICO-8/ > /dev/null 2>&1 &
-            echo $! > /tmp/pico8_arm.pid
-        fi
-    elif [ "$LAST_CORE" = "PICO-8" ]; then
-        kill $(cat /tmp/pico8_arm.pid 2>/dev/null) 2>/dev/null
-        rm -f /tmp/pico8_arm.pid
-    fi
-    LAST_CORE="$CUR"
-    sleep 0.25
-done
-) &
-DAEMON
+# Add single launcher line
+echo "" >> "$STARTUP"
+echo "# PICO-8 auto-launch daemon" >> "$STARTUP"
+echo "/media/fat/games/PICO-8/pico8_daemon.sh &" >> "$STARTUP"
 
 echo "Auto-launcher installed."
 
-# Kill old daemon and start new one
-killall PICO-8 2>/dev/null
-(
-LAST_CORE=""
-while true; do
-    CUR=$(cat /tmp/CORENAME 2>/dev/null)
-    if [ "$CUR" = "PICO-8" ]; then
-        if [ "$LAST_CORE" != "PICO-8" ]; then
-            kill $(cat /tmp/pico8_arm.pid 2>/dev/null) 2>/dev/null
-            sleep 1
-            taskset 03 /media/fat/games/PICO-8/PICO-8 -nativevideo -data /media/fat/games/PICO-8/ > /dev/null 2>&1 &
-            echo $! > /tmp/pico8_arm.pid
-        elif ! kill -0 $(cat /tmp/pico8_arm.pid 2>/dev/null) 2>/dev/null; then
-            taskset 03 /media/fat/games/PICO-8/PICO-8 -nativevideo -data /media/fat/games/PICO-8/ > /dev/null 2>&1 &
-            echo $! > /tmp/pico8_arm.pid
-        fi
-    elif [ "$LAST_CORE" = "PICO-8" ]; then
-        kill $(cat /tmp/pico8_arm.pid 2>/dev/null) 2>/dev/null
-        rm -f /tmp/pico8_arm.pid
-    fi
-    LAST_CORE="$CUR"
-    sleep 0.25
-done
-) &
+# ── Start daemon now ──────────────────────────────────────────────
+/media/fat/games/PICO-8/pico8_daemon.sh &
 
 echo ""
 echo "=== PICO-8 installed successfully! ==="
