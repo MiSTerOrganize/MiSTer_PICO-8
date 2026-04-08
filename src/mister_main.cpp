@@ -63,14 +63,6 @@ static uint64_t get_time_ns()
     return (uint64_t)ts.tv_sec * 1000000000ULL + ts.tv_nsec;
 }
 
-// ── Signal handler ────────────────────────────────────────────────────
-
-static void signal_handler(int sig)
-{
-    (void)sig;
-    g_running = false;
-}
-
 // ══════════════════════════════════════════════════════════════════════
 //  ALSA via dlopen — Direct audio, bypassing SDL
 //  Uses explicit /usr/lib/libasound.so.2 path (proven on MiSTer)
@@ -97,6 +89,18 @@ static snd_pcm_t *g_pcm = nullptr;
 #define SND_PCM_STREAM_PLAYBACK     0
 #define SND_PCM_FORMAT_S16_LE       2
 #define SND_PCM_ACCESS_RW_INTERLEAVED 3
+
+// ── Signal handler ────────────────────────────────────────────────────
+// Must be after ALSA declarations so g_pcm and p_snd_pcm_drop are visible
+static void signal_handler(int sig)
+{
+    (void)sig;
+    g_running = false;
+    // Immediately silence audio hardware so it doesn't keep playing
+    // after the process exits (e.g., when daemon kills us on core switch)
+    if (g_pcm && p_snd_pcm_drop)
+        p_snd_pcm_drop(g_pcm);
+}
 
 static bool alsa_init()
 {
@@ -774,6 +778,11 @@ int main(int argc, char **argv)
                     audio_thread_stop();
                     if (g_pcm && p_snd_pcm_drop)
                         p_snd_pcm_drop(g_pcm);
+                }
+                // Close ALSA device so audio hardware stops completely
+                if (g_pcm) {
+                    p_snd_pcm_close(g_pcm);
+                    g_pcm = nullptr;
                 }
                 g_vm.reset();  // flushes cartdata saves to disk
                 fprintf(stderr, "Hot-swap: exiting for clean restart.\n");
