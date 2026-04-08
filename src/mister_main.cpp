@@ -13,7 +13,6 @@
 #include <cstdint>
 #include <csignal>
 #include <cmath>
-#include <cerrno>
 #include <string>
 #include <memory>
 
@@ -745,14 +744,12 @@ int main(int argc, char **argv)
             game_running = false;
 
         // Check for new cart loaded via OSD during gameplay (hot-swap)
-        // Save the cart to a temp file, fully shutdown, then execl() to
-        // replace this process with a fresh instance. Same PID — daemon
-        // doesn't notice. All state is guaranteed clean.
+        // Save cart to temp file, write path to next_cart.txt, exit.
+        // Daemon detects dead process and restarts with fresh state.
         if (have_native_video && game_running) {
             uint32_t new_cart_size = NativeVideoWriter_CheckCart();
             if (new_cart_size > 0) {
-                fprintf(stderr, "Hot-swap: new cart detected (%u bytes), restarting...\n", new_cart_size);
-                fprintf(stderr, "Hot-swap: PID=%d, saving cart and calling execl\n", getpid());
+                fprintf(stderr, "Hot-swap: new cart detected (%u bytes), PID=%d\n", new_cart_size, getpid());
                 uint8_t *cart_buf = (uint8_t *)malloc(new_cart_size);
                 if (cart_buf) {
                     uint32_t actual = NativeVideoWriter_ReadCart(cart_buf, new_cart_size);
@@ -783,17 +780,15 @@ int main(int argc, char **argv)
                     NativeVideoWriter_AckCart();
                 }
 
-                // Full shutdown, then replace process with fresh instance.
-                // execl() replaces this process entirely — all memory freed,
-                // all threads killed, all file descriptors closed by kernel.
-                // Same PID, so daemon doesn't even notice.
+                // Clean shutdown, then exit. The daemon detects the dead
+                // process and restarts us. next_cart.txt tells the new
+                // process which cart to load.
                 if (audio_started) {
                     g_audio_running = false;
                     if (g_pcm && p_snd_pcm_drop)
                         p_snd_pcm_drop(g_pcm);
                     pthread_join(g_audio_thread, nullptr);
                 }
-                // Write silence then close ALSA to stop hardware DMA
                 if (g_pcm) {
                     int16_t silence[AUDIO_BUF_SAMPLES];
                     memset(silence, 0, sizeof(silence));
@@ -803,19 +798,8 @@ int main(int argc, char **argv)
                     g_pcm = nullptr;
                 }
                 g_vm.reset();  // flushes cartdata saves to disk
-                // Don't call NativeVideoWriter_Shutdown() — keep last frame
-                // on screen while new process starts
-                if (alsa_lib) { dlclose(alsa_lib); alsa_lib = nullptr; }
-                SDL_CloseAudio();
-                SDL_Quit();
-
-                fprintf(stderr, "Hot-swap: restarting process. PID=%d\n", getpid());
-                execl("/media/fat/games/PICO-8/PICO-8", "PICO-8",
-                      "-nativevideo", "-data", "/media/fat/games/PICO-8/",
-                      (char *)NULL);
-                // execl only returns on failure
-                fprintf(stderr, "Hot-swap: execl FAILED! errno=%d\n", errno);
-                _exit(1);
+                fprintf(stderr, "Hot-swap: exiting for daemon restart (PID=%d).\n", getpid());
+                _exit(0);
             }
         }
 
