@@ -78,9 +78,14 @@ LAST_CORE=""
 while true; do
     CUR=$(cat /tmp/CORENAME 2>/dev/null)
     if [ "$CUR" = "PICO-8" ]; then
-        if [ "$LAST_CORE" != "PICO-8" ] || ! kill -0 $(cat /tmp/pico8_arm.pid 2>/dev/null) 2>/dev/null; then
+        if [ "$LAST_CORE" != "PICO-8" ]; then
+            # Initial core load — FPGA just loaded, needs settling time
             kill $(cat /tmp/pico8_arm.pid 2>/dev/null) 2>/dev/null
-            sleep 2
+            sleep 1
+            taskset 03 /media/fat/games/PICO-8/PICO-8 -nativevideo -data /media/fat/games/PICO-8/ > /dev/null 2>&1 &
+            echo $! > /tmp/pico8_arm.pid
+        elif ! kill -0 $(cat /tmp/pico8_arm.pid 2>/dev/null) 2>/dev/null; then
+            # Process died (hot-swap or crash) — FPGA already running, restart fast
             taskset 03 /media/fat/games/PICO-8/PICO-8 -nativevideo -data /media/fat/games/PICO-8/ > /dev/null 2>&1 &
             echo $! > /tmp/pico8_arm.pid
         fi
@@ -89,7 +94,7 @@ while true; do
         rm -f /tmp/pico8_arm.pid
     fi
     LAST_CORE="$CUR"
-    sleep 1
+    sleep 0.25
 done
 ) &
 DAEMON
@@ -97,16 +102,18 @@ DAEMON
 echo "Auto-launcher installed."
 
 # Kill old daemon and start new one
-pkill -f "PICO-8.*nativevideo" 2>/dev/null
-pkill -f "pico8_autolaunch" 2>/dev/null
+killall PICO-8 2>/dev/null
 (
 LAST_CORE=""
 while true; do
     CUR=$(cat /tmp/CORENAME 2>/dev/null)
     if [ "$CUR" = "PICO-8" ]; then
-        if [ "$LAST_CORE" != "PICO-8" ] || ! kill -0 $(cat /tmp/pico8_arm.pid 2>/dev/null) 2>/dev/null; then
+        if [ "$LAST_CORE" != "PICO-8" ]; then
             kill $(cat /tmp/pico8_arm.pid 2>/dev/null) 2>/dev/null
-            sleep 2
+            sleep 1
+            taskset 03 /media/fat/games/PICO-8/PICO-8 -nativevideo -data /media/fat/games/PICO-8/ > /dev/null 2>&1 &
+            echo $! > /tmp/pico8_arm.pid
+        elif ! kill -0 $(cat /tmp/pico8_arm.pid 2>/dev/null) 2>/dev/null; then
             taskset 03 /media/fat/games/PICO-8/PICO-8 -nativevideo -data /media/fat/games/PICO-8/ > /dev/null 2>&1 &
             echo $! > /tmp/pico8_arm.pid
         fi
@@ -115,7 +122,7 @@ while true; do
         rm -f /tmp/pico8_arm.pid
     fi
     LAST_CORE="$CUR"
-    sleep 1
+    sleep 0.25
 done
 ) &
 
