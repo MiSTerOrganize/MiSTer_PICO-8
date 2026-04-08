@@ -305,24 +305,15 @@ always @(posedge ddr_clk) begin
 
         case (state)
             ST_IDLE: begin
-                if (ioctl_download) begin
-                    // During cart file transfer, only handle cart writes.
-                    // Video reading is paused -- display holds the last frame.
-                    // This prevents DDR3 contention between cart writes and video reads.
-                    if (cart_write_pending)
-                        state <= ST_WRITE_CART;
-                    // Clear new_frame_pending so it doesn't accumulate
-                    new_frame_pending <= 1'b0;
-                end
-                else begin
-                    // Normal operation: frame cycle takes priority
-                    if (enable_ddr && new_frame_pending)
-                        state <= ST_WRITE_JOY;
-                    else if (cart_write_pending)
-                        state <= ST_WRITE_CART;
-                    else if (cart_size_pending)
-                        state <= ST_WRITE_CART_SIZE;
-                end
+                // Frame reads always get priority -- video must never be starved.
+                // Cart writes happen between frame reads.
+                // new_frame_pending is latched so it can't be missed.
+                if (enable_ddr && new_frame_pending)
+                    state <= ST_WRITE_JOY;
+                else if (cart_write_pending)
+                    state <= ST_WRITE_CART;
+                else if (cart_size_pending)
+                    state <= ST_WRITE_CART_SIZE;
             end
 
             ST_WRITE_JOY: begin
