@@ -2,55 +2,67 @@
 # pico8_daemon.sh — Auto-start PICO-8 emulator when core loads
 #
 # Uses mkdir as atomic lock to guarantee only ONE daemon runs.
-# Monitors /tmp/CORENAME for "PICO-8" and starts/stops the binary.
+# Uses wait to guarantee only ONE binary runs at a time.
+# No race conditions — process must fully exit before next spawn.
 
 LOCKDIR="/tmp/pico8_daemon.lock"
 PIDFILE="/tmp/pico8_arm.pid"
 BINARY="/media/fat/games/PICO-8/PICO-8"
 ARGS="-nativevideo -data /media/fat/games/PICO-8/"
 
-# Prevent multiple daemon instances (mkdir is atomic)
+# Prevent multiple daemon instances
 if ! mkdir "$LOCKDIR" 2>/dev/null; then
     OLDPID=$(cat "$LOCKDIR/pid" 2>/dev/null)
     if [ -n "$OLDPID" ] && kill -0 "$OLDPID" 2>/dev/null; then
-        exit 0  # another daemon is alive
+        exit 0
     fi
     rm -rf "$LOCKDIR"
     mkdir "$LOCKDIR" 2>/dev/null || exit 0
 fi
 echo $$ > "$LOCKDIR/pid"
 
+CHILD=""
 cleanup() {
-    kill $(cat "$PIDFILE" 2>/dev/null) 2>/dev/null
+    [ -n "$CHILD" ] && kill $CHILD 2>/dev/null
     rm -f "$PIDFILE"
     rm -rf "$LOCKDIR"
     exit 0
 }
 trap cleanup TERM INT
 
-start_binary() {
-    taskset 03 $BINARY $ARGS > /dev/null 2>&1 &
-    echo $! > "$PIDFILE"
-    # Wait for process to fully exist before resuming poll loop
-    sleep 1
-}
-
-LAST_CORE=""
+FIRST_LOAD=1
 while true; do
     CUR=$(cat /tmp/CORENAME 2>/dev/null)
-    if [ "$CUR" = "PICO-8" ]; then
-        if [ "$LAST_CORE" != "PICO-8" ]; then
-            # Initial core load — FPGA needs settling time
-            kill $(cat "$PIDFILE" 2>/dev/null) 2>/dev/null
-            start_binary
-        elif ! kill -0 $(cat "$PIDFILE" 2>/dev/null) 2>/dev/null; then
-            # Process died (hot-swap or crash) — restart
-            start_binary
+
+    if [ "$CUR" = "PICO-8" ] && [ -z "$CHILD" ]; then
+        # No binary running — start one
+        if [ "$FIRST_LOAD" = "1" ]; then
+            sleep 1  # FPGA settle on first load only
+            FIRST_LOAD=0
         fi
-    elif [ "$LAST_CORE" = "PICO-8" ]; then
-        kill $(cat "$PIDFILE" 2>/dev/null) 2>/dev/null
-        rm -f "$PIDFILE"
+        $BINARY $ARGS > /dev/null 2>&1 &
+        CHILD=$!
+        echo $CHILD > "$PIDFILE"
     fi
-    LAST_CORE="$CUR"
+
+    if [ -n "$CHILD" ]; then
+        if ! kill -0 $CHILD 2>/dev/null; then
+            # Process exited (hot-swap or crash) — reap it
+            wait $CHILD 2>/dev/null
+            CHILD=""
+            rm -f "$PIDFILE"
+            # Don't sleep — restart fast on next iteration
+            continue
+        fi
+        if [ "$CUR" != "PICO-8" ]; then
+            # User left the core — kill binary
+            kill $CHILD 2>/dev/null
+            wait $CHILD 2>/dev/null
+            CHILD=""
+            FIRST_LOAD=1
+            rm -f "$PIDFILE"
+        fi
+    fi
+
     sleep 1
 done
