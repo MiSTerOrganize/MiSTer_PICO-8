@@ -97,7 +97,6 @@ static void signal_handler(int sig)
 {
     (void)sig;
     g_running = false;
-    g_audio_running = false;  // stop audio thread loop
     // Immediately silence and close audio hardware so it doesn't keep
     // playing after the process exits (e.g., when daemon kills us on core switch)
     if (g_pcm) {
