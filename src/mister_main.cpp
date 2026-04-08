@@ -494,6 +494,25 @@ int main(int argc, char **argv)
 
     std::string carts_dir = data_dir + "Carts";
 
+    // Check if a hot-swap cart was queued by a previous instance
+    {
+        FILE *nf = fopen("/tmp/pico8_next_cart.txt", "r");
+        if (nf) {
+            char buf[512] = {};
+            if (fgets(buf, sizeof(buf), nf)) {
+                // Remove trailing newline if any
+                char *nl = strchr(buf, '\n');
+                if (nl) *nl = '\0';
+                if (buf[0]) {
+                    cart_path = std::string(buf);
+                    fprintf(stderr, "Hot-swap resume: loading %s\n", buf);
+                }
+            }
+            fclose(nf);
+            remove("/tmp/pico8_next_cart.txt");
+        }
+    }
+
     while (g_running)
     {
         // Get cart path
@@ -602,7 +621,6 @@ int main(int argc, char **argv)
         uint64_t next_frame = get_time_ns();
 
         bool game_running = true;
-        bool hot_swap = false;
         while (g_running && game_running)
     {
         uint64_t now = get_time_ns();
@@ -712,15 +730,18 @@ int main(int argc, char **argv)
             game_running = false;
 
         // Check for new cart loaded via OSD during gameplay (hot-swap)
+        // Instead of trying to reload in-process, save the cart and restart.
+        // The daemon automatically restarts us with a fresh process.
         if (have_native_video && game_running) {
             uint32_t new_cart_size = NativeVideoWriter_CheckCart();
             if (new_cart_size > 0) {
-                fprintf(stderr, "Hot-swap cart received: %u bytes\n", new_cart_size);
+                fprintf(stderr, "Hot-swap: new cart detected (%u bytes), restarting...\n", new_cart_size);
                 uint8_t *cart_buf = (uint8_t *)malloc(new_cart_size);
                 if (cart_buf) {
                     uint32_t actual = NativeVideoWriter_ReadCart(cart_buf, new_cart_size);
                     NativeVideoWriter_AckCart();
 
+                    // Detect format and save cart to temp file
                     const char *tmp_path;
                     if (actual >= 8 && cart_buf[0] == 0x89 && cart_buf[1] == 0x50 &&
                         cart_buf[2] == 0x4E && cart_buf[3] == 0x47)
@@ -732,18 +753,33 @@ int main(int argc, char **argv)
                     if (f) {
                         fwrite(cart_buf, 1, actual, f);
                         fclose(f);
-                        cart_path = std::string(tmp_path);
-                        hot_swap = true;
-                        game_running = false;
+
+                        // Write cart path for the next process to pick up
+                        FILE *nf = fopen("/tmp/pico8_next_cart.txt", "w");
+                        if (nf) {
+                            fputs(tmp_path, nf);
+                            fclose(nf);
+                        }
                     }
                     free(cart_buf);
                 } else {
                     NativeVideoWriter_AckCart();
                 }
+
+                // Flush saves by destroying VM, then exit cleanly.
+                // Don't shutdown video — FPGA keeps showing last frame
+                // while daemon restarts us. User sees old game freeze,
+                // then new game appears.
+                if (audio_started) {
+                    audio_thread_stop();
+                    if (g_pcm && p_snd_pcm_drop)
+                        p_snd_pcm_drop(g_pcm);
+                }
+                g_vm.reset();  // flushes cartdata saves to disk
+                fprintf(stderr, "Hot-swap: exiting for clean restart.\n");
+                _exit(0);  // daemon will restart us
             }
         }
-
-        if (!game_running) continue;  // skip step/render if exiting
 
         // Step the VM
         g_vm->step(1.0f / target_fps);
@@ -775,9 +811,7 @@ int main(int argc, char **argv)
         g_vm.reset();
 
         // Reset flags for next game
-        // Don't clear cart_path if a hot-swap cart was loaded (it's already set)
-        if (!hot_swap)
-            cart_path.clear();
+        cart_path.clear();
         g_return_to_browser = false;
 
         // Clear screen before returning to browser

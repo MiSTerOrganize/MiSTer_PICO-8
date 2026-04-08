@@ -8,17 +8,17 @@
 //  Scaling:
 //    Horizontal: each source pixel output twice (pixel doubling)
 //    Vertical:   each source line read twice from DDR3 (line doubling)
-//    128x128 source → 256x256 display
+//    128x128 source -> 256x256 display
 //
 //  DDR3 Memory Map (physical addresses):
 //    0x3A000000 + 0x000  : Control word (frame_counter[31:2], active_buffer[1:0])
 //    0x3A000000 + 0x100  : Buffer 0 (128x128 RGB565 = 32,768 bytes)
 //    0x3A000000 + 0x8100 : Buffer 1 (32,768 bytes)
 //
-//  Bandwidth: 32KB × 2 (line doubling) × 60fps = 3.7 MB/s (DDR3 can do >1000)
+//  Bandwidth: 32KB x 2 (line doubling) x 60fps = 3.7 MB/s (DDR3 can do >1000)
 //
 //  Adapted from 3SX project (kimchiman52/3sx-mister)
-//  Copyright (C) 2026 MiSTer Organize — GPL-3.0
+//  Copyright (C) 2026 MiSTer Organize -- GPL-3.0
 //
 //============================================================================
 
@@ -72,7 +72,7 @@ module pico8_video_reader (
 // DDR3 byte enable (always all bytes)
 assign ddr_be  = 8'hFF;
 
-// ── DDR3 Address Constants ────────────────────────────────────────────
+// -- DDR3 Address Constants --------------------------------------------
 // 29-bit qword addresses = physical >> 3
 localparam [28:0] CTRL_ADDR   = 29'h07400000;  // 0x3A000000 >> 3
 localparam [28:0] JOY_ADDR    = 29'h07400001;  // 0x3A000008 >> 3 (joystick data)
@@ -80,12 +80,12 @@ localparam [28:0] BUF0_ADDR   = 29'h07400020;  // 0x3A000100 >> 3
 localparam [28:0] BUF1_ADDR   = 29'h07401020;  // 0x3A008100 >> 3
 localparam [7:0]  LINE_BURST  = 8'd32;         // 128px * 2B / 8 = 32 beats
 localparam [28:0] LINE_STRIDE = 29'd32;        // 32 qword addresses per source line
-localparam [8:0]  V_ACTIVE    = 9'd256;        // display lines (2× source)
+localparam [8:0]  V_ACTIVE    = 9'd256;        // display lines (2x source)
 localparam [6:0]  SRC_LINES   = 7'd128;        // source lines in DDR3
 
 localparam [19:0] TIMEOUT_MAX = 20'hF_FFFF;
 
-// ── Enable synchronizer ──────────────────────────────────────────────
+// -- Enable synchronizer ----------------------------------------------
 reg [1:0] enable_sync;
 always @(posedge ddr_clk) begin
     if (reset)
@@ -95,7 +95,7 @@ always @(posedge ddr_clk) begin
 end
 wire enable_ddr = enable_sync[1];
 
-// ── CDC: new_frame ────────────────────────────────────────────────────
+// -- CDC: new_frame ----------------------------------------------------
 reg [1:0] new_frame_sync;
 always @(posedge ddr_clk) begin
     if (reset)
@@ -107,9 +107,9 @@ wire new_frame_ddr = ~new_frame_sync[1] & new_frame_sync[0];
 
 // Latch new_frame so it can't be missed during cart writes
 reg new_frame_pending;
-reg synced;  // Set after first ctrl read — prevents displaying stale DDR3 data
+reg synced;  // Set after first ctrl read -- prevents displaying stale DDR3 data
 
-// ── CDC: new_line ─────────────────────────────────────────────────────
+// -- CDC: new_line -----------------------------------------------------
 reg [1:0] new_line_sync;
 always @(posedge ddr_clk) begin
     if (reset)
@@ -119,7 +119,7 @@ always @(posedge ddr_clk) begin
 end
 wire new_line_ddr = ~new_line_sync[1] & new_line_sync[0];
 
-// ── CDC: vblank level ─────────────────────────────────────────────────
+// -- CDC: vblank level -------------------------------------------------
 reg [1:0] vblank_sync;
 always @(posedge ddr_clk) begin
     if (reset)
@@ -129,14 +129,14 @@ always @(posedge ddr_clk) begin
 end
 wire vblank_ddr = vblank_sync[1];
 
-// ── Reset synchronizer for clk_vid ───────────────────────────────────
+// -- Reset synchronizer for clk_vid -----------------------------------
 reg [1:0] reset_vid_sync;
 always @(posedge clk_vid or posedge reset)
     if (reset) reset_vid_sync <= 2'b11;
     else       reset_vid_sync <= {reset_vid_sync[0], 1'b0};
 wire reset_vid = reset_vid_sync[1];
 
-// ── CDC: frame_ready ──────────────────────────────────────────────────
+// -- CDC: frame_ready --------------------------------------------------
 reg frame_ready_reg;
 reg [1:0] frame_ready_sync;
 always @(posedge clk_vid) begin
@@ -148,7 +148,7 @@ end
 wire frame_ready_vid = frame_ready_sync[1];
 assign frame_ready = frame_ready_vid;
 
-// ── DDR3 Read State Machine ──────────────────────────────────────────
+// -- DDR3 Read State Machine ------------------------------------------
 localparam [3:0] ST_IDLE         = 4'd0;
 localparam [3:0] ST_POLL_CTRL    = 4'd1;
 localparam [3:0] ST_WAIT_CTRL    = 4'd2;
@@ -193,17 +193,17 @@ assign ioctl_wait = cart_write_pending & ioctl_download;
 // Source line = display_line / 2 (vertical doubling)
 wire [6:0] source_line = display_line[8:1];
 
-// ── FIFO write signals ───────────────────────────────────────────────
+// -- FIFO write signals -----------------------------------------------
 reg         fifo_wr;
 reg  [63:0] fifo_wr_data;
 wire        fifo_full;
 
-// ── FIFO async clear ─────────────────────────────────────────────────
+// -- FIFO async clear -------------------------------------------------
 reg [3:0] fifo_aclr_cnt;
 wire fifo_aclr_ddr_active = (fifo_aclr_cnt != 4'd0);
 wire fifo_aclr = reset | fifo_aclr_ddr_active;
 
-// ── Main state machine ───────────────────────────────────────────────
+// -- Main state machine -----------------------------------------------
 always @(posedge ddr_clk) begin
     if (reset) begin
         state              <= ST_IDLE;
@@ -255,7 +255,7 @@ always @(posedge ddr_clk) begin
             timeout_cnt  <= 20'd0;
         end
 
-        // ── Cart byte collection (runs in parallel) ──────────────
+        // -- Cart byte collection (runs in parallel) --------------
         cart_dl_prev <= ioctl_download;
 
         // Download start
@@ -291,7 +291,7 @@ always @(posedge ddr_clk) begin
             end
         end
 
-        // Download end — flush partial + write size
+        // Download end -- flush partial + write size
         if (!ioctl_download && cart_dl_prev && cart_loading) begin
             cart_loading <= 1'b0;
             cart_size_pending <= 1'b1;
@@ -307,7 +307,7 @@ always @(posedge ddr_clk) begin
             ST_IDLE: begin
                 if (ioctl_download) begin
                     // During cart file transfer, only handle cart writes.
-                    // Video reading is paused — display holds the last frame.
+                    // Video reading is paused -- display holds the last frame.
                     // This prevents DDR3 contention between cart writes and video reads.
                     if (cart_write_pending)
                         state <= ST_WRITE_CART;
@@ -390,7 +390,7 @@ always @(posedge ddr_clk) begin
 
             ST_CHECK_CTRL: begin
                 if (!synced) begin
-                    // First read after reset — capture stale DDR3 counter
+                    // First read after reset -- capture stale DDR3 counter
                     // without displaying anything. Prevents showing old game
                     // data that persists in DDR3 across reboots.
                     prev_frame_counter <= ctrl_word[31:2];
@@ -409,7 +409,7 @@ always @(posedge ddr_clk) begin
                     state              <= ST_READ_LINE;
                 end
                 else if (first_frame_loaded) begin
-                    // Stale frame — re-read previous buffer
+                    // Stale frame -- re-read previous buffer
                     if (stale_vblank_count < 5'd30)
                         stale_vblank_count <= stale_vblank_count + 5'd1;
                     if (stale_vblank_count >= 5'd29)
@@ -426,8 +426,8 @@ always @(posedge ddr_clk) begin
             ST_READ_LINE: begin
                 if (!ddr_busy && !fifo_aclr_ddr_active) begin
                     // source_line = display_line[8:1] gives vertical doubling:
-                    // display lines 0,1 → source line 0
-                    // display lines 2,3 → source line 1, etc.
+                    // display lines 0,1 -> source line 0
+                    // display lines 2,3 -> source line 1, etc.
                     ddr_addr     <= buf_base_addr + ({22'd0, source_line} * LINE_STRIDE);
                     ddr_burstcnt <= LINE_BURST;
                     ddr_rd       <= 1'b1;
@@ -473,9 +473,9 @@ always @(posedge ddr_clk) begin
     end
 end
 
-// ── Dual-Clock FIFO ──────────────────────────────────────────────────
+// -- Dual-Clock FIFO --------------------------------------------------
 // 64-bit wide, stores raw DDR3 beats (4 RGB565 pixels per entry)
-// Depth 64: holds 2 scanlines (32 beats/line × 2)
+// Depth 64: holds 2 scanlines (32 beats/line x 2)
 wire [63:0] fifo_rd_data;
 wire        fifo_empty;
 reg         fifo_rd;
@@ -509,14 +509,14 @@ dcfifo #(
     .wrusedw  ()
 );
 
-// ── Pixel Output with 2× Horizontal Doubling ─────────────────────────
+// -- Pixel Output with 2x Horizontal Doubling -------------------------
 //
 // Each 64-bit FIFO word = 4 source pixels (RGB565).
-// With 2× horizontal doubling, each source pixel outputs twice,
+// With 2x horizontal doubling, each source pixel outputs twice,
 // so each word produces 8 display pixels.
 //
 // pixel_sub[1:0] selects which of the 4 source pixels (0..3)
-// pixel_phase toggles 0→1 between first/second copy of each pixel
+// pixel_phase toggles 0->1 between first/second copy of each pixel
 //
 reg  [63:0] pixel_word;
 reg  [1:0]  pixel_sub;
@@ -552,15 +552,15 @@ always @(posedge clk_vid) begin
                     b_out <= dec_b;
 
                     if (pixel_phase == 1'b0) begin
-                        // First copy done — output same pixel again next cycle
+                        // First copy done -- output same pixel again next cycle
                         pixel_phase <= 1'b1;
                     end
                     else begin
-                        // Second copy done — advance to next source pixel
+                        // Second copy done -- advance to next source pixel
                         pixel_phase <= 1'b0;
 
                         if (pixel_sub == 2'd3) begin
-                            // Word exhausted — load next from FIFO
+                            // Word exhausted -- load next from FIFO
                             pixel_word_valid <= 1'b0;
                             if (!fifo_empty) begin
                                 pixel_word       <= fifo_rd_data;
