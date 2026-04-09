@@ -26,7 +26,7 @@ Extract the release zip to the root of your MiSTer SD card (`/media/fat/`). The 
 ```
 /media/fat/
 ├── _Console/
-│   └── PICO-8_20260406.rbf                FPGA core
+│   └── PICO-8_YYYYMMDD.rbf                FPGA core (dated build)
 ├── config/
 │   └── inputs/
 │       └── PICO-8_input_045e_0b12_v3.map   Xbox controller map (analog stick)
@@ -36,9 +36,11 @@ Extract the release zip to the root of your MiSTer SD card (`/media/fat/`). The 
 ├── games/
 │   └── PICO-8/
 │       ├── PICO-8                          ARM binary (emulator)
+│       ├── pico8_daemon.sh                 Auto-launch daemon
 │       ├── boot.rom                        BIOS
-│       ├── Carts/                          Place your .p8 and .p8.png carts here
-│       └── Saves/                          Game saves (created automatically)
+│       └── Carts/                          Place your .p8 and .p8.png carts here
+├── saves/
+│   └── PICO-8/                             Game saves (created automatically)
 └── Scripts/
     └── Install_PICO-8.sh                   Install script
 ```
