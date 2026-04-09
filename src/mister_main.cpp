@@ -641,19 +641,20 @@ int main(int argc, char **argv)
         // -- Input: read joystick from DDR3 (FPGA writes hps_io data) --
         // Main_MiSTer has exclusive access to /dev/input/js*, so we read
         // joystick state directly from DDR3 where the FPGA puts it.
+        // CONF_STR: "J1,O,X,Select,Pause;" / "jn,A,X,Select,Start;"
+        // joystick_0 bits: 0=R 1=L 2=D 3=U 4=O(A) 5=X(X) 6=Select 7=Pause(Start)
         if (have_native_video) {
             uint32_t joy = NativeVideoWriter_ReadJoystick();
-            // MiSTer joystick_0 bits: 0=R 1=L 2=D 3=U 4=A 5=B 6=X 7=Y 10=Sel 11=Start
             g_vm->button(0, 0, (joy >> 1) & 1);  // Left
             g_vm->button(0, 1, (joy >> 0) & 1);  // Right
             g_vm->button(0, 2, (joy >> 3) & 1);  // Up
             g_vm->button(0, 3, (joy >> 2) & 1);  // Down
-            g_vm->button(0, 4, (joy >> 4) & 1);  // O (A button)
-            g_vm->button(0, 5, (joy >> 6) & 1);  // X (X button)
-            g_vm->button(0, 6, (joy >> 11) & 1); // Pause (Start)
+            g_vm->button(0, 4, (joy >> 4) & 1);  // O (Xbox A)
+            g_vm->button(0, 5, (joy >> 5) & 1);  // X (Xbox X)
+            g_vm->button(0, 6, (joy >> 7) & 1);  // Pause (Xbox Start)
 
-            // Back/Select = quit
-            if ((joy >> 10) & 1) {
+            // Select = quit to browser
+            if ((joy >> 6) & 1) {
                 game_running = false;
             }
         }
