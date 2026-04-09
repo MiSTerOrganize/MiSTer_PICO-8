@@ -617,6 +617,10 @@ int main(int argc, char **argv)
 
         bool game_running = true;
         bool hot_swap_pending = false;
+        bool event_debug_printed = false;
+        bool poll_debug_printed = false;
+        fprintf(stderr, "Input: g_sdl_joystick=%s, g_joystick_connected=%d\n",
+                g_sdl_joystick ? "VALID" : "NULL", g_joystick_connected);
         while (g_running && game_running)
     {
         uint64_t now = get_time_ns();
@@ -642,8 +646,15 @@ int main(int argc, char **argv)
         // SDL reads /dev/input/js0 directly. Works alongside Main_MiSTer
         // because Linux allows multiple readers on joystick devices.
         // Process events for quit/back detection
+        // Force SDL to update joystick state
+        SDL_JoystickUpdate();
+
         SDL_Event ev;
         while (SDL_PollEvent(&ev)) {
+            if (!event_debug_printed && (ev.type == SDL_JOYBUTTONDOWN || ev.type == SDL_JOYHATMOTION || ev.type == SDL_JOYAXISMOTION)) {
+                fprintf(stderr, "Input: first joystick event received, type=%d\n", ev.type);
+                event_debug_printed = true;
+            }
             if (ev.type == SDL_QUIT) g_running = false;
             if (ev.type == SDL_JOYBUTTONDOWN) {
                 if (ev.jbutton.button == 0) g_vm->button(0, 4, 1);      // A -> O
@@ -695,6 +706,11 @@ int main(int argc, char **argv)
             if (ax >  8000) dir_right = 1;
             if (ay < -8000) dir_up    = 1;
             if (ay >  8000) dir_down  = 1;
+
+            if (!poll_debug_printed && (hat != 0 || ax < -8000 || ax > 8000 || ay < -8000 || ay > 8000)) {
+                fprintf(stderr, "Input: hat=%d ax=%d ay=%d\n", hat, ax, ay);
+                poll_debug_printed = true;
+            }
         }
 
         g_vm->button(0, 0, dir_left);
