@@ -42,17 +42,6 @@ void NativeVideoWriter_WriteFrame(const void* rgba8_pixels, int width, int heigh
 /// True if the DDR3 writer has been initialized and is ready for frames.
 bool NativeVideoWriter_IsActive(void);
 
-/// Read the joystick state from DDR3 (written by FPGA from hps_io).
-/// Returns joystick_0 bitmask: bit0=right, bit1=left, bit2=down, bit3=up,
-/// bit4=O, bit5=X, bit6=Pause (matching CONF_STR "J1,O,X,Pause").
-/// Returns 0 if native video is not active.
-uint32_t NativeVideoWriter_ReadJoystick(void);
-
-/// Read the analog stick data from DDR3 (written by FPGA from hps_io).
-/// Returns raw 16-bit value: [15:8]=Y signed, [7:0]=X signed, range -127..+127.
-/// Returns 0 if native video is not active.
-uint16_t NativeVideoWriter_ReadAnalog(void);
-
 /// Check if a new cart has been loaded via OSD file browser.
 /// Returns file size in bytes if a new cart is available, 0 otherwise.
 uint32_t NativeVideoWriter_CheckCart(void);

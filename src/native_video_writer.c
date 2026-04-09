@@ -30,8 +30,6 @@
 #define NV_CTRL_OFFSET      0x00000000u
 #define NV_BUF0_OFFSET      0x00000100u
 #define NV_BUF1_OFFSET      0x00008100u
-#define NV_JOY_OFFSET       0x00000008u
-#define NV_JOY_ANALOG_OFFSET 0x0000000Cu
 #define NV_CART_CTRL_OFFSET  0x00000010u
 #define NV_CART_DATA_OFFSET  0x00020000u
 #define NV_CART_MAX_SIZE     0x00040000u  /* 256KB max cart size */
@@ -119,18 +117,6 @@ void NativeVideoWriter_WriteFrame(const void* rgba8_pixels, int width, int heigh
 
 bool NativeVideoWriter_IsActive(void) {
     return ddr_base != NULL;
-}
-
-uint32_t NativeVideoWriter_ReadJoystick(void) {
-    if (!ddr_base) return 0;
-    volatile uint32_t *joy = (volatile uint32_t *)(ddr_base + NV_JOY_OFFSET);
-    return *joy;
-}
-
-uint16_t NativeVideoWriter_ReadAnalog(void) {
-    if (!ddr_base) return 0;
-    volatile uint32_t *analog = (volatile uint32_t *)(ddr_base + NV_JOY_ANALOG_OFFSET);
-    return (uint16_t)(*analog & 0xFFFF);
 }
 
 uint32_t NativeVideoWriter_CheckCart(void) {
