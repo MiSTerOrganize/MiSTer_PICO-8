@@ -195,9 +195,7 @@ std::string vm::get_path_cstore(std::string cart_name)
     }
 
 #if defined(__MISTER__)
-    std::string base_dir = lol::sys::getenv("ZEPTO8_BASE_DIR");
-    if (base_dir.empty()) base_dir = ".";
-    std::string file_path = base_dir + "/Saves/";
+    std::string file_path = "/media/fat/saves/PICO-8/";
 #elif __NX__
     std::string file_path = "save:/";
 #else
@@ -224,9 +222,7 @@ std::string vm::get_path_save(std::string cart_name)
         save_directory_name = save_directory_name + "_" + std::to_string(m_save_slot);
     }
 #if defined(__MISTER__)
-    std::string base_dir = lol::sys::getenv("ZEPTO8_BASE_DIR");
-    if (base_dir.empty()) base_dir = ".";
-    std::string file_path = base_dir + "/Saves/";
+    std::string file_path = "/media/fat/saves/PICO-8/";
 #elif __NX__
     std::string file_path = "save:/";
 #else

@@ -27,7 +27,7 @@ echo "Downloading PICO-8..."
 
 mkdir -p /media/fat/_Console
 mkdir -p /media/fat/games/PICO-8/Carts
-mkdir -p /media/fat/games/PICO-8/Saves
+mkdir -p /media/fat/saves/PICO-8
 mkdir -p /media/fat/config/inputs
 mkdir -p /media/fat/docs/PICO-8
 
@@ -68,6 +68,18 @@ chmod +x /media/fat/games/PICO-8/pico8_daemon.sh
 
 # Remove old binary location if it exists
 rm -rf /media/fat/PICO-8
+
+# ── Migrate saves from old location ─────────────────────────────
+OLD_SAVES="/media/fat/games/PICO-8/Saves"
+NEW_SAVES="/media/fat/saves/PICO-8"
+if [ -d "$OLD_SAVES" ]; then
+    if [ "$(ls -A "$OLD_SAVES" 2>/dev/null)" ]; then
+        echo "Migrating saves to $NEW_SAVES..."
+        cp -n "$OLD_SAVES"/* "$NEW_SAVES"/ 2>/dev/null
+    fi
+    rm -rf "$OLD_SAVES"
+    echo "Removed old Saves folder from games/PICO-8/."
+fi
 
 # ── Install daemon into user-startup.sh ───────────────────────────
 STARTUP=/media/fat/linux/user-startup.sh
