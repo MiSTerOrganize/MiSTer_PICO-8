@@ -55,6 +55,11 @@ uint32_t NativeVideoWriter_ReadCart(void* buf, uint32_t max_size);
 /// Clear the cart control word so the FPGA knows the ARM has read the cart.
 void NativeVideoWriter_AckCart(void);
 
+/// Read joystick state from DDR3 (written by FPGA from hps_io).
+/// Returns MiSTer joystick_0 bitmask: bit0=R, bit1=L, bit2=D, bit3=U,
+/// bit4=A, bit5=B, bit6=X, bit7=Y, bit10=Select, bit11=Start
+uint32_t NativeVideoWriter_ReadJoystick(void);
+
 #ifdef __cplusplus
 }
 #endif
