@@ -487,7 +487,6 @@ int main(int argc, char **argv)
 
     // ── Init native video DDR3 writer (for FPGA native output) ────────
     // Only when -nativevideo flag is passed (requires PICO-8 FPGA core loaded).
-    // Without the flag, video always goes through SDL fbcon as before.
     bool have_native_video = false;
     if (enable_native_video) {
         have_native_video = NativeVideoWriter_Init();
@@ -506,25 +505,7 @@ int main(int argc, char **argv)
 
     std::string carts_dir = data_dir + "Carts";
 
-    // Check if a hot-swap cart was queued by a previous instance
     fprintf(stderr, "=== Process started, PID=%d ===\n", getpid());
-    {
-        FILE *nf = fopen("/tmp/pico8_next_cart.txt", "r");
-        if (nf) {
-            char buf[512] = {};
-            if (fgets(buf, sizeof(buf), nf)) {
-                // Remove trailing newline if any
-                char *nl = strchr(buf, '\n');
-                if (nl) *nl = '\0';
-                if (buf[0]) {
-                    cart_path = std::string(buf);
-                    fprintf(stderr, "Hot-swap resume: loading %s (PID=%d)\n", buf, getpid());
-                }
-            }
-            fclose(nf);
-            remove("/tmp/pico8_next_cart.txt");
-        }
-    }
 
     while (g_running)
     {
@@ -635,6 +616,7 @@ int main(int argc, char **argv)
         uint64_t next_frame = get_time_ns();
 
         bool game_running = true;
+        bool hot_swap_pending = false;
         while (g_running && game_running)
     {
         uint64_t now = get_time_ns();
@@ -656,30 +638,17 @@ int main(int argc, char **argv)
         if (actual > next_frame + frame_ns * 2)
             next_frame = actual;
 
-        // ── Input ────────────────────────────────────────────────────
-        if (have_native_video) {
-            // Read joystick from DDR3 — FPGA writes hps_io joystick_0 here.
-            // Uses MiSTer's standard button mapping (configured via OSD).
-            // Bit layout: 0=right, 1=left, 2=down, 3=up, 4=O, 5=X, 6=Pause
-            uint32_t joy = NativeVideoWriter_ReadJoystick();
-
-            g_vm->button(0, 0, (joy >> 1) & 1);  // bit 1 = left  → PICO-8 btn 0
-            g_vm->button(0, 1, (joy >> 0) & 1);  // bit 0 = right → PICO-8 btn 1
-            g_vm->button(0, 2, (joy >> 3) & 1);  // bit 3 = up    → PICO-8 btn 2
-            g_vm->button(0, 3, (joy >> 2) & 1);  // bit 2 = down  → PICO-8 btn 3
-            g_vm->button(0, 4, (joy >> 4) & 1);  // bit 4 = O     → PICO-8 btn 4 (Xbox A)
-            g_vm->button(0, 5, (joy >> 5) & 1);  // bit 5 = X     → PICO-8 btn 5 (Xbox B)
-            g_vm->button(0, 6, (joy >> 7) & 1);  // bit 7 = Pause → PICO-8 btn 6 (Xbox Start)
-        } else {
-            // SDL input path (normal fbcon mode)
-            SDL_Event ev;
-            while (SDL_PollEvent(&ev)) {
+        // -- Input (SDL state polling -- same approach as 3SX shared memory) --
+        // SDL reads /dev/input/js0 directly. Works alongside Main_MiSTer
+        // because Linux allows multiple readers on joystick devices.
+        // Process events for quit/back detection
+        SDL_Event ev;
+        while (SDL_PollEvent(&ev)) {
             if (ev.type == SDL_QUIT) g_running = false;
-            // Button PRESSES via SDL joystick events
             if (ev.type == SDL_JOYBUTTONDOWN) {
-                if (ev.jbutton.button == 0) g_vm->button(0, 4, 1);      // A → O
-                else if (ev.jbutton.button == 2) g_vm->button(0, 5, 1); // X → X
-                else if (ev.jbutton.button == 7) g_vm->button(0, 6, 1); // Start → Pause
+                if (ev.jbutton.button == 0) g_vm->button(0, 4, 1);      // A -> O
+                else if (ev.jbutton.button == 2) g_vm->button(0, 5, 1); // X -> X
+                else if (ev.jbutton.button == 7) g_vm->button(0, 6, 1); // Start -> Pause
                 else if (ev.jbutton.button == 6 || ev.jbutton.button == 8) g_running = false; // Back/Guide
             }
             if (ev.type == SDL_JOYBUTTONUP) {
@@ -687,7 +656,6 @@ int main(int argc, char **argv)
                 else if (ev.jbutton.button == 2) g_vm->button(0, 5, 0);
                 else if (ev.jbutton.button == 7) g_vm->button(0, 6, 0);
             }
-            // Keyboard buttons (only without gamepad)
             if (!g_joystick_connected) {
                 if (ev.type == SDL_KEYDOWN) {
                     SDLKey key = ev.key.keysym.sym;
@@ -705,18 +673,15 @@ int main(int argc, char **argv)
             }
         }
 
-        // DIRECTIONS: poll held state every frame (not events)
-        // This is how FAKE-08 does it — gives continuous hold with zero latency
+        // Directions: poll held state every frame (not events)
         int dir_left = 0, dir_right = 0, dir_up = 0, dir_down = 0;
 
-        // Keyboard arrow state (d-pad comes as keyboard arrows on MiSTer)
         const Uint8 *keystate = SDL_GetKeyState(NULL);
         if (keystate[SDLK_LEFT])  dir_left  = 1;
         if (keystate[SDLK_RIGHT]) dir_right = 1;
         if (keystate[SDLK_UP])    dir_up    = 1;
         if (keystate[SDLK_DOWN])  dir_down  = 1;
 
-        // Joystick hat (d-pad)
         if (g_sdl_joystick) {
             Uint8 hat = SDL_JoystickGetHat(g_sdl_joystick, 0);
             if (hat & SDL_HAT_LEFT)  dir_left  = 1;
@@ -724,7 +689,6 @@ int main(int argc, char **argv)
             if (hat & SDL_HAT_UP)    dir_up    = 1;
             if (hat & SDL_HAT_DOWN)  dir_down  = 1;
 
-            // Analog stick
             Sint16 ax = SDL_JoystickGetAxis(g_sdl_joystick, 0);
             Sint16 ay = SDL_JoystickGetAxis(g_sdl_joystick, 1);
             if (ax < -8000) dir_left  = 1;
@@ -737,19 +701,18 @@ int main(int argc, char **argv)
         g_vm->button(0, 1, dir_right);
         g_vm->button(0, 2, dir_up);
         g_vm->button(0, 3, dir_down);
-        } // end SDL input path
 
         // Check if VM requested exit or user pressed Back — return to browser
         if (!g_vm->is_running() || g_return_to_browser)
             game_running = false;
 
         // Check for new cart loaded via OSD during gameplay (hot-swap)
-        // Save cart to temp file, write path to next_cart.txt, exit.
-        // Daemon detects dead process and restarts with fresh state.
+        // In-process swap: save cart, stop game loop, let outer loop reload.
+        // No process restart needed — VM resets in-place.
         if (have_native_video && game_running) {
             uint32_t new_cart_size = NativeVideoWriter_CheckCart();
             if (new_cart_size > 0) {
-                fprintf(stderr, "Hot-swap: new cart detected (%u bytes), PID=%d\n", new_cart_size, getpid());
+                fprintf(stderr, "Hot-swap: new cart detected (%u bytes)\n", new_cart_size);
                 uint8_t *cart_buf = (uint8_t *)malloc(new_cart_size);
                 if (cart_buf) {
                     uint32_t actual = NativeVideoWriter_ReadCart(cart_buf, new_cart_size);
@@ -767,39 +730,17 @@ int main(int argc, char **argv)
                     if (f) {
                         fwrite(cart_buf, 1, actual, f);
                         fclose(f);
-
-                        // Write cart path for the next process to pick up
-                        FILE *nf = fopen("/tmp/pico8_next_cart.txt", "w");
-                        if (nf) {
-                            fputs(tmp_path, nf);
-                            fclose(nf);
-                        }
+                        // Set new cart path — outer loop will reload
+                        cart_path = std::string(tmp_path);
+                        fprintf(stderr, "Hot-swap: saved cart to %s, reloading in-place\n", tmp_path);
                     }
                     free(cart_buf);
                 } else {
                     NativeVideoWriter_AckCart();
                 }
-
-                // Clean shutdown, then exit. The daemon detects the dead
-                // process and restarts us. next_cart.txt tells the new
-                // process which cart to load.
-                if (audio_started) {
-                    g_audio_running = false;
-                    if (g_pcm && p_snd_pcm_drop)
-                        p_snd_pcm_drop(g_pcm);
-                    pthread_join(g_audio_thread, nullptr);
-                }
-                if (g_pcm) {
-                    int16_t silence[AUDIO_BUF_SAMPLES];
-                    memset(silence, 0, sizeof(silence));
-                    p_snd_pcm_prepare(g_pcm);
-                    p_snd_pcm_writei(g_pcm, silence, AUDIO_BUF_SAMPLES);
-                    p_snd_pcm_close(g_pcm);
-                    g_pcm = nullptr;
-                }
-                g_vm.reset();  // flushes cartdata saves to disk
-                fprintf(stderr, "Hot-swap: exiting for daemon restart (PID=%d).\n", getpid());
-                _exit(0);
+                // Break inner game loop — cleanup code below handles audio/VM
+                game_running = false;
+                hot_swap_pending = true;
             }
         }
 
@@ -832,10 +773,15 @@ int main(int argc, char **argv)
             audio_started = false;
         }
         g_vm.reset();
-
-        // Reset flags for next game
-        cart_path.clear();
         g_return_to_browser = false;
+
+        // Hot-swap: cart_path already set to new cart, outer loop reloads it.
+        // Normal exit: clear cart_path so outer loop shows browser.
+        if (!hot_swap_pending) {
+            cart_path.clear();
+        } else {
+            fprintf(stderr, "Hot-swap: reloading %s\n", cart_path.c_str());
+        }
 
         // Clear screen before returning to browser
         if (screen) {

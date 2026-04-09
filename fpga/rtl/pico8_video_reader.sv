@@ -48,10 +48,6 @@ module pico8_video_reader (
     input  wire        new_line,
     input  wire  [8:0] vcount,
 
-    // Joystick input (from hps_io, clk_sys domain = ddr_clk domain)
-    input  wire [31:0] joystick_0,
-    input  wire [15:0] joystick_l_analog_0,
-
     // Cart loading via ioctl (from hps_io)
     input  wire        ioctl_download,
     input  wire        ioctl_wr,
@@ -75,7 +71,6 @@ assign ddr_be  = 8'hFF;
 // -- DDR3 Address Constants --------------------------------------------
 // 29-bit qword addresses = physical >> 3
 localparam [28:0] CTRL_ADDR   = 29'h07400000;  // 0x3A000000 >> 3
-localparam [28:0] JOY_ADDR    = 29'h07400001;  // 0x3A000008 >> 3 (joystick data)
 localparam [28:0] BUF0_ADDR   = 29'h07400020;  // 0x3A000100 >> 3
 localparam [28:0] BUF1_ADDR   = 29'h07401020;  // 0x3A008100 >> 3
 localparam [7:0]  LINE_BURST  = 8'd32;         // 128px * 2B / 8 = 32 beats
@@ -157,7 +152,6 @@ localparam [3:0] ST_READ_LINE    = 4'd4;
 localparam [3:0] ST_WAIT_LINE    = 4'd5;
 localparam [3:0] ST_LINE_DONE    = 4'd6;
 localparam [3:0] ST_WAIT_DISPLAY = 4'd7;
-localparam [3:0] ST_WRITE_JOY   = 4'd8;
 localparam [3:0] ST_WRITE_CART  = 4'd9;
 localparam [3:0] ST_WRITE_CART_SIZE = 4'd10;
 
@@ -308,24 +302,14 @@ always @(posedge ddr_clk) begin
                 // Frame reads always get priority -- video must never be starved.
                 // Cart writes happen between frame reads.
                 // new_frame_pending is latched so it can't be missed.
-                if (enable_ddr && new_frame_pending)
-                    state <= ST_WRITE_JOY;
+                if (enable_ddr && new_frame_pending) begin
+                    new_frame_pending <= 1'b0;  // consumed
+                    state <= ST_POLL_CTRL;
+                end
                 else if (cart_write_pending)
                     state <= ST_WRITE_CART;
                 else if (cart_size_pending)
                     state <= ST_WRITE_CART_SIZE;
-            end
-
-            ST_WRITE_JOY: begin
-                // Write joystick_0 to DDR3 so ARM can read it
-                if (!ddr_busy) begin
-                    ddr_addr     <= JOY_ADDR;
-                    ddr_din      <= {32'd0, joystick_0};
-                    ddr_burstcnt <= 8'd1;
-                    ddr_we       <= 1'b1;
-                    new_frame_pending <= 1'b0;  // consumed
-                    state        <= ST_POLL_CTRL;
-                end
             end
 
             ST_WRITE_CART: begin
