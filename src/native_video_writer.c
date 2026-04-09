@@ -28,6 +28,7 @@
 #define NV_DDR_PHYS_BASE    0x3A000000u
 #define NV_DDR_REGION_SIZE  0x00060000u   /* 384KB covers buffers + control + cart data */
 #define NV_CTRL_OFFSET      0x00000000u
+#define NV_JOY_OFFSET       0x00000008u  /* joystick_0 from FPGA (physical 0x3A000008) */
 #define NV_BUF0_OFFSET      0x00000100u
 #define NV_BUF1_OFFSET      0x00008100u
 #define NV_CART_CTRL_OFFSET  0x00000010u
@@ -142,4 +143,10 @@ void NativeVideoWriter_AckCart(void) {
     if (!ddr_base) return;
     volatile uint32_t *ctrl = (volatile uint32_t *)(ddr_base + NV_CART_CTRL_OFFSET);
     *ctrl = 0;
+}
+
+uint32_t NativeVideoWriter_ReadJoystick(void) {
+    if (!ddr_base) return 0;
+    volatile uint32_t *joy = (volatile uint32_t *)(ddr_base + NV_JOY_OFFSET);
+    return *joy;
 }

@@ -617,10 +617,6 @@ int main(int argc, char **argv)
 
         bool game_running = true;
         bool hot_swap_pending = false;
-        bool event_debug_printed = false;
-        bool poll_debug_printed = false;
-        fprintf(stderr, "Input: g_sdl_joystick=%s, g_joystick_connected=%d\n",
-                g_sdl_joystick ? "VALID" : "NULL", g_joystick_connected);
         while (g_running && game_running)
     {
         uint64_t now = get_time_ns();
@@ -642,81 +638,25 @@ int main(int argc, char **argv)
         if (actual > next_frame + frame_ns * 2)
             next_frame = actual;
 
-        // -- Input (SDL state polling -- same approach as 3SX shared memory) --
-        // SDL reads /dev/input/js0 directly. Works alongside Main_MiSTer
-        // because Linux allows multiple readers on joystick devices.
-        // Process events for quit/back detection
-        // Force SDL to update joystick state
-        SDL_JoystickUpdate();
+        // -- Input: read joystick from DDR3 (FPGA writes hps_io data) --
+        // Main_MiSTer has exclusive access to /dev/input/js*, so we read
+        // joystick state directly from DDR3 where the FPGA puts it.
+        if (have_native_video) {
+            uint32_t joy = NativeVideoWriter_ReadJoystick();
+            // MiSTer joystick_0 bits: 0=R 1=L 2=D 3=U 4=A 5=B 6=X 7=Y 10=Sel 11=Start
+            g_vm->button(0, 0, (joy >> 1) & 1);  // Left
+            g_vm->button(0, 1, (joy >> 0) & 1);  // Right
+            g_vm->button(0, 2, (joy >> 3) & 1);  // Up
+            g_vm->button(0, 3, (joy >> 2) & 1);  // Down
+            g_vm->button(0, 4, (joy >> 4) & 1);  // O (A button)
+            g_vm->button(0, 5, (joy >> 6) & 1);  // X (X button)
+            g_vm->button(0, 6, (joy >> 11) & 1); // Pause (Start)
 
-        SDL_Event ev;
-        while (SDL_PollEvent(&ev)) {
-            if (!event_debug_printed && (ev.type == SDL_JOYBUTTONDOWN || ev.type == SDL_JOYHATMOTION || ev.type == SDL_JOYAXISMOTION)) {
-                fprintf(stderr, "Input: first joystick event received, type=%d\n", ev.type);
-                event_debug_printed = true;
-            }
-            if (ev.type == SDL_QUIT) g_running = false;
-            if (ev.type == SDL_JOYBUTTONDOWN) {
-                if (ev.jbutton.button == 0) g_vm->button(0, 4, 1);      // A -> O
-                else if (ev.jbutton.button == 2) g_vm->button(0, 5, 1); // X -> X
-                else if (ev.jbutton.button == 7) g_vm->button(0, 6, 1); // Start -> Pause
-                else if (ev.jbutton.button == 6 || ev.jbutton.button == 8) g_running = false; // Back/Guide
-            }
-            if (ev.type == SDL_JOYBUTTONUP) {
-                if (ev.jbutton.button == 0) g_vm->button(0, 4, 0);
-                else if (ev.jbutton.button == 2) g_vm->button(0, 5, 0);
-                else if (ev.jbutton.button == 7) g_vm->button(0, 6, 0);
-            }
-            if (!g_joystick_connected) {
-                if (ev.type == SDL_KEYDOWN) {
-                    SDLKey key = ev.key.keysym.sym;
-                    if (key == SDLK_z || key == SDLK_SPACE)       g_vm->button(0, 4, 1);
-                    else if (key == SDLK_x || key == SDLK_LALT)   g_vm->button(0, 5, 1);
-                    else if (key == SDLK_RETURN)                   g_vm->button(0, 6, 1);
-                    else if (key == SDLK_ESCAPE || key == SDLK_F12) g_running = false;
-                }
-                if (ev.type == SDL_KEYUP) {
-                    SDLKey key = ev.key.keysym.sym;
-                    if (key == SDLK_z || key == SDLK_SPACE)       g_vm->button(0, 4, 0);
-                    else if (key == SDLK_x || key == SDLK_LALT)   g_vm->button(0, 5, 0);
-                    else if (key == SDLK_RETURN)                   g_vm->button(0, 6, 0);
-                }
+            // Back/Select = quit
+            if ((joy >> 10) & 1) {
+                game_running = false;
             }
         }
-
-        // Directions: poll held state every frame (not events)
-        int dir_left = 0, dir_right = 0, dir_up = 0, dir_down = 0;
-
-        const Uint8 *keystate = SDL_GetKeyState(NULL);
-        if (keystate[SDLK_LEFT])  dir_left  = 1;
-        if (keystate[SDLK_RIGHT]) dir_right = 1;
-        if (keystate[SDLK_UP])    dir_up    = 1;
-        if (keystate[SDLK_DOWN])  dir_down  = 1;
-
-        if (g_sdl_joystick) {
-            Uint8 hat = SDL_JoystickGetHat(g_sdl_joystick, 0);
-            if (hat & SDL_HAT_LEFT)  dir_left  = 1;
-            if (hat & SDL_HAT_RIGHT) dir_right = 1;
-            if (hat & SDL_HAT_UP)    dir_up    = 1;
-            if (hat & SDL_HAT_DOWN)  dir_down  = 1;
-
-            Sint16 ax = SDL_JoystickGetAxis(g_sdl_joystick, 0);
-            Sint16 ay = SDL_JoystickGetAxis(g_sdl_joystick, 1);
-            if (ax < -8000) dir_left  = 1;
-            if (ax >  8000) dir_right = 1;
-            if (ay < -8000) dir_up    = 1;
-            if (ay >  8000) dir_down  = 1;
-
-            if (!poll_debug_printed && (hat != 0 || ax < -8000 || ax > 8000 || ay < -8000 || ay > 8000)) {
-                fprintf(stderr, "Input: hat=%d ax=%d ay=%d\n", hat, ax, ay);
-                poll_debug_printed = true;
-            }
-        }
-
-        g_vm->button(0, 0, dir_left);
-        g_vm->button(0, 1, dir_right);
-        g_vm->button(0, 2, dir_up);
-        g_vm->button(0, 3, dir_down);
 
         // Check if VM requested exit or user pressed Back — return to browser
         if (!g_vm->is_running() || g_return_to_browser)
