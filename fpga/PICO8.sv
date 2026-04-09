@@ -279,7 +279,7 @@ pll pll
 assign CLK_VIDEO = clk_pix;
 
 // --- Native video control ---
-wire NATIVE_VID = 1'b1;  // Always on — this core exists for native video
+wire NATIVE_VID = 1'b1;  // Always on -- this core exists for native video
 assign NATIVE_VID_ACTIVE = NATIVE_VID;
 
 
@@ -669,7 +669,7 @@ pico8_video_top native_video
 	.active         (nv_active),
 	.vsync_out      (),
 
-	// Joystick (written to DDR3 for ARM to read)
+	// Joystick (from hps_io, written to DDR3 for ARM)
 	.joystick_0     (joystick_0),
 	.joystick_l_analog_0 (joystick_l_analog_0),
 
