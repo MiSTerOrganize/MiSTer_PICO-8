@@ -63,6 +63,7 @@ After copying the files, run **Install_PICO-8** from the Scripts menu once to se
 | A | O (confirm/jump) |
 | X | X (shoot/action) |
 | Start | Pause |
+| Select | Quit |
 | Xbox button | MiSTer OSD menu |
 
 ## Architecture
