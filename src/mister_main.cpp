@@ -600,6 +600,11 @@ int main(int argc, char **argv)
             g_vm->button(0, 2, (joy >> 3) & 1);  // Up
             g_vm->button(0, 3, (joy >> 2) & 1);  // Down
             g_vm->button(0, 4, (joy >> 4) & 1);  // A = confirm (pause) / O (gameplay)
+            static int pause_log_count = 0;
+            if (g_vm->is_paused() && pause_log_count < 3) {
+                fprintf(stderr, "PAUSE DETECTED: suppressing X, redirecting to back\n");
+                pause_log_count++;
+            }
             if (g_vm->is_paused()) {
                 g_vm->button(0, 5, 0);
                 g_vm->button(0, 6, ((joy >> 5) | (joy >> 6)) & 1);  // X or Start = back
