@@ -29,7 +29,6 @@ mkdir -p /media/fat/_Console
 mkdir -p /media/fat/games/PICO-8/Carts
 mkdir -p /media/fat/games/PICO-8/.Logs
 mkdir -p /media/fat/saves/PICO-8
-mkdir -p /media/fat/config/inputs
 mkdir -p /media/fat/docs/PICO-8
 
 FAIL=0
@@ -49,9 +48,6 @@ wget -q --show-progress -O /media/fat/games/PICO-8/boot.rom "$BASE_URL/games/PIC
 
 echo "  Downloading daemon..."
 wget -q --show-progress -O /media/fat/games/PICO-8/pico8_daemon.sh "$BASE_URL/games/PICO-8/pico8_daemon.sh" || FAIL=1
-
-echo "  Downloading controller map..."
-wget -q --show-progress -O /media/fat/config/inputs/PICO-8_input_045e_0b12_v3.map "$BASE_URL/config/inputs/PICO-8_input_045e_0b12_v3.map" || FAIL=1
 
 echo "  Downloading README..."
 wget -q --show-progress -O /media/fat/docs/PICO-8/README.md "$BASE_URL/docs/PICO-8/README.md" || FAIL=1

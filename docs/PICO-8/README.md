@@ -19,7 +19,7 @@ A PICO-8 fantasy console emulator for MiSTer FPGA with native video and audio ou
 3. Place your `.p8` or `.p8.png` carts in `games/PICO-8/Carts/`
 4. Load **PICO-8** from the console menu to play
 
-The install script downloads and installs everything: the FPGA core, ARM binary, BIOS, daemon, and controller mapping.
+The install script downloads and installs everything: the FPGA core, ARM binary, BIOS, and daemon.
 
 ## Manual Install
 
@@ -29,9 +29,6 @@ Extract the release zip to the root of your MiSTer SD card (`/media/fat/`):
 /media/fat/
 ├── _Console/
 │   └── PICO-8_YYYYMMDD.rbf               FPGA core (dated build)
-├── config/
-│   └── inputs/
-│       └── PICO-8_input_045e_0b12_v3.map  Xbox controller map (analog stick)
 ├── docs/
 │   └── PICO-8/
 │       └── README.md                      Documentation
