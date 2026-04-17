@@ -599,10 +599,10 @@ int main(int argc, char **argv)
             g_vm->button(0, 1, (joy >> 0) & 1);  // Right
             g_vm->button(0, 2, (joy >> 3) & 1);  // Up
             g_vm->button(0, 3, (joy >> 2) & 1);  // Down
-            // Same Xbox controller as OpenBOR: A=bit5, B=bit4, X=bit7, Y=bit6, Start=bit8
-            g_vm->button(0, 4, (joy >> 5) & 1);  // O ← Xbox A (bit 5)
-            g_vm->button(0, 5, (joy >> 7) & 1);  // X ← Xbox X (bit 7)
-            g_vm->button(0, 6, (joy >> 8) & 1);  // Pause ← Xbox Start (bit 8)
+            // J1,O,X,Pause; → bit 4=O, bit 5=X, bit 6=Pause
+            g_vm->button(0, 4, (joy >> 4) & 1);  // O ← J1[0] (A button)
+            g_vm->button(0, 5, (joy >> 5) & 1);  // X ← J1[1] (X button)
+            g_vm->button(0, 6, (joy >> 6) & 1);  // Pause ← J1[2] (Start button)
         }
 
         // Check if VM requested exit or user pressed Back — return to browser
