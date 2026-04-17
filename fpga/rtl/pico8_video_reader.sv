@@ -315,10 +315,13 @@ always @(posedge ddr_clk) begin
                 end
             end
             else begin
-                // Buffer empty — output silence and request refill
+                // Buffer empty — output silence. Only request refill
+                // if ARM has started writing (wr_ptr > 0); otherwise
+                // we'd read DDR3 garbage before audio thread launches.
                 audio_l_out <= 16'd0;
                 audio_r_out <= 16'd0;
-                aud_need_refill <= 1'b1;
+                if (aud_wr_ptr != 12'd0)
+                    aud_need_refill <= 1'b1;
             end
         end
         else begin
