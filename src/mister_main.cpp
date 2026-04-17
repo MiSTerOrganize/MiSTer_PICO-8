@@ -18,7 +18,6 @@
 
 #include <time.h>
 #include <unistd.h>
-#include <dlfcn.h>
 #include <pthread.h>
 #include <sched.h>
 #include <linux/joystick.h>
@@ -64,156 +63,90 @@ static uint64_t get_time_ns()
 }
 
 // ══════════════════════════════════════════════════════════════════════
-//  ALSA via dlopen — Direct audio, bypassing SDL
-//  Uses explicit /usr/lib/libasound.so.2 path (proven on MiSTer)
-//  RTLD_NOW for immediate symbol resolution
+//  FPGA Native Audio — DDR3 ring buffer
+//  ARM writes 48KHz stereo PCM to DDR3, FPGA reads at 48KHz.
+//  Same audio path as NES, SNES, Genesis — I2S + SPDIF + DAC.
+//  No ALSA, no Linux kernel, no dlopen.
 // ══════════════════════════════════════════════════════════════════════
 
-typedef void* snd_pcm_t;
-typedef unsigned long snd_pcm_uframes_t;
-
-static void *alsa_lib = nullptr;
-
-static int  (*p_snd_pcm_open)(snd_pcm_t**, const char*, int, int) = nullptr;
-static int  (*p_snd_pcm_set_params)(snd_pcm_t*, int, int, unsigned int,
-                                     unsigned int, int, unsigned int) = nullptr;
-static long (*p_snd_pcm_writei)(snd_pcm_t*, const void*, snd_pcm_uframes_t) = nullptr;
-static int  (*p_snd_pcm_recover)(snd_pcm_t*, int, int) = nullptr;
-static int  (*p_snd_pcm_close)(snd_pcm_t*) = nullptr;
-static int  (*p_snd_pcm_prepare)(snd_pcm_t*) = nullptr;
-static int  (*p_snd_pcm_drop)(snd_pcm_t*) = nullptr;
-static const char* (*p_snd_strerror)(int) = nullptr;
-
-static snd_pcm_t *g_pcm = nullptr;
-
-#define SND_PCM_STREAM_PLAYBACK     0
-#define SND_PCM_FORMAT_S16_LE       2
-#define SND_PCM_ACCESS_RW_INTERLEAVED 3
+static const int SRC_RATE = 22050;   // zepto8 native sample rate
+static const int DST_RATE = 48000;   // FPGA audio output rate
 
 // ── Signal handler ────────────────────────────────────────────────────
-// Must be after ALSA declarations so g_pcm and p_snd_pcm_drop are visible
 static void signal_handler(int sig)
 {
     (void)sig;
     g_running = false;
-    // Immediately silence and close audio hardware so it doesn't keep
-    // playing after the process exits (e.g., when daemon kills us on core switch)
-    if (g_pcm) {
-        if (p_snd_pcm_drop) p_snd_pcm_drop(g_pcm);
-        // Write silence to flush hardware DMA buffer
-        int16_t silence[512];
-        memset(silence, 0, sizeof(silence));
-        if (p_snd_pcm_prepare) p_snd_pcm_prepare(g_pcm);
-        if (p_snd_pcm_writei) p_snd_pcm_writei(g_pcm, silence, 512);
-        if (p_snd_pcm_close) p_snd_pcm_close(g_pcm);
-        g_pcm = nullptr;
-    }
+    // No ALSA cleanup needed — audio goes through DDR3 to FPGA.
+    // When the process dies, the FPGA ring buffer drains to silence.
 }
 
-static bool alsa_init()
-{
-    // Explicit path — proven working on MiSTer Buildroot Linux
-    alsa_lib = dlopen("/usr/lib/libasound.so.2", RTLD_NOW);
-    if (!alsa_lib) {
-        fprintf(stderr, "ALSA: cannot load /usr/lib/libasound.so.2: %s\n", dlerror());
-        return false;
-    }
-
-    p_snd_pcm_open       = (decltype(p_snd_pcm_open))dlsym(alsa_lib, "snd_pcm_open");
-    p_snd_pcm_set_params  = (decltype(p_snd_pcm_set_params))dlsym(alsa_lib, "snd_pcm_set_params");
-    p_snd_pcm_writei     = (decltype(p_snd_pcm_writei))dlsym(alsa_lib, "snd_pcm_writei");
-    p_snd_pcm_recover    = (decltype(p_snd_pcm_recover))dlsym(alsa_lib, "snd_pcm_recover");
-    p_snd_pcm_close      = (decltype(p_snd_pcm_close))dlsym(alsa_lib, "snd_pcm_close");
-    p_snd_pcm_prepare    = (decltype(p_snd_pcm_prepare))dlsym(alsa_lib, "snd_pcm_prepare");
-    p_snd_pcm_drop       = (decltype(p_snd_pcm_drop))dlsym(alsa_lib, "snd_pcm_drop");
-    p_snd_strerror       = (decltype(p_snd_strerror))dlsym(alsa_lib, "snd_strerror");
-
-    if (!p_snd_pcm_open || !p_snd_pcm_set_params || !p_snd_pcm_writei ||
-        !p_snd_pcm_recover || !p_snd_pcm_close || !p_snd_pcm_prepare) {
-        fprintf(stderr, "ALSA: missing symbols\n");
-        dlclose(alsa_lib); alsa_lib = nullptr;
-        return false;
-    }
-
-    fprintf(stderr, "ALSA: loaded /usr/lib/libasound.so.2\n");
-
-    // Try device names in order: default, hw:0,0, plughw:0,0
-    const char *devices[] = { "default", "hw:0,0", "plughw:0,0", nullptr };
-    int err = -1;
-    for (int i = 0; devices[i]; ++i) {
-        err = p_snd_pcm_open(&g_pcm, devices[i], SND_PCM_STREAM_PLAYBACK, 0);
-        if (err == 0) {
-            fprintf(stderr, "ALSA: opened device '%s'\n", devices[i]);
-            break;
-        }
-    }
-    if (err < 0) {
-        fprintf(stderr, "ALSA: cannot open any device\n");
-        return false;
-    }
-
-    // S16_LE, mono, 22050Hz, allow resampling, 100ms latency
-    err = p_snd_pcm_set_params(g_pcm,
-                                SND_PCM_FORMAT_S16_LE,
-                                SND_PCM_ACCESS_RW_INTERLEAVED,
-                                AUDIO_CHANNELS,
-                                AUDIO_RATE,
-                                1,       // allow resampling
-                                100000); // 100ms latency in microseconds
-    if (err < 0) {
-        fprintf(stderr, "ALSA: cannot set params\n");
-        p_snd_pcm_close(g_pcm); g_pcm = nullptr;
-        return false;
-    }
-
-    fprintf(stderr, "ALSA: mono %dHz S16LE ready\n", AUDIO_RATE);
-    return true;
-}
-
-static void alsa_shutdown()
-{
-    if (g_pcm)   { p_snd_pcm_close(g_pcm); g_pcm = nullptr; }
-    if (alsa_lib) { dlclose(alsa_lib); alsa_lib = nullptr; }
-}
-
-// ── Audio thread ─────────────────────────────────────────────────────
-// snd_pcm_writei in blocking mode provides correct pacing at 22050Hz.
-// Do NOT add usleep — it causes audio to play slow due to oversleep.
+// ── Audio thread — DDR3 ring buffer writer ───────────────────────────
+// Renders 22050Hz mono from zepto8, upsamples to 48KHz stereo,
+// writes to DDR3 ring buffer. FPGA reads at 48KHz.
+// No ALSA. No kernel. Same path as every MiSTer core.
 
 static pthread_t g_audio_thread;
 static volatile bool g_audio_running = false;
+
+// Upsample 22050Hz mono → 48000Hz stereo using nearest-neighbor
+// Returns number of stereo output samples written
+static int upsample_mono_to_stereo(const int16_t *mono_in, int in_samples,
+                                    int16_t *stereo_out, int max_out)
+{
+    // Fixed-point step: (22050 << 16) / 48000 = 30146
+    const uint32_t step = (uint32_t)(((uint64_t)SRC_RATE << 16) / DST_RATE);
+    uint32_t accum = 0;
+    int out_count = 0;
+
+    while (out_count < max_out) {
+        uint32_t src_idx = accum >> 16;
+        if (src_idx >= (uint32_t)in_samples) break;
+        int16_t s = mono_in[src_idx];
+        stereo_out[out_count * 2 + 0] = s;  // Left
+        stereo_out[out_count * 2 + 1] = s;  // Right (mono duplicate)
+        out_count++;
+        accum += step;
+    }
+    return out_count;
+}
 
 static void *audio_thread_func(void *arg)
 {
     (void)arg;
 
     // Pin audio thread to CPU core 1 (main thread runs on core 0)
-    // This was a critical fix in the FAKE-08 project — without it,
-    // both threads fight for the same core causing stuttering.
     cpu_set_t cpuset;
     CPU_ZERO(&cpuset);
     CPU_SET(1, &cpuset);
     pthread_setaffinity_np(pthread_self(), sizeof(cpuset), &cpuset);
 
-    int16_t buffer[AUDIO_BUF_SAMPLES];
+    int16_t mono_buf[AUDIO_BUF_SAMPLES];
+    // Max output: 512 * 48000/22050 + 2 ≈ 1117 stereo samples
+    int16_t stereo_buf[2400];
+
+    fprintf(stderr, "Audio: DDR3 ring buffer, %dHz mono → %dHz stereo\n", SRC_RATE, DST_RATE);
 
     while (g_audio_running)
     {
-        // Null checks for quit safety
-        if (!g_vm || !g_pcm) break;
+        if (!g_vm) break;
 
-        // Fill audio buffer from VM
-        g_vm->get_audio(buffer, AUDIO_BUF_SAMPLES * sizeof(int16_t));
+        // Render mono audio from zepto8 at 22050Hz
+        g_vm->get_audio(mono_buf, AUDIO_BUF_SAMPLES * sizeof(int16_t));
 
-        // Write to ALSA — snd_pcm_writei blocks until ALSA accepts the samples.
-        // ALSA's internal clock at 22050Hz provides correct pacing.
-        // Do NOT add usleep — it causes audio to play ~8% slow.
-        long written = p_snd_pcm_writei(g_pcm, buffer, (snd_pcm_uframes_t)AUDIO_BUF_SAMPLES);
-        if (written < 0) {
-            p_snd_pcm_recover(g_pcm, (int)written, 1);
-            p_snd_pcm_prepare(g_pcm);
-            p_snd_pcm_writei(g_pcm, buffer, (snd_pcm_uframes_t)AUDIO_BUF_SAMPLES);
+        // Upsample to 48KHz stereo
+        int out_samples = upsample_mono_to_stereo(mono_buf, AUDIO_BUF_SAMPLES,
+                                                   stereo_buf, 1200);
+
+        // Wait for space in the DDR3 ring buffer, then write
+        while (g_audio_running) {
+            uint32_t space = NativeVideoWriter_AudioSpace();
+            if (space >= (uint32_t)out_samples) break;
+            usleep(500);  // ~0.5ms — ring buffer provides 85ms of slack
         }
+        if (!g_audio_running) break;
+
+        NativeVideoWriter_WriteAudio(stereo_buf, out_samples);
     }
 
     return nullptr;
@@ -228,7 +161,7 @@ static bool audio_thread_start()
         g_audio_running = false;
         return false;
     }
-    fprintf(stderr, "Audio thread launched\n");
+    fprintf(stderr, "Audio thread launched (DDR3 ring buffer)\n");
     return true;
 }
 
@@ -241,8 +174,7 @@ static void audio_thread_stop()
 // ── SDL dummy audio callback ──────────────────────────────────────────
 // SDL_OpenAudio with a real callback is REQUIRED for SDL's internal
 // timer/event system. Without it, video rendering has severe flicker.
-// We immediately close SDL audio after init so it doesn't compete
-// with our direct ALSA output.
+// Leave SDL audio open with dummy callback — never use it for output.
 
 static void DummyAudioCallback(void *userdata, Uint8 *stream, int len)
 {
@@ -388,12 +320,27 @@ int main(int argc, char **argv)
     }
     lol::sys::set_data_path(data_dir);
 
-    // Set ZEPTO8_BASE_DIR for save/config path resolution.
-    // With __MISTER__ defined, private.cpp uses this for flat paths:
-    //   Saves:  $ZEPTO8_BASE_DIR/Saves/cartname.p8d.txt
+    // Set ZEPTO8_BASE_DIR for config path resolution.
+    // With __MISTER__ defined, private.cpp uses this for:
     //   Config: $ZEPTO8_BASE_DIR/config.txt
     //   Carts:  $ZEPTO8_BASE_DIR/Carts/
+    // Saves go to /media/fat/saves/PICO-8/ (not under ZEPTO8_BASE_DIR)
     setenv("ZEPTO8_BASE_DIR", data_dir.c_str(), 1);
+
+    // Create standard MiSTer Organize folders
+    std::string logs_dir = data_dir + "Logs";
+    mkdir(logs_dir.c_str(), 0755);
+
+    // Redirect stderr to log file for diagnostics
+    // Captures: startup info, cart printh() output, errors, hot-swap events
+    {
+        std::string log_path = logs_dir + "/pico8.log";
+        FILE *logf = fopen(log_path.c_str(), "w");
+        if (logf) {
+            dup2(fileno(logf), STDERR_FILENO);
+            fclose(logf);
+        }
+    }
 
     // Pin main thread to CPU core 0 (audio thread will use core 1)
     cpu_set_t cpuset;
@@ -462,9 +409,9 @@ int main(int argc, char **argv)
         clear_borders(screen);
     }
 
-    // ── SDL audio init (for video stability) then close ───────────────
+    // ── SDL audio init (for video stability) ───────────────────────────
     // SDL_OpenAudio with real callback required for internal timer/event
-    // state. Close immediately so it doesn't compete with ALSA.
+    // state. Leave open with dummy callback — audio output goes through DDR3.
     // Skip in native video mode — no SDL video means this isn't needed.
     if (screen) {
         SDL_AudioSpec desired;
@@ -476,14 +423,16 @@ int main(int argc, char **argv)
         desired.callback = DummyAudioCallback;
         if (SDL_OpenAudio(&desired, nullptr) == 0) {
             SDL_PauseAudio(0);
-            SDL_CloseAudio(); // Close immediately — prevents competing with ALSA
+            // Don't close — leave open with dummy callback for SDL stability
         }
     }
 
-    // ── Init direct ALSA audio ────────────────────────────────────────
+    // ── Init audio ─────────────────────────────────────────────────────
+    // In native video mode, audio goes through DDR3 ring buffer to FPGA.
+    // No ALSA init needed — the ring buffer is part of the DDR3 writer.
     bool have_audio = false;
-    if (enable_sound)
-        have_audio = alsa_init();
+    if (enable_sound && have_native_video)
+        have_audio = true;
 
     // ── Init native video DDR3 writer (for FPGA native output) ────────
     // Only when -nativevideo flag is passed (requires PICO-8 FPGA core loaded).
@@ -641,8 +590,8 @@ int main(int argc, char **argv)
         // -- Input: read joystick from DDR3 (FPGA writes hps_io data) --
         // Main_MiSTer has exclusive access to /dev/input/js*, so we read
         // joystick state directly from DDR3 where the FPGA puts it.
-        // CONF_STR: "J1,O,X,Select,Pause;" / "jn,A,X,Select,Start;"
-        // joystick_0 bits: 0=R 1=L 2=D 3=U 4=O(A) 5=X(X) 6=Select 7=Pause(Start)
+        // CONF_STR: "J1,O,X,Pause;" / "jn,A,X,Start;"
+        // joystick_0 bits: 0=R 1=L 2=D 3=U 4=O(A) 5=X(X) 6=Pause(Start)
         if (have_native_video) {
             uint32_t joy = NativeVideoWriter_ReadJoystick();
             g_vm->button(0, 0, (joy >> 1) & 1);  // Left
@@ -651,12 +600,7 @@ int main(int argc, char **argv)
             g_vm->button(0, 3, (joy >> 2) & 1);  // Down
             g_vm->button(0, 4, (joy >> 4) & 1);  // O (Xbox A)
             g_vm->button(0, 5, (joy >> 5) & 1);  // X (Xbox X)
-            g_vm->button(0, 6, (joy >> 7) & 1);  // Pause (Xbox Start)
-
-            // Select = quit to browser
-            if ((joy >> 6) & 1) {
-                game_running = false;
-            }
+            g_vm->button(0, 6, (joy >> 6) & 1);  // Pause (Xbox Start)
         }
 
         // Check if VM requested exit or user pressed Back — return to browser
@@ -723,10 +667,6 @@ int main(int argc, char **argv)
         fprintf(stderr, "=== Game ended (PID=%d) ===\n", getpid());
         if (audio_started) {
             audio_thread_stop();
-            if (g_pcm && p_snd_pcm_drop) {
-                p_snd_pcm_drop(g_pcm);
-                p_snd_pcm_prepare(g_pcm);
-            }
             audio_started = false;
         }
         g_vm.reset();
@@ -756,7 +696,6 @@ int main(int argc, char **argv)
         g_sdl_joystick = NULL;
     }
     NativeVideoWriter_Shutdown();
-    alsa_shutdown();
 
     SDL_CloseAudio();
     SDL_Quit();

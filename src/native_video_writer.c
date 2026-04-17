@@ -6,6 +6,9 @@
 //
 //  DDR3 Memory Map:
 //    0x3A000000 + 0x000  : Control word (frame_counter[31:2] | active_buf[1:0])
+//    0x3A000000 + 0x008  : Joystick data (FPGA writes, ARM reads)
+//    0x3A000000 + 0x010  : Cart control (file_size, ARM polls)
+//    0x3A000000 + 0x018  : VSync feedback (vblank_counter[31:2] | buffer_status[1:0])
 //    0x3A000000 + 0x100  : Buffer 0 (128*128*2 = 32,768 bytes)
 //    0x3A000000 + 0x8100 : Buffer 1 (32,768 bytes)
 //
@@ -32,8 +35,14 @@
 #define NV_BUF0_OFFSET      0x00000100u
 #define NV_BUF1_OFFSET      0x00008100u
 #define NV_CART_CTRL_OFFSET  0x00000010u
+#define NV_FEEDBACK_OFFSET   0x00000018u  /* vsync feedback (physical 0x3A000018) */
+#define NV_AUD_WPTR_OFFSET   0x00000020u  /* audio write pointer (physical 0x3A000020) */
+#define NV_AUD_RPTR_OFFSET   0x00000028u  /* audio read pointer (physical 0x3A000028) */
 #define NV_CART_DATA_OFFSET  0x00020000u
 #define NV_CART_MAX_SIZE     0x00040000u  /* 256KB max cart size */
+#define NV_AUD_RING_OFFSET   0x00010200u  /* audio ring buffer (physical 0x3A010200) */
+#define NV_AUD_RING_SAMPLES  4096         /* stereo samples (L+R = 4 bytes each) */
+#define NV_AUD_RING_MASK     (NV_AUD_RING_SAMPLES - 1)
 #define NV_FRAME_WIDTH      128
 #define NV_FRAME_HEIGHT     128
 #define NV_FRAME_BYTES      (NV_FRAME_WIDTH * NV_FRAME_HEIGHT * 2)  /* 32,768 */
@@ -67,6 +76,13 @@ bool NativeVideoWriter_Init(void) {
     *ctrl = 0;
     volatile uint32_t* cart_ctrl = (volatile uint32_t*)(ddr_base + NV_CART_CTRL_OFFSET);
     *cart_ctrl = 0;
+    volatile uint32_t* feedback = (volatile uint32_t*)(ddr_base + NV_FEEDBACK_OFFSET);
+    *feedback = 0;
+    volatile uint32_t* aud_wptr = (volatile uint32_t*)(ddr_base + NV_AUD_WPTR_OFFSET);
+    *aud_wptr = 0;
+    volatile uint32_t* aud_rptr = (volatile uint32_t*)(ddr_base + NV_AUD_RPTR_OFFSET);
+    *aud_rptr = 0;
+    memset((void*)(ddr_base + NV_AUD_RING_OFFSET), 0, NV_AUD_RING_SAMPLES * 4);
     frame_counter = 0;
     active_buf = 0;
 
@@ -149,4 +165,40 @@ uint32_t NativeVideoWriter_ReadJoystick(void) {
     if (!ddr_base) return 0;
     volatile uint32_t *joy = (volatile uint32_t *)(ddr_base + NV_JOY_OFFSET);
     return *joy;
+}
+
+uint32_t NativeVideoWriter_ReadFeedback(void) {
+    if (!ddr_base) return 0;
+    volatile uint32_t *fb = (volatile uint32_t *)(ddr_base + NV_FEEDBACK_OFFSET);
+    return *fb;
+}
+
+uint32_t NativeVideoWriter_AudioSpace(void) {
+    if (!ddr_base) return 0;
+    volatile uint32_t *wptr = (volatile uint32_t *)(ddr_base + NV_AUD_WPTR_OFFSET);
+    volatile uint32_t *rptr = (volatile uint32_t *)(ddr_base + NV_AUD_RPTR_OFFSET);
+    uint32_t w = *wptr & NV_AUD_RING_MASK;
+    uint32_t r = *rptr & NV_AUD_RING_MASK;
+    /* Available space = ring_size - 1 - used */
+    uint32_t used = (w - r) & NV_AUD_RING_MASK;
+    return NV_AUD_RING_SAMPLES - 1 - used;
+}
+
+void NativeVideoWriter_WriteAudio(const int16_t *stereo_samples, uint32_t num_samples) {
+    if (!ddr_base || !stereo_samples || num_samples == 0) return;
+
+    volatile uint32_t *wptr_reg = (volatile uint32_t *)(ddr_base + NV_AUD_WPTR_OFFSET);
+    volatile int16_t *ring = (volatile int16_t *)(ddr_base + NV_AUD_RING_OFFSET);
+    uint32_t wp = *wptr_reg & NV_AUD_RING_MASK;
+
+    for (uint32_t i = 0; i < num_samples; i++) {
+        uint32_t idx = (wp + i) & NV_AUD_RING_MASK;
+        ring[idx * 2 + 0] = stereo_samples[i * 2 + 0];  /* Left */
+        ring[idx * 2 + 1] = stereo_samples[i * 2 + 1];  /* Right */
+    }
+
+    /* Memory barrier before updating pointer — ensures samples are visible
+     * to the FPGA before the write pointer advances. */
+    __sync_synchronize();
+    *wptr_reg = (wp + num_samples) & NV_AUD_RING_MASK;
 }

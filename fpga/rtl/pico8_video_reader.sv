@@ -11,9 +11,15 @@
 //    128x128 source -> 256x256 display
 //
 //  DDR3 Memory Map (physical addresses):
-//    0x3A000000 + 0x000  : Control word (frame_counter[31:2], active_buffer[1:0])
-//    0x3A000000 + 0x100  : Buffer 0 (128x128 RGB565 = 32,768 bytes)
-//    0x3A000000 + 0x8100 : Buffer 1 (32,768 bytes)
+//    0x3A000000 + 0x000    : Control word (frame_counter[31:2], active_buffer[1:0])
+//    0x3A000000 + 0x008    : Joystick data (FPGA writes, ARM reads)
+//    0x3A000000 + 0x010    : Cart control (file_size, ARM polls)
+//    0x3A000000 + 0x018    : VSync feedback (vblank_counter[31:2], buffer_status[1:0])
+//    0x3A000000 + 0x020    : Audio WPTR (ARM writes, FPGA reads)
+//    0x3A000000 + 0x028    : Audio RPTR (FPGA writes, ARM reads)
+//    0x3A000000 + 0x100    : Buffer 0 (128x128 RGB565 = 32,768 bytes)
+//    0x3A000000 + 0x8100   : Buffer 1 (32,768 bytes)
+//    0x3A000000 + 0x10200  : Audio ring buffer (4096 stereo samples = 16KB)
 //
 //  Bandwidth: 32KB x 2 (line doubling) x 60fps = 3.7 MB/s (DDR3 can do >1000)
 //
@@ -63,6 +69,10 @@ module pico8_video_reader (
     output reg   [7:0] r_out,
     output reg   [7:0] g_out,
     output reg   [7:0] b_out,
+
+    // Audio output (48KHz, signed 16-bit, directly to AUDIO_L/R)
+    output reg  [15:0] audio_l_out,
+    output reg  [15:0] audio_r_out,
 
     // Control
     input  wire        enable,
@@ -149,23 +159,39 @@ wire frame_ready_vid = frame_ready_sync[1];
 assign frame_ready = frame_ready_vid;
 
 // -- DDR3 Read State Machine ------------------------------------------
-localparam [3:0] ST_IDLE         = 4'd0;
-localparam [3:0] ST_POLL_CTRL    = 4'd1;
-localparam [3:0] ST_WAIT_CTRL    = 4'd2;
-localparam [3:0] ST_CHECK_CTRL   = 4'd3;
-localparam [3:0] ST_READ_LINE    = 4'd4;
-localparam [3:0] ST_WAIT_LINE    = 4'd5;
-localparam [3:0] ST_LINE_DONE    = 4'd6;
-localparam [3:0] ST_WAIT_DISPLAY = 4'd7;
-localparam [3:0] ST_WRITE_JOY   = 4'd8;
-localparam [3:0] ST_WRITE_CART  = 4'd9;
-localparam [3:0] ST_WRITE_CART_SIZE = 4'd10;
+localparam [4:0] ST_IDLE         = 5'd0;
+localparam [4:0] ST_POLL_CTRL    = 5'd1;
+localparam [4:0] ST_WAIT_CTRL    = 5'd2;
+localparam [4:0] ST_CHECK_CTRL   = 5'd3;
+localparam [4:0] ST_READ_LINE    = 5'd4;
+localparam [4:0] ST_WAIT_LINE    = 5'd5;
+localparam [4:0] ST_LINE_DONE    = 5'd6;
+localparam [4:0] ST_WAIT_DISPLAY = 5'd7;
+localparam [4:0] ST_WRITE_JOY   = 5'd8;
+localparam [4:0] ST_WRITE_CART  = 5'd9;
+localparam [4:0] ST_WRITE_CART_SIZE = 5'd10;
+localparam [4:0] ST_WRITE_FEEDBACK = 5'd11;
+localparam [4:0] ST_READ_AUD_WPTR  = 5'd12;
+localparam [4:0] ST_WAIT_AUD_WPTR  = 5'd13;
+localparam [4:0] ST_WRITE_AUD_RPTR = 5'd14;
+localparam [4:0] ST_READ_AUDIO     = 5'd15;
+localparam [4:0] ST_WAIT_AUDIO     = 5'd16;
 
 // Cart loading DDR3 addresses
 localparam [28:0] CART_CTRL_ADDR = 29'h07400002;  // 0x3A000010 >> 3
 localparam [28:0] CART_DATA_ADDR = 29'h07404000;  // 0x3A020000 >> 3 (past video buffers)
+localparam [28:0] FEEDBACK_ADDR  = 29'h07400003;  // 0x3A000018 >> 3 (vsync feedback)
 
-reg  [3:0]  state;
+// Audio DDR3 addresses
+localparam [28:0] AUD_WPTR_ADDR  = 29'h07400004;  // 0x3A000020 >> 3
+localparam [28:0] AUD_RPTR_ADDR  = 29'h07400005;  // 0x3A000028 >> 3
+localparam [28:0] AUD_RING_ADDR  = 29'h07402040;  // 0x3A010200 >> 3
+localparam [11:0] AUD_RING_MASK  = 12'hFFF;        // 4096 samples
+
+// 48KHz tick: 100MHz / 48000 = 2083.3 -> count to 2083
+localparam [11:0] AUD_DIV_MAX    = 12'd2082;
+
+reg  [4:0]  state;
 reg  [31:0] ctrl_word;
 reg  [29:0] prev_frame_counter;
 reg         active_buffer;
@@ -177,6 +203,15 @@ reg  [4:0]  stale_vblank_count;
 reg         preloading;
 reg  [19:0] timeout_cnt;
 
+// Audio registers
+reg  [11:0] aud_div;           // 48KHz divider counter
+reg  [11:0] aud_wr_ptr;        // cached write pointer (from ARM via DDR3)
+reg  [11:0] aud_rd_ptr;        // read pointer (local, written to DDR3 per frame)
+reg  [63:0] aud_sample_buf;    // qword = 2 stereo samples
+reg         aud_sample_phase;  // 0 = play low sample, 1 = play high sample
+reg         aud_need_refill;   // set when both samples consumed, need next qword
+reg         aud_buf_valid;     // true after first qword loaded
+
 // Cart loading registers
 reg  [63:0] cart_buf;
 reg   [2:0] cart_byte_cnt;
@@ -187,6 +222,9 @@ reg         cart_size_pending;
 reg  [26:0] cart_total_bytes;
 reg         cart_dl_prev;
 reg         cart_loading;
+
+// VSync feedback
+reg  [29:0] vblank_counter;
 
 assign ioctl_wait = cart_write_pending & ioctl_download;
 
@@ -237,6 +275,16 @@ always @(posedge ddr_clk) begin
         cart_loading        <= 1'b0;
         new_frame_pending   <= 1'b0;
         synced              <= 1'b0;
+        vblank_counter      <= 30'd0;
+        aud_div             <= 12'd0;
+        aud_wr_ptr          <= 12'd0;
+        aud_rd_ptr          <= 12'd0;
+        aud_sample_buf      <= 64'd0;
+        aud_sample_phase    <= 1'b0;
+        aud_need_refill     <= 1'b0;
+        aud_buf_valid       <= 1'b0;
+        audio_l_out         <= 16'd0;
+        audio_r_out         <= 16'd0;
     end
     else begin
         fifo_wr <= 1'b0;
@@ -246,6 +294,35 @@ always @(posedge ddr_clk) begin
 
         // Latch new_frame pulse so cart writes can't cause it to be missed
         if (new_frame_ddr) new_frame_pending <= 1'b1;
+
+        // -- 48KHz audio output (runs in parallel) ----------------
+        if (aud_div == AUD_DIV_MAX) begin
+            aud_div <= 12'd0;
+            if (aud_buf_valid) begin
+                if (aud_sample_phase == 1'b0) begin
+                    // Play low sample (first in qword)
+                    audio_l_out <= aud_sample_buf[15:0];
+                    audio_r_out <= aud_sample_buf[31:16];
+                    aud_sample_phase <= 1'b1;
+                end
+                else begin
+                    // Play high sample (second in qword)
+                    audio_l_out <= aud_sample_buf[47:32];
+                    audio_r_out <= aud_sample_buf[63:48];
+                    aud_sample_phase <= 1'b0;
+                    aud_buf_valid <= 1'b0;
+                    aud_need_refill <= 1'b1;
+                end
+            end
+            else begin
+                // Buffer empty — output silence
+                audio_l_out <= 16'd0;
+                audio_r_out <= 16'd0;
+            end
+        end
+        else begin
+            aud_div <= aud_div + 12'd1;
+        end
 
         // Beat capture (runs in parallel with state machine)
         if (state == ST_WAIT_LINE && ddr_dout_ready) begin
@@ -316,6 +393,8 @@ always @(posedge ddr_clk) begin
                     state <= ST_WRITE_CART;
                 else if (cart_size_pending)
                     state <= ST_WRITE_CART_SIZE;
+                else if (aud_need_refill && (aud_rd_ptr != aud_wr_ptr))
+                    state <= ST_READ_AUDIO;
             end
 
             ST_WRITE_JOY: begin
@@ -325,8 +404,79 @@ always @(posedge ddr_clk) begin
                     ddr_din      <= {32'd0, joystick_0};
                     ddr_burstcnt <= 8'd1;
                     ddr_we       <= 1'b1;
+                    state        <= ST_WRITE_FEEDBACK;
+                end
+            end
+
+            ST_WRITE_FEEDBACK: begin
+                // Write vsync feedback word so ARM knows when frames are consumed
+                if (!ddr_busy) begin
+                    vblank_counter <= vblank_counter + 30'd1;
+                    ddr_addr       <= FEEDBACK_ADDR;
+                    ddr_din        <= {32'd0, vblank_counter + 30'd1, active_buffer, 1'b0};
+                    ddr_burstcnt   <= 8'd1;
+                    ddr_we         <= 1'b1;
+                    state          <= ST_READ_AUD_WPTR;
+                end
+            end
+
+            ST_READ_AUD_WPTR: begin
+                // Read audio write pointer from DDR3 (ARM updates this)
+                if (!ddr_busy) begin
+                    ddr_addr     <= AUD_WPTR_ADDR;
+                    ddr_burstcnt <= 8'd1;
+                    ddr_rd       <= 1'b1;
+                    timeout_cnt  <= 20'd0;
+                    state        <= ST_WAIT_AUD_WPTR;
+                end
+            end
+
+            ST_WAIT_AUD_WPTR: begin
+                if (ddr_dout_ready) begin
+                    aud_wr_ptr <= ddr_dout[11:0];
+                    state      <= ST_WRITE_AUD_RPTR;
+                end
+                else if (timeout_cnt == TIMEOUT_MAX)
+                    state <= ST_WRITE_AUD_RPTR;
+                else
+                    timeout_cnt <= timeout_cnt + 20'd1;
+            end
+
+            ST_WRITE_AUD_RPTR: begin
+                // Write audio read pointer to DDR3 (ARM reads this)
+                if (!ddr_busy) begin
+                    ddr_addr     <= AUD_RPTR_ADDR;
+                    ddr_din      <= {52'd0, aud_rd_ptr};
+                    ddr_burstcnt <= 8'd1;
+                    ddr_we       <= 1'b1;
                     state        <= ST_POLL_CTRL;
                 end
+            end
+
+            ST_READ_AUDIO: begin
+                // Read one qword (2 stereo samples) from audio ring buffer
+                if (!ddr_busy) begin
+                    ddr_addr     <= AUD_RING_ADDR + {18'd0, aud_rd_ptr[11:1]};
+                    ddr_burstcnt <= 8'd1;
+                    ddr_rd       <= 1'b1;
+                    timeout_cnt  <= 20'd0;
+                    state        <= ST_WAIT_AUDIO;
+                end
+            end
+
+            ST_WAIT_AUDIO: begin
+                if (ddr_dout_ready) begin
+                    aud_sample_buf   <= ddr_dout;
+                    aud_sample_phase <= 1'b0;
+                    aud_buf_valid    <= 1'b1;
+                    aud_need_refill  <= 1'b0;
+                    aud_rd_ptr       <= (aud_rd_ptr + 12'd2) & AUD_RING_MASK;
+                    state            <= ST_IDLE;
+                end
+                else if (timeout_cnt == TIMEOUT_MAX)
+                    state <= ST_IDLE;
+                else
+                    timeout_cnt <= timeout_cnt + 20'd1;
             end
 
             ST_WRITE_CART: begin

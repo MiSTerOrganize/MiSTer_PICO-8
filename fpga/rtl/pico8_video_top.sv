@@ -43,6 +43,10 @@ module pico8_video_top (
     output wire        active,        // module is outputting valid video
     output wire        vsync_out,     // active-low vsync for frame sync
 
+    // Audio output (48KHz signed 16-bit from DDR3 ring buffer)
+    output wire [15:0] audio_l,
+    output wire [15:0] audio_r,
+
     // Joystick (from hps_io, written to DDR3 for ARM)
     input  wire [31:0] joystick_0,
     input  wire [15:0] joystick_l_analog_0,
@@ -81,6 +85,7 @@ pico8_video_timing timing (
 // ── DDR3 Pixel Reader ─────────────────────────────────────────────────
 wire [7:0]  reader_r, reader_g, reader_b;
 wire        reader_frame_ready;
+wire [15:0] reader_audio_l, reader_audio_r;
 
 pico8_video_reader reader (
     .ddr_clk        (clk_sys),
@@ -109,6 +114,9 @@ pico8_video_reader reader (
     .g_out          (reader_g),
     .b_out          (reader_b),
 
+    .audio_l_out    (reader_audio_l),
+    .audio_r_out    (reader_audio_r),
+
     .enable         (enable),
     .frame_ready    (reader_frame_ready),
 
@@ -131,5 +139,7 @@ assign vga_vs    = tim_vsync;
 assign vga_de    = tim_de;
 assign active    = enable & reader_frame_ready;
 assign vsync_out = tim_vsync;
+assign audio_l   = reader_audio_l;
+assign audio_r   = reader_audio_r;
 
 endmodule

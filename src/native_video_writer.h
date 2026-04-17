@@ -60,6 +60,24 @@ void NativeVideoWriter_AckCart(void);
 /// bit4=A, bit5=B, bit6=X, bit7=Y, bit10=Select, bit11=Start
 uint32_t NativeVideoWriter_ReadJoystick(void);
 
+/// Read VSync feedback word from DDR3 (written by FPGA each vblank).
+/// Bits [31:2] = vblank_counter, bits [1:0] = buffer_status.
+uint32_t NativeVideoWriter_ReadFeedback(void);
+
+/// Extract vblank counter from feedback word.
+static inline uint32_t NV_FeedbackVblankCounter(uint32_t fb) { return fb >> 2; }
+
+/// Extract buffer status from feedback word (0 or 1 = which buffer FPGA is reading).
+static inline uint32_t NV_FeedbackBufferStatus(uint32_t fb) { return fb & 3; }
+
+/// Returns number of stereo samples that can be written to the audio ring buffer.
+uint32_t NativeVideoWriter_AudioSpace(void);
+
+/// Write stereo samples to the DDR3 audio ring buffer.
+/// @param stereo_samples  Interleaved int16_t L,R pairs
+/// @param num_samples     Number of stereo sample PAIRS to write
+void NativeVideoWriter_WriteAudio(const int16_t *stereo_samples, uint32_t num_samples);
+
 #ifdef __cplusplus
 }
 #endif
