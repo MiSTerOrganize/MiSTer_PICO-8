@@ -599,9 +599,14 @@ int main(int argc, char **argv)
             g_vm->button(0, 1, (joy >> 0) & 1);  // Right
             g_vm->button(0, 2, (joy >> 3) & 1);  // Up
             g_vm->button(0, 3, (joy >> 2) & 1);  // Down
-            g_vm->button(0, 4, (joy >> 4) & 1);  // O (Xbox A)
-            g_vm->button(0, 5, (joy >> 5) & 1);  // X (Xbox X)
-            g_vm->button(0, 6, (joy >> 6) & 1);  // Pause (Xbox Start)
+            g_vm->button(0, 4, (joy >> 4) & 1);  // A = confirm (pause) / O (gameplay)
+            if (g_vm->is_paused()) {
+                g_vm->button(0, 5, 0);
+                g_vm->button(0, 6, ((joy >> 5) | (joy >> 6)) & 1);  // X or Start = back
+            } else {
+                g_vm->button(0, 5, (joy >> 5) & 1);  // X (gameplay)
+                g_vm->button(0, 6, (joy >> 6) & 1);  // Start = pause
+            }
         }
 
         // Check if VM requested exit or user pressed Back — return to browser
