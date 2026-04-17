@@ -40,9 +40,9 @@ while true; do
             sleep 1  # FPGA settle on first load only
             FIRST_LOAD=0
         fi
-        mkdir -p /media/fat/games/PICO-8/Logs
-        mv -f /media/fat/games/PICO-8/Logs/PICO-8.log /media/fat/games/PICO-8/Logs/PICO-8.prev.log 2>/dev/null
-        $BINARY $ARGS > /media/fat/games/PICO-8/Logs/PICO-8.log 2>&1 &
+        mkdir -p /media/fat/games/PICO-8/.Logs
+        mv -f /media/fat/games/PICO-8/.Logs/PICO-8.log /media/fat/games/PICO-8/.Logs/PICO-8.prev.log 2>/dev/null
+        $BINARY $ARGS > /media/fat/games/PICO-8/.Logs/PICO-8.log 2>&1 &
         CHILD=$!
         echo $CHILD > "$PIDFILE"
     fi
