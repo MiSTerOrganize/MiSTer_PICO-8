@@ -1,0 +1,5 @@
+# Prevent git from modifying binary files
+*.rbf binary
+*.map binary
+*.rom binary
+games/*/PICO-8 binary

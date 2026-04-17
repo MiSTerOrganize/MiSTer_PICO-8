@@ -1,0 +1,103 @@
+
+State Machine - |sys_top|emu:emu|pico8_video_top:native_video|pico8_video_reader:reader|state
+Name state.ST_WRITE_CART_SIZE state.ST_WRITE_CART state.ST_WRITE_JOY state.ST_WAIT_DISPLAY state.ST_LINE_DONE state.ST_WAIT_LINE state.ST_READ_LINE state.ST_CHECK_CTRL state.ST_WAIT_CTRL state.ST_POLL_CTRL state.ST_IDLE 
+state.ST_IDLE 0 0 0 0 0 0 0 0 0 0 0 
+state.ST_POLL_CTRL 0 0 0 0 0 0 0 0 0 1 1 
+state.ST_WAIT_CTRL 0 0 0 0 0 0 0 0 1 0 1 
+state.ST_CHECK_CTRL 0 0 0 0 0 0 0 1 0 0 1 
+state.ST_READ_LINE 0 0 0 0 0 0 1 0 0 0 1 
+state.ST_WAIT_LINE 0 0 0 0 0 1 0 0 0 0 1 
+state.ST_LINE_DONE 0 0 0 0 1 0 0 0 0 0 1 
+state.ST_WAIT_DISPLAY 0 0 0 1 0 0 0 0 0 0 1 
+state.ST_WRITE_JOY 0 0 1 0 0 0 0 0 0 0 1 
+state.ST_WRITE_CART 0 1 0 0 0 0 0 0 0 0 1 
+state.ST_WRITE_CART_SIZE 1 0 0 0 0 0 0 0 0 0 1 
+
+State Machine - |sys_top|alsa:alsa|state
+Name state.01 
+state.00 0 
+state.01 1 
+
+State Machine - |sys_top|ascal:ascal|o_state
+Name o_state.sWAITREAD o_state.sREAD o_state.sHSYNC o_state.sDISP 
+o_state.sDISP 0 0 0 0 
+o_state.sHSYNC 0 0 1 1 
+o_state.sREAD 0 1 0 1 
+o_state.sWAITREAD 1 0 0 1 
+
+State Machine - |sys_top|pll_cfg_hdmi:pll_cfg_hdmi|current_state
+Name current_state.IDLE current_state.LOCKED current_state.WAIT_ON_LOCK 
+current_state.IDLE 0 0 0 
+current_state.WAIT_ON_LOCK 1 0 1 
+current_state.LOCKED 1 1 0 
+
+State Machine - |sys_top|pll_cfg_hdmi:pll_cfg_hdmi|operation_address
+Name operation_address.CP_CURRENT_REG operation_address.BWCTRL_REG operation_address.DSM_REG operation_address.C_COUNTERS_REG operation_address.M_REG operation_address.N_REG operation_address.000000 
+operation_address.000000 0 0 0 0 0 0 0 
+operation_address.N_REG 0 0 0 0 0 1 1 
+operation_address.M_REG 0 0 0 0 1 0 1 
+operation_address.C_COUNTERS_REG 0 0 0 1 0 0 1 
+operation_address.DSM_REG 0 0 1 0 0 0 1 
+operation_address.BWCTRL_REG 0 1 0 0 0 0 1 
+operation_address.CP_CURRENT_REG 1 0 0 0 0 0 1 
+
+State Machine - |sys_top|pll_cfg_hdmi:pll_cfg_hdmi|dprio_cur_state
+Name dprio_cur_state.DPRIO_DONE dprio_cur_state.TEN dprio_cur_state.NINE dprio_cur_state.EIGHT dprio_cur_state.SEVEN dprio_cur_state.SIX dprio_cur_state.FIVE dprio_cur_state.FOUR dprio_cur_state.THREE dprio_cur_state.TWO dprio_cur_state.ONE dprio_cur_state.DPRIO_IDLE 
+dprio_cur_state.DPRIO_IDLE 0 0 0 0 0 0 0 0 0 0 0 0 
+dprio_cur_state.ONE 0 0 0 0 0 0 0 0 0 0 1 1 
+dprio_cur_state.TWO 0 0 0 0 0 0 0 0 0 1 0 1 
+dprio_cur_state.THREE 0 0 0 0 0 0 0 0 1 0 0 1 
+dprio_cur_state.FOUR 0 0 0 0 0 0 0 1 0 0 0 1 
+dprio_cur_state.FIVE 0 0 0 0 0 0 1 0 0 0 0 1 
+dprio_cur_state.SIX 0 0 0 0 0 1 0 0 0 0 0 1 
+dprio_cur_state.SEVEN 0 0 0 0 1 0 0 0 0 0 0 1 
+dprio_cur_state.EIGHT 0 0 0 1 0 0 0 0 0 0 0 1 
+dprio_cur_state.NINE 0 0 1 0 0 0 0 0 0 0 0 1 
+dprio_cur_state.TEN 0 1 0 0 0 0 0 0 0 0 0 1 
+dprio_cur_state.DPRIO_DONE 1 0 0 0 0 0 0 0 0 0 0 1 
+
+State Machine - |sys_top|pll_cfg_hdmi:pll_cfg_hdmi|dyn_phase_shift:dyn_phase_shift_inst|dps_current_state
+Name dps_current_state.DPS_CHANGED dps_current_state.DPS_WAIT_DPRIO_WRITING dps_current_state.DPS_WAIT_PHASE_EN dps_current_state.DPS_START dps_current_state.DPS_WAIT_PHASE_DONE dps_current_state.DPS_DONE 
+dps_current_state.DPS_DONE 0 0 0 0 0 0 
+dps_current_state.DPS_WAIT_PHASE_DONE 0 0 0 0 1 1 
+dps_current_state.DPS_START 0 0 0 1 0 1 
+dps_current_state.DPS_WAIT_PHASE_EN 0 0 1 0 0 1 
+dps_current_state.DPS_WAIT_DPRIO_WRITING 0 1 0 0 0 1 
+dps_current_state.DPS_CHANGED 1 0 0 0 0 1 
+
+State Machine - |sys_top|pll_hdmi:pll_hdmi|pll_hdmi_0002:pll_hdmi_inst|altera_pll:altera_pll_i|dps_extra_kick:dps_extra_inst|dps_current_state
+Name dps_current_state.PHASE_DONE_LOW_0 dps_current_state.PHASE_DONE_LOW_4 dps_current_state.PHASE_DONE_LOW_3 dps_current_state.PHASE_DONE_LOW_2 dps_current_state.PHASE_DONE_LOW_1 dps_current_state.PHASE_DONE_HIGH 
+dps_current_state.PHASE_DONE_HIGH 0 0 0 0 0 0 
+dps_current_state.PHASE_DONE_LOW_1 0 0 0 0 1 1 
+dps_current_state.PHASE_DONE_LOW_2 0 0 0 1 0 1 
+dps_current_state.PHASE_DONE_LOW_3 0 0 1 0 0 1 
+dps_current_state.PHASE_DONE_LOW_4 0 1 0 0 0 1 
+dps_current_state.PHASE_DONE_LOW_0 1 0 0 0 0 1 
+
+State Machine - |sys_top|ascal:ascal|o_copy
+Name o_copy.sCOPY o_copy.sSHIFT o_copy.sWAIT 
+o_copy.sWAIT 0 0 0 
+o_copy.sSHIFT 0 1 1 
+o_copy.sCOPY 1 0 1 
+
+State Machine - |sys_top|mcp23009:mcp23009|state
+Name state.00 state.10 state.01 
+state.00 0 0 0 
+state.01 1 0 1 
+state.10 1 1 0 
+
+State Machine - |sys_top|ascal:ascal|avl_state
+Name avl_state.sREAD avl_state.sWRITE avl_state.sIDLE 
+avl_state.sIDLE 0 0 0 
+avl_state.sWRITE 0 1 1 
+avl_state.sREAD 1 0 1 
+
+State Machine - |sys_top|pll_hdmi_adj:pll_hdmi_adj|state
+Name state.sW6 state.sW5 state.sW4 state.sW3 state.sW2 state.sW1 state.sIDLE 
+state.sIDLE 0 0 0 0 0 0 0 
+state.sW1 0 0 0 0 0 1 1 
+state.sW2 0 0 0 0 1 0 1 
+state.sW3 0 0 0 1 0 0 1 
+state.sW4 0 0 1 0 0 0 1 
+state.sW5 0 1 0 0 0 0 1 
+state.sW6 1 0 0 0 0 0 1 

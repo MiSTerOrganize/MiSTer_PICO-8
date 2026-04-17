@@ -38,7 +38,8 @@ Extract the release zip to the root of your MiSTer SD card (`/media/fat/`). The 
 │       ├── PICO-8                          ARM binary (emulator)
 │       ├── pico8_daemon.sh                 Auto-launch daemon
 │       ├── boot.rom                        BIOS
-│       └── Carts/                          Place your .p8 and .p8.png carts here
+│       ├── Carts/                          Place your .p8 and .p8.png carts here
+│       └── Logs/                           Engine log (pico8.log, created at startup)
 ├── saves/
 │   └── PICO-8/                             Game saves (created automatically)
 └── Scripts/
@@ -63,7 +64,6 @@ After copying the files, run **Install_PICO-8** from the Scripts menu once to se
 | A | O (confirm/jump) |
 | X | X (shoot/action) |
 | Start | Pause |
-| Select | Quit |
 | Xbox button | MiSTer OSD menu |
 
 ## Architecture

@@ -225,8 +225,8 @@ localparam CONF_STR = {
 	"PICO-8;;",
 	"F0,P8 PNG,Load Cart;",
 	"-;",
-	"J1,O,X,Select,Pause;",
-	"jn,A,X,Select,Start;",
+	"J1,O,X,Pause;",
+	"jn,A,X,Start;",
 	"-;",
 	"V,v",`BUILD_DATE 
 };
@@ -426,6 +426,8 @@ wire [63:0] nv_ddr_din;
 wire  [7:0] nv_ddr_be;
 wire        nv_ddr_we;
 wire        nv_ioctl_wait;
+wire [15:0] nv_audio_l;
+wire [15:0] nv_audio_r;
 
 // Native video reader always owns DDR3 when enabled
 wire use_nv = NATIVE_VID;
@@ -451,110 +453,18 @@ always @(posedge clk_sys) begin
 	end
 end
 
-////////////////////////////  MT32pi  ////////////////////////////////// 
+////////////////////////////  AUDIO  ////////////////////////////////// 
 
-//
-// Pin | USB Name | Signal
-// ----+----------+--------------
-// 0   | D+       | I/O I2C_SDA / RX (midi in)
-// 1   | D-       | O   TX (midi out)
-// 2   | TX-      | I   I2S_WS (1 == right)
-// 3   | GND_d    | I   I2C_SCL
-// 4   | RX+      | I   I2S_BCLK
-// 5   | RX-      | I   I2S_DAT
-// 6   | TX+      | -   none
-//
+// FPGA native audio — ARM writes 48KHz PCM to DDR3 ring buffer,
+// FPGA reads and outputs directly. Same path as NES/SNES/Genesis.
+// No ALSA, no Linux kernel involvement.
 
-reg [15:0] mt32_i2s_r, mt32_i2s_l;
-wire midi_rx;
+assign AUDIO_L = nv_audio_l;
+assign AUDIO_R = nv_audio_r;
+assign AUDIO_S = 1;  // signed — all emulation libraries output signed PCM
 
-assign AUDIO_L = mt32_i2s_l;
-assign AUDIO_R = mt32_i2s_r;
-assign AUDIO_S = 1;
-
-assign USER_OUT[0]   = 1;
-assign USER_OUT[1]   = UART_RXD;
-assign USER_OUT[6:2] = '1;
-assign UART_TXD      = midi_rx;
-
-
-//
-// crossed/straight cable selection
-//
-
-generate
-genvar i;
-for(i = 0; i<2; i++) begin : clk_rate
-	wire clk_in = i ? USER_IN[6] : USER_IN[4];
-	reg [4:0] cnt;
-	always @(posedge CLK_AUDIO) begin : clkr
-		reg       clk_sr, clk, old_clk;
-		reg [4:0] cnt_tmp;
-
-		clk_sr <= clk_in;
-		if (clk_sr == clk_in) clk <= clk_sr;
-
-		if(~&cnt_tmp) cnt_tmp <= cnt_tmp + 1'd1;
-		else cnt <= '1;
-
-		old_clk <= clk;
-		if(~old_clk & clk) begin
-			cnt <= cnt_tmp;
-			cnt_tmp <= 0;
-		end
-	end
-end
-
-reg crossed;
-always @(posedge CLK_AUDIO) crossed <= (clk_rate[0].cnt <= clk_rate[1].cnt);
-endgenerate
-
-wire   i2s_ws   = crossed ? USER_IN[2] : USER_IN[5];
-wire   i2s_data = crossed ? USER_IN[5] : USER_IN[2];
-wire   i2s_bclk = crossed ? USER_IN[4] : USER_IN[6];
-assign midi_rx  = crossed ? USER_IN[6] : USER_IN[4];
-
-always @(posedge CLK_AUDIO) begin : i2s_proc
-	reg [15:0] i2s_buf = 0;
-	reg  [4:0] i2s_cnt = 0;
-	reg        clk_sr;
-	reg        i2s_clk = 0;
-	reg        old_clk, old_ws;
-	reg        i2s_next = 0;
-
-	// Debounce clock
-	clk_sr <= i2s_bclk;
-	if (clk_sr == i2s_bclk) i2s_clk <= clk_sr;
-
-	// Latch data and ws on rising edge
-	old_clk <= i2s_clk;
-	if (i2s_clk && ~old_clk) begin
-
-		if (~i2s_cnt[4]) begin
-			i2s_cnt <= i2s_cnt + 1'd1;
-			i2s_buf[~i2s_cnt[3:0]] <= i2s_data;
-		end
-
-		// Word Select will change 1 clock before the new word starts
-		old_ws <= i2s_ws;
-		if (old_ws != i2s_ws) i2s_next <= 1;
-	end
-
-	if (i2s_next) begin
-		i2s_next <= 0;
-		i2s_cnt <= 0;
-		i2s_buf <= 0;
-
-		if (i2s_ws) mt32_i2s_l <= i2s_buf;
-		else        mt32_i2s_r <= i2s_buf;
-	end
-	
-	if (RESET) begin
-		i2s_buf    <= 0;
-		mt32_i2s_l <= 0;
-		mt32_i2s_r <= 0;
-	end
-end
+assign USER_OUT = '1;
+assign UART_TXD = UART_RXD;
 
 /////////////////////   VIDEO   ///////////////////
 
@@ -668,6 +578,10 @@ pico8_video_top native_video
 	.enable         (use_nv),
 	.active         (nv_active),
 	.vsync_out      (),
+
+	// Audio output (48KHz from DDR3 ring buffer)
+	.audio_l        (nv_audio_l),
+	.audio_r        (nv_audio_r),
 
 	// Joystick (from hps_io, written to DDR3 for ARM)
 	.joystick_0     (joystick_0),
