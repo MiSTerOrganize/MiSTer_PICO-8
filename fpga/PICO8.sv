@@ -225,8 +225,8 @@ localparam CONF_STR = {
 	"PICO-8;;",
 	"F0,P8 PNG,Load Cart;",
 	"-;",
-	"J1,O,X,Pause,-;",
-	"jn,A,X,Start,Select;",
+	"J1,O,X,Pause;",
+	"jn,A,X,Start;",
 	"-;",
 	"V,v",`BUILD_DATE 
 };
