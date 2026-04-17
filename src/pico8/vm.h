@@ -440,6 +440,7 @@ private:
     bool m_in_pause = false;
 public:
     bool is_paused() const { return m_in_pause; }
+    void close_pause() { private_set_pause(false); }
 private:
 
     // Files

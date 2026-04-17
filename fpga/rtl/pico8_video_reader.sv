@@ -315,9 +315,10 @@ always @(posedge ddr_clk) begin
                 end
             end
             else begin
-                // Buffer empty — output silence
+                // Buffer empty — output silence and request refill
                 audio_l_out <= 16'd0;
                 audio_r_out <= 16'd0;
+                aud_need_refill <= 1'b1;
             end
         end
         else begin
