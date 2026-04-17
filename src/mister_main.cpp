@@ -328,7 +328,7 @@ int main(int argc, char **argv)
     setenv("ZEPTO8_BASE_DIR", data_dir.c_str(), 1);
 
     // Create standard MiSTer Organize folders
-    std::string logs_dir = data_dir + "Logs";
+    std::string logs_dir = data_dir + ".Logs";
     mkdir(logs_dir.c_str(), 0755);
 
     // Redirect stderr to log file for diagnostics
