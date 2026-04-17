@@ -1,5 +1,5 @@
 Flow report for PICO8
-Fri Apr 17 11:59:55 2026
+Fri Apr 17 13:22:51 2026
 Quartus Prime Version 17.0.0 Build 595 04/25/2017 SJ Lite Edition
 
 
@@ -41,25 +41,25 @@ agreement for further details.
 +-------------------------------------------------------------------------------+
 ; Flow Summary                                                                  ;
 +---------------------------------+---------------------------------------------+
-; Flow Status                     ; Successful - Fri Apr 17 11:59:48 2026       ;
+; Flow Status                     ; Successful - Fri Apr 17 13:22:51 2026       ;
 ; Quartus Prime Version           ; 17.0.0 Build 595 04/25/2017 SJ Lite Edition ;
 ; Revision Name                   ; PICO8                                       ;
 ; Top-level Entity Name           ; sys_top                                     ;
 ; Family                          ; Cyclone V                                   ;
 ; Device                          ; 5CSEBA6U23I7                                ;
 ; Timing Models                   ; Final                                       ;
-; Logic utilization (in ALMs)     ; 8,037 / 41,910 ( 19 % )                     ;
-; Total registers                 ; 12922                                       ;
-; Total pins                      ; 145 / 314 ( 46 % )                          ;
+; Logic utilization (in ALMs)     ; N/A                                         ;
+; Total registers                 ; 13027                                       ;
+; Total pins                      ; 145                                         ;
 ; Total virtual pins              ; 0                                           ;
-; Total block memory bits         ; 445,924 / 5,662,720 ( 8 % )                 ;
-; Total DSP Blocks                ; 35 / 112 ( 31 % )                           ;
+; Total block memory bits         ; 445,924                                     ;
+; Total DSP Blocks                ; 35                                          ;
 ; Total HSSI RX PCSs              ; 0                                           ;
 ; Total HSSI PMA RX Deserializers ; 0                                           ;
 ; Total HSSI TX PCSs              ; 0                                           ;
 ; Total HSSI PMA TX Serializers   ; 0                                           ;
-; Total PLLs                      ; 3 / 6 ( 50 % )                              ;
-; Total DLLs                      ; 0 / 4 ( 0 % )                               ;
+; Total PLLs                      ; 3                                           ;
+; Total DLLs                      ; 0                                           ;
 +---------------------------------+---------------------------------------------+
 
 
@@ -68,7 +68,7 @@ agreement for further details.
 +-------------------+---------------------+
 ; Option            ; Setting             ;
 +-------------------+---------------------+
-; Start date & time ; 04/17/2026 11:53:14 ;
+; Start date & time ; 04/17/2026 13:22:01 ;
 ; Main task         ; Compilation         ;
 ; Revision Name     ; PICO8               ;
 +-------------------+---------------------+
@@ -82,7 +82,7 @@ agreement for further details.
 ; ADV_NETLIST_OPT_SYNTH_WYSIWYG_REMAP                  ; On                                     ; Off                ; --          ; --         ;
 ; ALM_REGISTER_PACKING_EFFORT                          ; Low                                    ; Medium             ; --          ; --         ;
 ; AUTO_DELAY_CHAINS_FOR_HIGH_FANOUT_INPUT_PINS         ; On                                     ; Off                ; --          ; --         ;
-; COMPILER_SIGNATURE_ID                                ; 154186274629986.177644479418076        ; --                 ; --          ; --         ;
+; COMPILER_SIGNATURE_ID                                ; 154186274629986.177645012123504        ; --                 ; --          ; --         ;
 ; ECO_OPTIMIZE_TIMING                                  ; On                                     ; Off                ; --          ; --         ;
 ; FINAL_PLACEMENT_OPTIMIZATION                         ; Always                                 ; Automatically      ; --          ; --         ;
 ; FITTER_AGGRESSIVE_ROUTABILITY_OPTIMIZATION           ; Always                                 ; Automatically      ; --          ; --         ;
@@ -134,38 +134,29 @@ agreement for further details.
 +------------------------------------------------------+----------------------------------------+--------------------+-------------+------------+
 
 
-+-------------------------------------------------------------------------------------------------------------------------------+
-; Flow Elapsed Time                                                                                                             ;
-+---------------------------+--------------+-------------------------+---------------------+------------------------------------+
-; Module Name               ; Elapsed Time ; Average Processors Used ; Peak Virtual Memory ; Total CPU Time (on all processors) ;
-+---------------------------+--------------+-------------------------+---------------------+------------------------------------+
-; Analysis & Synthesis      ; 00:00:34     ; 2.2                     ; 5580 MB             ; 00:01:04                           ;
-; Fitter                    ; 00:05:33     ; 1.3                     ; 8268 MB             ; 00:17:22                           ;
-; Assembler                 ; 00:00:18     ; 1.0                     ; 5021 MB             ; 00:00:10                           ;
-; TimeQuest Timing Analyzer ; 00:00:06     ; 1.3                     ; 5207 MB             ; 00:00:05                           ;
-; Total                     ; 00:06:31     ; --                      ; --                  ; 00:18:41                           ;
-+---------------------------+--------------+-------------------------+---------------------+------------------------------------+
++--------------------------------------------------------------------------------------------------------------------------+
+; Flow Elapsed Time                                                                                                        ;
++----------------------+--------------+-------------------------+---------------------+------------------------------------+
+; Module Name          ; Elapsed Time ; Average Processors Used ; Peak Virtual Memory ; Total CPU Time (on all processors) ;
++----------------------+--------------+-------------------------+---------------------+------------------------------------+
+; Analysis & Synthesis ; 00:00:48     ; 1.8                     ; 5591 MB             ; 00:01:02                           ;
+; Total                ; 00:00:48     ; --                      ; --                  ; 00:01:02                           ;
++----------------------+--------------+-------------------------+---------------------+------------------------------------+
 
 
-+-----------------------------------------------------------------------------------------+
-; Flow OS Summary                                                                         ;
-+---------------------------+------------------+------------+------------+----------------+
-; Module Name               ; Machine Hostname ; OS Name    ; OS Version ; Processor type ;
-+---------------------------+------------------+------------+------------+----------------+
-; Analysis & Synthesis      ; Brad             ; Windows 10 ; 10.0       ; x86_64         ;
-; Fitter                    ; Brad             ; Windows 10 ; 10.0       ; x86_64         ;
-; Assembler                 ; Brad             ; Windows 10 ; 10.0       ; x86_64         ;
-; TimeQuest Timing Analyzer ; Brad             ; Windows 10 ; 10.0       ; x86_64         ;
-+---------------------------+------------------+------------+------------+----------------+
++------------------------------------------------------------------------------------+
+; Flow OS Summary                                                                    ;
++----------------------+------------------+------------+------------+----------------+
+; Module Name          ; Machine Hostname ; OS Name    ; OS Version ; Processor type ;
++----------------------+------------------+------------+------------+----------------+
+; Analysis & Synthesis ; Brad             ; Windows 10 ; 10.0       ; x86_64         ;
++----------------------+------------------+------------+------------+----------------+
 
 
 ------------
 ; Flow Log ;
 ------------
 quartus_map --read_settings_files=on --write_settings_files=off PICO8 -c PICO8
-quartus_fit --read_settings_files=off --write_settings_files=off PICO8 -c PICO8
-quartus_asm --read_settings_files=off --write_settings_files=off PICO8 -c PICO8
-quartus_sta PICO8 -c PICO8
 
 
 

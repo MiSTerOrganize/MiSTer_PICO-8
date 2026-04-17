@@ -612,7 +612,17 @@ function __z8_pause_menu()
 
     local stay = true
     local prev_act = __z8_menu.pause_act
-    __z8_menu.pause_act = btn(4) or btn(5) or btn(6)
+    __z8_menu.pause_act = btn(4) or btn(6)
+    -- X button (btn 5) = back: close submenu, dismiss prompt, or exit pause
+    if btnp(5) then
+        if __z8_menu.inoption then
+            __z8_menu.inoption = false
+        elseif __z8_menu.inquitmsg then
+            __z8_menu.inquitmsg = nil
+        else
+            return false
+        end
+    end
     if cursor >= 0 and cursor < #entries then
         local cur = entries[cursor + 1]
         local action = __z8_menu.pause_act and not prev_act

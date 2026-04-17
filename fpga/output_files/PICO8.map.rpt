@@ -1,5 +1,5 @@
 Analysis & Synthesis report for PICO8
-Fri Apr 17 11:53:50 2026
+Fri Apr 17 13:22:51 2026
 Quartus Prime Version 17.0.0 Build 595 04/25/2017 SJ Lite Edition
 
 
@@ -203,7 +203,7 @@ agreement for further details.
 +-------------------------------------------------------------------------------+
 ; Analysis & Synthesis Summary                                                  ;
 +---------------------------------+---------------------------------------------+
-; Analysis & Synthesis Status     ; Successful - Fri Apr 17 11:53:49 2026       ;
+; Analysis & Synthesis Status     ; Successful - Fri Apr 17 13:22:51 2026       ;
 ; Quartus Prime Version           ; 17.0.0 Build 595 04/25/2017 SJ Lite Edition ;
 ; Revision Name                   ; PICO8                                       ;
 ; Top-level Entity Name           ; sys_top                                     ;
@@ -319,18 +319,18 @@ agreement for further details.
 ; Number detected on machine ; 8           ;
 ; Maximum allowed            ; 8           ;
 ;                            ;             ;
-; Average used               ; 2.19        ;
+; Average used               ; 1.79        ;
 ; Maximum used               ; 8           ;
 ;                            ;             ;
 ; Usage by Processor         ; % Time Used ;
 ;     Processor 1            ; 100.0%      ;
-;     Processor 2            ;  17.1%      ;
-;     Processor 3            ;  17.1%      ;
-;     Processor 4            ;  17.0%      ;
-;     Processor 5            ;  17.0%      ;
-;     Processor 6            ;  16.9%      ;
-;     Processor 7            ;  16.9%      ;
-;     Processor 8            ;  16.9%      ;
+;     Processor 2            ;  11.3%      ;
+;     Processor 3            ;  11.3%      ;
+;     Processor 4            ;  11.3%      ;
+;     Processor 5            ;  11.2%      ;
+;     Processor 6            ;  11.2%      ;
+;     Processor 7            ;  11.2%      ;
+;     Processor 8            ;  11.2%      ;
 +----------------------------+-------------+
 
 
@@ -452,14 +452,14 @@ agreement for further details.
 +---------------------------------------------+------------------------------------------------------------------------------------------------------------------------+
 ; Resource                                    ; Usage                                                                                                                  ;
 +---------------------------------------------+------------------------------------------------------------------------------------------------------------------------+
-; Estimate of Logic utilization (ALMs needed) ; 8633                                                                                                                   ;
+; Estimate of Logic utilization (ALMs needed) ; 8648                                                                                                                   ;
 ;                                             ;                                                                                                                        ;
-; Combinational ALUT usage for logic          ; 12752                                                                                                                  ;
-;     -- 7 input functions                    ; 165                                                                                                                    ;
-;     -- 6 input functions                    ; 2142                                                                                                                   ;
-;     -- 5 input functions                    ; 1583                                                                                                                   ;
-;     -- 4 input functions                    ; 1618                                                                                                                   ;
-;     -- <=3 input functions                  ; 7244                                                                                                                   ;
+; Combinational ALUT usage for logic          ; 12753                                                                                                                  ;
+;     -- 7 input functions                    ; 166                                                                                                                    ;
+;     -- 6 input functions                    ; 2185                                                                                                                   ;
+;     -- 5 input functions                    ; 1535                                                                                                                   ;
+;     -- 4 input functions                    ; 1604                                                                                                                   ;
+;     -- <=3 input functions                  ; 7263                                                                                                                   ;
 ;                                             ;                                                                                                                        ;
 ; Dedicated logic registers                   ; 13021                                                                                                                  ;
 ;                                             ;                                                                                                                        ;
@@ -476,7 +476,7 @@ agreement for further details.
 ;                                             ;                                                                                                                        ;
 ; Maximum fan-out node                        ; pll_hdmi:pll_hdmi|pll_hdmi_0002:pll_hdmi_inst|altera_pll:altera_pll_i|altera_cyclonev_pll:cyclonev_pll|cascade_wire[0] ;
 ; Maximum fan-out                             ; 5126                                                                                                                   ;
-; Total fan-out                               ; 106508                                                                                                                 ;
+; Total fan-out                               ; 106529                                                                                                                 ;
 ; Average fan-out                             ; 3.93                                                                                                                   ;
 +---------------------------------------------+------------------------------------------------------------------------------------------------------------------------+
 
@@ -486,8 +486,8 @@ agreement for further details.
 +--------------------------------------------------------------+---------------------+---------------------------+-------------------+------------+------+--------------+----------------------------------------------------------------------------------------------------------------------------------------------------------------------+----------------------------+--------------+
 ; Compilation Hierarchy Node                                   ; Combinational ALUTs ; Dedicated Logic Registers ; Block Memory Bits ; DSP Blocks ; Pins ; Virtual Pins ; Full Hierarchy Name                                                                                                                                                  ; Entity Name                ; Library Name ;
 +--------------------------------------------------------------+---------------------+---------------------------+-------------------+------------+------+--------------+----------------------------------------------------------------------------------------------------------------------------------------------------------------------+----------------------------+--------------+
-; |sys_top                                                     ; 12752 (1247)        ; 13021 (1334)              ; 445924            ; 35         ; 145  ; 0            ; |sys_top                                                                                                                                                             ; sys_top                    ; work         ;
-;    |alsa:alsa|                                               ; 416 (416)           ; 524 (524)                 ; 0                 ; 0          ; 0    ; 0            ; |sys_top|alsa:alsa                                                                                                                                                   ; alsa                       ; work         ;
+; |sys_top                                                     ; 12753 (1254)        ; 13021 (1334)              ; 445924            ; 35         ; 145  ; 0            ; |sys_top                                                                                                                                                             ; sys_top                    ; work         ;
+;    |alsa:alsa|                                               ; 413 (413)           ; 524 (524)                 ; 0                 ; 0          ; 0    ; 0            ; |sys_top|alsa:alsa                                                                                                                                                   ; alsa                       ; work         ;
 ;    |altddio_out:hdmiclk_ddr|                                 ; 0 (0)               ; 0 (0)                     ; 0                 ; 0          ; 0    ; 0            ; |sys_top|altddio_out:hdmiclk_ddr                                                                                                                                     ; altddio_out                ; work         ;
 ;       |ddio_out_b2j:auto_generated|                          ; 0 (0)               ; 0 (0)                     ; 0                 ; 0          ; 0    ; 0            ; |sys_top|altddio_out:hdmiclk_ddr|ddio_out_b2j:auto_generated                                                                                                         ; ddio_out_b2j               ; work         ;
 ;    |altddio_out:vgaclk_ddr|                                  ; 0 (0)               ; 0 (0)                     ; 0                 ; 0          ; 0    ; 0            ; |sys_top|altddio_out:vgaclk_ddr                                                                                                                                      ; altddio_out                ; work         ;
@@ -496,7 +496,7 @@ agreement for further details.
 ;       |shift_taps_nuu:auto_generated|                        ; 7 (2)               ; 4 (2)                     ; 138               ; 0          ; 0    ; 0            ; |sys_top|altshift_taps:dv_d1_rtl_0|shift_taps_nuu:auto_generated                                                                                                     ; shift_taps_nuu             ; work         ;
 ;          |altsyncram_gr91:altsyncram4|                       ; 0 (0)               ; 0 (0)                     ; 138               ; 0          ; 0    ; 0            ; |sys_top|altshift_taps:dv_d1_rtl_0|shift_taps_nuu:auto_generated|altsyncram_gr91:altsyncram4                                                                         ; altsyncram_gr91            ; work         ;
 ;          |cntr_ohf:cntr1|                                    ; 5 (5)               ; 2 (2)                     ; 0                 ; 0          ; 0    ; 0            ; |sys_top|altshift_taps:dv_d1_rtl_0|shift_taps_nuu:auto_generated|cntr_ohf:cntr1                                                                                      ; cntr_ohf                   ; work         ;
-;    |ascal:ascal|                                             ; 2906 (2900)         ; 4424 (4420)               ; 372832            ; 23         ; 0    ; 0            ; |sys_top|ascal:ascal                                                                                                                                                 ; ascal                      ; work         ;
+;    |ascal:ascal|                                             ; 2905 (2899)         ; 4424 (4420)               ; 372832            ; 23         ; 0    ; 0            ; |sys_top|ascal:ascal                                                                                                                                                 ; ascal                      ; work         ;
 ;       |altshift_taps:o_vpix_inner[2].r_rtl_0|                ; 6 (0)               ; 4 (0)                     ; 96                ; 0          ; 0    ; 0            ; |sys_top|ascal:ascal|altshift_taps:o_vpix_inner[2].r_rtl_0                                                                                                           ; altshift_taps              ; work         ;
 ;          |shift_taps_1gv:auto_generated|                     ; 6 (4)               ; 4 (2)                     ; 96                ; 0          ; 0    ; 0            ; |sys_top|ascal:ascal|altshift_taps:o_vpix_inner[2].r_rtl_0|shift_taps_1gv:auto_generated                                                                             ; shift_taps_1gv             ; work         ;
 ;             |altsyncram_ar91:altsyncram4|                    ; 0 (0)               ; 0 (0)                     ; 96                ; 0          ; 0    ; 0            ; |sys_top|ascal:ascal|altshift_taps:o_vpix_inner[2].r_rtl_0|shift_taps_1gv:auto_generated|altsyncram_ar91:altsyncram4                                                 ; altsyncram_ar91            ; work         ;
@@ -531,7 +531,7 @@ agreement for further details.
 ;          |altsyncram_f9j1:auto_generated|                    ; 0 (0)               ; 0 (0)                     ; 10240             ; 0          ; 0    ; 0            ; |sys_top|ascal:ascal|altsyncram:o_v_poly_mem_rtl_0|altsyncram_f9j1:auto_generated                                                                                    ; altsyncram_f9j1            ; work         ;
 ;       |altsyncram:pal1_mem_rtl_0|                            ; 0 (0)               ; 0 (0)                     ; 6144              ; 0          ; 0    ; 0            ; |sys_top|ascal:ascal|altsyncram:pal1_mem_rtl_0                                                                                                                       ; altsyncram                 ; work         ;
 ;          |altsyncram_p9j1:auto_generated|                    ; 0 (0)               ; 0 (0)                     ; 6144              ; 0          ; 0    ; 0            ; |sys_top|ascal:ascal|altsyncram:pal1_mem_rtl_0|altsyncram_p9j1:auto_generated                                                                                        ; altsyncram_p9j1            ; work         ;
-;    |audio_out:audio_out|                                     ; 1299 (142)          ; 975 (180)                 ; 0                 ; 8          ; 0    ; 0            ; |sys_top|audio_out:audio_out                                                                                                                                         ; audio_out                  ; work         ;
+;    |audio_out:audio_out|                                     ; 1301 (144)          ; 975 (180)                 ; 0                 ; 8          ; 0    ; 0            ; |sys_top|audio_out:audio_out                                                                                                                                         ; audio_out                  ; work         ;
 ;       |DC_blocker:dcb_l|                                     ; 128 (128)           ; 68 (68)                   ; 0                 ; 0          ; 0    ; 0            ; |sys_top|audio_out:audio_out|DC_blocker:dcb_l                                                                                                                        ; DC_blocker                 ; work         ;
 ;       |DC_blocker:dcb_r|                                     ; 128 (128)           ; 68 (68)                   ; 0                 ; 0          ; 0    ; 0            ; |sys_top|audio_out:audio_out|DC_blocker:dcb_r                                                                                                                        ; DC_blocker                 ; work         ;
 ;       |IIR_filter:IIR_filter|                                ; 699 (57)            ; 353 (113)                 ; 0                 ; 8          ; 0    ; 0            ; |sys_top|audio_out:audio_out|IIR_filter:IIR_filter                                                                                                                   ; IIR_filter                 ; work         ;
@@ -544,14 +544,14 @@ agreement for further details.
 ;       |sigma_delta_dac:sd_l|                                 ; 19 (19)             ; 19 (19)                   ; 0                 ; 0          ; 0    ; 0            ; |sys_top|audio_out:audio_out|sigma_delta_dac:sd_l                                                                                                                    ; sigma_delta_dac            ; work         ;
 ;       |sigma_delta_dac:sd_r|                                 ; 19 (19)             ; 19 (19)                   ; 0                 ; 0          ; 0    ; 0            ; |sys_top|audio_out:audio_out|sigma_delta_dac:sd_r                                                                                                                    ; sigma_delta_dac            ; work         ;
 ;       |spdif:toslink|                                        ; 38 (38)             ; 58 (58)                   ; 0                 ; 0          ; 0    ; 0            ; |sys_top|audio_out:audio_out|spdif:toslink                                                                                                                           ; spdif                      ; work         ;
-;    |csync:csync_hdmi|                                        ; 45 (45)             ; 51 (51)                   ; 0                 ; 0          ; 0    ; 0            ; |sys_top|csync:csync_hdmi                                                                                                                                            ; csync                      ; work         ;
+;    |csync:csync_hdmi|                                        ; 46 (46)             ; 51 (51)                   ; 0                 ; 0          ; 0    ; 0            ; |sys_top|csync:csync_hdmi                                                                                                                                            ; csync                      ; work         ;
 ;    |csync:csync_vga|                                         ; 44 (44)             ; 51 (51)                   ; 0                 ; 0          ; 0    ; 0            ; |sys_top|csync:csync_vga                                                                                                                                             ; csync                      ; work         ;
 ;    |ddr_svc:ddr_svc|                                         ; 26 (26)             ; 156 (156)                 ; 0                 ; 0          ; 0    ; 0            ; |sys_top|ddr_svc:ddr_svc                                                                                                                                             ; ddr_svc                    ; work         ;
-;    |emu:emu|                                                 ; 1598 (152)          ; 1774 (104)                ; 4096              ; 0          ; 0    ; 0            ; |sys_top|emu:emu                                                                                                                                                     ; emu                        ; work         ;
-;       |hps_io:hps_io|                                        ; 668 (237)           ; 715 (159)                 ; 0                 ; 0          ; 0    ; 0            ; |sys_top|emu:emu|hps_io:hps_io                                                                                                                                       ; hps_io                     ; work         ;
-;          |video_calc:video_calc|                             ; 431 (431)           ; 556 (556)                 ; 0                 ; 0          ; 0    ; 0            ; |sys_top|emu:emu|hps_io:hps_io|video_calc:video_calc                                                                                                                 ; video_calc                 ; work         ;
-;       |pico8_video_top:native_video|                         ; 633 (0)             ; 836 (0)                   ; 4096              ; 0          ; 0    ; 0            ; |sys_top|emu:emu|pico8_video_top:native_video                                                                                                                        ; pico8_video_top            ; work         ;
-;          |pico8_video_reader:reader|                         ; 587 (547)           ; 810 (741)                 ; 4096              ; 0          ; 0    ; 0            ; |sys_top|emu:emu|pico8_video_top:native_video|pico8_video_reader:reader                                                                                              ; pico8_video_reader         ; work         ;
+;    |emu:emu|                                                 ; 1604 (153)          ; 1774 (104)                ; 4096              ; 0          ; 0    ; 0            ; |sys_top|emu:emu                                                                                                                                                     ; emu                        ; work         ;
+;       |hps_io:hps_io|                                        ; 668 (239)           ; 715 (159)                 ; 0                 ; 0          ; 0    ; 0            ; |sys_top|emu:emu|hps_io:hps_io                                                                                                                                       ; hps_io                     ; work         ;
+;          |video_calc:video_calc|                             ; 429 (429)           ; 556 (556)                 ; 0                 ; 0          ; 0    ; 0            ; |sys_top|emu:emu|hps_io:hps_io|video_calc:video_calc                                                                                                                 ; video_calc                 ; work         ;
+;       |pico8_video_top:native_video|                         ; 637 (0)             ; 836 (0)                   ; 4096              ; 0          ; 0    ; 0            ; |sys_top|emu:emu|pico8_video_top:native_video                                                                                                                        ; pico8_video_top            ; work         ;
+;          |pico8_video_reader:reader|                         ; 591 (551)           ; 810 (741)                 ; 4096              ; 0          ; 0    ; 0            ; |sys_top|emu:emu|pico8_video_top:native_video|pico8_video_reader:reader                                                                                              ; pico8_video_reader         ; work         ;
 ;             |dcfifo:line_fifo|                               ; 40 (0)              ; 69 (0)                    ; 4096              ; 0          ; 0    ; 0            ; |sys_top|emu:emu|pico8_video_top:native_video|pico8_video_reader:reader|dcfifo:line_fifo                                                                             ; dcfifo                     ; work         ;
 ;                |dcfifo_stl1:auto_generated|                  ; 40 (6)              ; 69 (21)                   ; 4096              ; 0          ; 0    ; 0            ; |sys_top|emu:emu|pico8_video_top:native_video|pico8_video_reader:reader|dcfifo:line_fifo|dcfifo_stl1:auto_generated                                                  ; dcfifo_stl1                ; work         ;
 ;                   |a_graycounter_9cc:wrptr_g1p|              ; 15 (15)             ; 10 (10)                   ; 0                 ; 0          ; 0    ; 0            ; |sys_top|emu:emu|pico8_video_top:native_video|pico8_video_reader:reader|dcfifo:line_fifo|dcfifo_stl1:auto_generated|a_graycounter_9cc:wrptr_g1p                      ; a_graycounter_9cc          ; work         ;
@@ -567,12 +567,12 @@ agreement for further details.
 ;       |pll:pll|                                              ; 1 (0)               ; 0 (0)                     ; 0                 ; 0          ; 0    ; 0            ; |sys_top|emu:emu|pll:pll                                                                                                                                             ; pll                        ; pll          ;
 ;          |pll_0002:pll_inst|                                 ; 1 (0)               ; 0 (0)                     ; 0                 ; 0          ; 0    ; 0            ; |sys_top|emu:emu|pll:pll|pll_0002:pll_inst                                                                                                                           ; pll_0002                   ; pll          ;
 ;             |altera_pll:altera_pll_i|                        ; 1 (1)               ; 0 (0)                     ; 0                 ; 0          ; 0    ; 0            ; |sys_top|emu:emu|pll:pll|pll_0002:pll_inst|altera_pll:altera_pll_i                                                                                                   ; altera_pll                 ; work         ;
-;       |sdram:sdr|                                            ; 144 (144)           ; 119 (119)                 ; 0                 ; 0          ; 0    ; 0            ; |sys_top|emu:emu|sdram:sdr                                                                                                                                           ; sdram                      ; work         ;
+;       |sdram:sdr|                                            ; 145 (145)           ; 119 (119)                 ; 0                 ; 0          ; 0    ; 0            ; |sys_top|emu:emu|sdram:sdr                                                                                                                                           ; sdram                      ; work         ;
 ;          |altddio_out:sdramclk_ddr|                          ; 0 (0)               ; 0 (0)                     ; 0                 ; 0          ; 0    ; 0            ; |sys_top|emu:emu|sdram:sdr|altddio_out:sdramclk_ddr                                                                                                                  ; altddio_out                ; work         ;
 ;             |ddio_out_b2j:auto_generated|                    ; 0 (0)               ; 0 (0)                     ; 0                 ; 0          ; 0    ; 0            ; |sys_top|emu:emu|sdram:sdr|altddio_out:sdramclk_ddr|ddio_out_b2j:auto_generated                                                                                      ; ddio_out_b2j               ; work         ;
-;    |mcp23009:mcp23009|                                       ; 171 (57)            ; 104 (42)                  ; 0                 ; 0          ; 0    ; 0            ; |sys_top|mcp23009:mcp23009                                                                                                                                           ; mcp23009                   ; work         ;
-;       |i2c:i2c|                                              ; 114 (114)           ; 62 (62)                   ; 0                 ; 0          ; 0    ; 0            ; |sys_top|mcp23009:mcp23009|i2c:i2c                                                                                                                                   ; i2c                        ; work         ;
-;    |osd:hdmi_osd|                                            ; 894 (894)           ; 580 (580)                 ; 32768             ; 0          ; 0    ; 0            ; |sys_top|osd:hdmi_osd                                                                                                                                                ; osd                        ; work         ;
+;    |mcp23009:mcp23009|                                       ; 169 (57)            ; 104 (42)                  ; 0                 ; 0          ; 0    ; 0            ; |sys_top|mcp23009:mcp23009                                                                                                                                           ; mcp23009                   ; work         ;
+;       |i2c:i2c|                                              ; 112 (112)           ; 62 (62)                   ; 0                 ; 0          ; 0    ; 0            ; |sys_top|mcp23009:mcp23009|i2c:i2c                                                                                                                                   ; i2c                        ; work         ;
+;    |osd:hdmi_osd|                                            ; 889 (889)           ; 580 (580)                 ; 32768             ; 0          ; 0    ; 0            ; |sys_top|osd:hdmi_osd                                                                                                                                                ; osd                        ; work         ;
 ;       |altsyncram:osd_buffer_rtl_0|                          ; 0 (0)               ; 0 (0)                     ; 32768             ; 0          ; 0    ; 0            ; |sys_top|osd:hdmi_osd|altsyncram:osd_buffer_rtl_0                                                                                                                    ; altsyncram                 ; work         ;
 ;          |altsyncram_96k1:auto_generated|                    ; 0 (0)               ; 0 (0)                     ; 32768             ; 0          ; 0    ; 0            ; |sys_top|osd:hdmi_osd|altsyncram:osd_buffer_rtl_0|altsyncram_96k1:auto_generated                                                                                     ; altsyncram_96k1            ; work         ;
 ;    |osd:vga_osd|                                             ; 899 (899)           ; 644 (644)                 ; 32768             ; 0          ; 0    ; 0            ; |sys_top|osd:vga_osd                                                                                                                                                 ; osd                        ; work         ;
@@ -581,7 +581,7 @@ agreement for further details.
 ;    |pll_audio:pll_audio|                                     ; 0 (0)               ; 0 (0)                     ; 0                 ; 0          ; 0    ; 0            ; |sys_top|pll_audio:pll_audio                                                                                                                                         ; pll_audio                  ; pll_audio    ;
 ;       |pll_audio_0002:pll_audio_inst|                        ; 0 (0)               ; 0 (0)                     ; 0                 ; 0          ; 0    ; 0            ; |sys_top|pll_audio:pll_audio|pll_audio_0002:pll_audio_inst                                                                                                           ; pll_audio_0002             ; pll_audio    ;
 ;          |altera_pll:altera_pll_i|                           ; 0 (0)               ; 0 (0)                     ; 0                 ; 0          ; 0    ; 0            ; |sys_top|pll_audio:pll_audio|pll_audio_0002:pll_audio_inst|altera_pll:altera_pll_i                                                                                   ; altera_pll                 ; work         ;
-;    |pll_cfg_hdmi:pll_cfg_hdmi|                               ; 302 (205)           ; 192 (163)                 ; 0                 ; 0          ; 0    ; 0            ; |sys_top|pll_cfg_hdmi:pll_cfg_hdmi                                                                                                                                   ; pll_cfg_hdmi               ; pll_cfg      ;
+;    |pll_cfg_hdmi:pll_cfg_hdmi|                               ; 298 (200)           ; 192 (163)                 ; 0                 ; 0          ; 0    ; 0            ; |sys_top|pll_cfg_hdmi:pll_cfg_hdmi                                                                                                                                   ; pll_cfg_hdmi               ; pll_cfg      ;
 ;       |altera_std_synchronizer:altera_std_synchronizer_inst| ; 0 (0)               ; 3 (3)                     ; 0                 ; 0          ; 0    ; 0            ; |sys_top|pll_cfg_hdmi:pll_cfg_hdmi|altera_std_synchronizer:altera_std_synchronizer_inst                                                                              ; altera_std_synchronizer    ; work         ;
 ;       |dprio_mux:dprio_mux_inst|                             ; 57 (57)             ; 0 (0)                     ; 0                 ; 0          ; 0    ; 0            ; |sys_top|pll_cfg_hdmi:pll_cfg_hdmi|dprio_mux:dprio_mux_inst                                                                                                          ; dprio_mux                  ; pll_cfg      ;
 ;       |dyn_phase_shift:dyn_phase_shift_inst|                 ; 7 (2)               ; 1 (1)                     ; 0                 ; 0          ; 0    ; 0            ; |sys_top|pll_cfg_hdmi:pll_cfg_hdmi|dyn_phase_shift:dyn_phase_shift_inst                                                                                              ; dyn_phase_shift            ; pll_cfg      ;
@@ -593,7 +593,7 @@ agreement for further details.
 ;       |fpll_dprio_init:fpll_dprio_init_inst|                 ; 11 (11)             ; 13 (13)                   ; 0                 ; 0          ; 0    ; 0            ; |sys_top|pll_cfg_hdmi:pll_cfg_hdmi|fpll_dprio_init:fpll_dprio_init_inst                                                                                              ; fpll_dprio_init            ; pll_cfg      ;
 ;       |generic_lcell_comb:lcell_dprio_read|                  ; 1 (1)               ; 0 (0)                     ; 0                 ; 0          ; 0    ; 0            ; |sys_top|pll_cfg_hdmi:pll_cfg_hdmi|generic_lcell_comb:lcell_dprio_read                                                                                               ; generic_lcell_comb         ; pll_cfg      ;
 ;       |generic_lcell_comb:lcell_fpll_0_1|                    ; 2 (2)               ; 0 (0)                     ; 0                 ; 0          ; 0    ; 0            ; |sys_top|pll_cfg_hdmi:pll_cfg_hdmi|generic_lcell_comb:lcell_fpll_0_1                                                                                                 ; generic_lcell_comb         ; pll_cfg      ;
-;       |self_reset:self_reset_inst|                           ; 19 (19)             ; 12 (12)                   ; 0                 ; 0          ; 0    ; 0            ; |sys_top|pll_cfg_hdmi:pll_cfg_hdmi|self_reset:self_reset_inst                                                                                                        ; self_reset                 ; pll_cfg      ;
+;       |self_reset:self_reset_inst|                           ; 20 (20)             ; 12 (12)                   ; 0                 ; 0          ; 0    ; 0            ; |sys_top|pll_cfg_hdmi:pll_cfg_hdmi|self_reset:self_reset_inst                                                                                                        ; self_reset                 ; pll_cfg      ;
 ;    |pll_hdmi:pll_hdmi|                                       ; 7 (0)               ; 6 (0)                     ; 0                 ; 0          ; 0    ; 0            ; |sys_top|pll_hdmi:pll_hdmi                                                                                                                                           ; pll_hdmi                   ; pll_hdmi     ;
 ;       |pll_hdmi_0002:pll_hdmi_inst|                          ; 7 (0)               ; 6 (0)                     ; 0                 ; 0          ; 0    ; 0            ; |sys_top|pll_hdmi:pll_hdmi|pll_hdmi_0002:pll_hdmi_inst                                                                                                               ; pll_hdmi_0002              ; pll_hdmi     ;
 ;          |altera_pll:altera_pll_i|                           ; 7 (0)               ; 6 (0)                     ; 0                 ; 0          ; 0    ; 0            ; |sys_top|pll_hdmi:pll_hdmi|pll_hdmi_0002:pll_hdmi_inst|altera_pll:altera_pll_i                                                                                       ; altera_pll                 ; work         ;
@@ -2228,11 +2228,11 @@ Encoding Type:  One-Hot
 ; Statistic                                    ; Value ;
 +----------------------------------------------+-------+
 ; Total registers                              ; 13021 ;
-; Number of registers using Synchronous Clear  ; 2798  ;
+; Number of registers using Synchronous Clear  ; 2796  ;
 ; Number of registers using Synchronous Load   ; 1750  ;
 ; Number of registers using Asynchronous Clear ; 477   ;
 ; Number of registers using Asynchronous Load  ; 0     ;
-; Number of registers using Clock Enable       ; 8273  ;
+; Number of registers using Clock Enable       ; 8275  ;
 ; Number of registers using Preset             ; 0     ;
 +----------------------------------------------+-------+
 
@@ -2260,13 +2260,13 @@ Encoding Type:  One-Hot
 ; emu:emu|sdram:sdr|save_we                                                                                                                         ; 5       ;
 ; audio_out:audio_out|sigma_delta_dac:sd_l|DACout                                                                                                   ; 1       ;
 ; audio_out:audio_out|sigma_delta_dac:sd_r|DACout                                                                                                   ; 1       ;
-; mcp23009:mcp23009|i2c:i2c|SD_COUNTER[1]                                                                                                           ; 14      ;
+; mcp23009:mcp23009|i2c:i2c|SD_COUNTER[1]                                                                                                           ; 17      ;
 ; mcp23009:mcp23009|i2c:i2c|SD_COUNTER[5]                                                                                                           ; 5       ;
 ; mcp23009:mcp23009|i2c:i2c|SD[29]                                                                                                                  ; 5       ;
 ; mcp23009:mcp23009|i2c:i2c|SD_COUNTER[4]                                                                                                           ; 8       ;
-; mcp23009:mcp23009|i2c:i2c|SD_COUNTER[0]                                                                                                           ; 17      ;
+; mcp23009:mcp23009|i2c:i2c|SD_COUNTER[0]                                                                                                           ; 20      ;
 ; mcp23009:mcp23009|i2c:i2c|SD_COUNTER[3]                                                                                                           ; 9       ;
-; mcp23009:mcp23009|i2c:i2c|SD_COUNTER[2]                                                                                                           ; 17      ;
+; mcp23009:mcp23009|i2c:i2c|SD_COUNTER[2]                                                                                                           ; 16      ;
 ; mcp23009:mcp23009|i2c:i2c|SDO[3]                                                                                                                  ; 1       ;
 ; sysmem_lite:sysmem|vbuf_reset_0                                                                                                                   ; 1       ;
 ; sysmem_lite:sysmem|ram1_reset_0                                                                                                                   ; 1       ;
@@ -2276,7 +2276,7 @@ Encoding Type:  One-Hot
 ; emu:emu|cnt[3]                                                                                                                                    ; 3       ;
 ; audio_out:audio_out|spdif:toslink|load_subframe_q                                                                                                 ; 33      ;
 ; mcp23009:mcp23009|i2c:i2c|SDO[1]                                                                                                                  ; 1       ;
-; pll_cfg_hdmi:pll_cfg_hdmi|self_reset:self_reset_inst|local_reset                                                                                  ; 38      ;
+; pll_cfg_hdmi:pll_cfg_hdmi|self_reset:self_reset_inst|local_reset                                                                                  ; 36      ;
 ; mcp23009:mcp23009|i2c:i2c|SDO[0]                                                                                                                  ; 2       ;
 ; pll_cfg_hdmi:pll_cfg_hdmi|fpll_dprio_init:fpll_dprio_init_inst|mdio_dis                                                                           ; 1       ;
 ; pll_cfg_hdmi:pll_cfg_hdmi|fpll_dprio_init:fpll_dprio_init_inst|ser_shift_load                                                                     ; 1       ;
@@ -2298,15 +2298,15 @@ Encoding Type:  One-Hot
 ; mcp23009:mcp23009|i2c:i2c|SD[26]                                                                                                                  ; 1       ;
 ; mcp23009:mcp23009|i2c:i2c|SD[27]                                                                                                                  ; 1       ;
 ; HEIGHT[10]                                                                                                                                        ; 9       ;
-; HEIGHT[3]                                                                                                                                         ; 8       ;
 ; HEIGHT[4]                                                                                                                                         ; 8       ;
 ; HEIGHT[5]                                                                                                                                         ; 9       ;
 ; VFP[2]                                                                                                                                            ; 3       ;
+; HEIGHT[3]                                                                                                                                         ; 8       ;
 ; VS[2]                                                                                                                                             ; 3       ;
 ; VS[0]                                                                                                                                             ; 3       ;
 ; WIDTH[10]                                                                                                                                         ; 9       ;
 ; WIDTH[9]                                                                                                                                          ; 9       ;
-; WIDTH[8]                                                                                                                                          ; 9       ;
+; WIDTH[8]                                                                                                                                          ; 8       ;
 ; HFP[3]                                                                                                                                            ; 3       ;
 ; WIDTH[7]                                                                                                                                          ; 9       ;
 ; HFP[6]                                                                                                                                            ; 3       ;
@@ -2317,12 +2317,12 @@ Encoding Type:  One-Hot
 ; HBP[4]                                                                                                                                            ; 1       ;
 ; HBP[7]                                                                                                                                            ; 1       ;
 ; HBP[2]                                                                                                                                            ; 1       ;
-; VBP[2]                                                                                                                                            ; 2       ;
 ; VBP[5]                                                                                                                                            ; 2       ;
-; emu:emu|pico8_video_top:native_video|pico8_video_reader:reader|dcfifo:line_fifo|dcfifo_stl1:auto_generated|a_graycounter_du6:rdptr_g1p|counter5a0 ; 6       ;
+; VBP[2]                                                                                                                                            ; 2       ;
+; emu:emu|pico8_video_top:native_video|pico8_video_reader:reader|dcfifo:line_fifo|dcfifo_stl1:auto_generated|a_graycounter_du6:rdptr_g1p|counter5a0 ; 10      ;
 ; emu:emu|pico8_video_top:native_video|pico8_video_reader:reader|reset_vid_sync[0]                                                                  ; 1       ;
 ; emu:emu|pico8_video_top:native_video|pico8_video_reader:reader|dcfifo:line_fifo|dcfifo_stl1:auto_generated|a_graycounter_9cc:wrptr_g1p|counter8a0 ; 9       ;
-; emu:emu|pico8_video_top:native_video|pico8_video_reader:reader|dcfifo:line_fifo|dcfifo_stl1:auto_generated|a_graycounter_du6:rdptr_g1p|parity6    ; 3       ;
+; emu:emu|pico8_video_top:native_video|pico8_video_reader:reader|dcfifo:line_fifo|dcfifo_stl1:auto_generated|a_graycounter_du6:rdptr_g1p|parity6    ; 6       ;
 ; emu:emu|pico8_video_top:native_video|pico8_video_reader:reader|dcfifo:line_fifo|dcfifo_stl1:auto_generated|a_graycounter_9cc:wrptr_g1p|parity9    ; 7       ;
 ; aflt_rate[22]                                                                                                                                     ; 2       ;
 ; aflt_rate[19]                                                                                                                                     ; 2       ;
@@ -2500,35 +2500,36 @@ Encoding Type:  One-Hot
 ; 4:1                ; 2 bits    ; 4 LEs         ; 4 LEs                ; 0 LEs                  ; Yes        ; |sys_top|alsa:alsa|ready[0]                                                                                 ;
 ; 4:1                ; 7 bits    ; 14 LEs        ; 14 LEs               ; 0 LEs                  ; Yes        ; |sys_top|emu:emu|pico8_video_top:native_video|pico8_video_reader:reader|beat_count[1]                       ;
 ; 4:1                ; 64 bits   ; 128 LEs       ; 0 LEs                ; 128 LEs                ; Yes        ; |sys_top|emu:emu|pico8_video_top:native_video|pico8_video_reader:reader|pixel_word[0]                       ;
-; 4:1                ; 56 bits   ; 112 LEs       ; 0 LEs                ; 112 LEs                ; Yes        ; |sys_top|emu:emu|pico8_video_top:native_video|pico8_video_reader:reader|cart_write_data[40]                 ;
+; 4:1                ; 56 bits   ; 112 LEs       ; 0 LEs                ; 112 LEs                ; Yes        ; |sys_top|emu:emu|pico8_video_top:native_video|pico8_video_reader:reader|cart_write_data[41]                 ;
 ; 4:1                ; 34 bits   ; 68 LEs        ; 34 LEs               ; 34 LEs                 ; Yes        ; |sys_top|emu:emu|pico8_video_top:native_video|pico8_video_reader:reader|cart_write_addr[18]                 ;
-; 4:1                ; 10 bits   ; 20 LEs        ; 0 LEs                ; 20 LEs                 ; Yes        ; |sys_top|emu:emu|pico8_video_top:native_video|pico8_video_timing:timing|hcount[6]                           ;
-; 4:1                ; 9 bits    ; 18 LEs        ; 0 LEs                ; 18 LEs                 ; Yes        ; |sys_top|emu:emu|pico8_video_top:native_video|pico8_video_timing:timing|vcount[4]                           ;
-; 4:1                ; 27 bits   ; 54 LEs        ; 0 LEs                ; 54 LEs                 ; Yes        ; |sys_top|emu:emu|pico8_video_top:native_video|pico8_video_reader:reader|cart_total_bytes[23]                ;
+; 4:1                ; 10 bits   ; 20 LEs        ; 0 LEs                ; 20 LEs                 ; Yes        ; |sys_top|emu:emu|pico8_video_top:native_video|pico8_video_timing:timing|hcount[7]                           ;
+; 4:1                ; 9 bits    ; 18 LEs        ; 0 LEs                ; 18 LEs                 ; Yes        ; |sys_top|emu:emu|pico8_video_top:native_video|pico8_video_timing:timing|vcount[3]                           ;
+; 4:1                ; 27 bits   ; 54 LEs        ; 0 LEs                ; 54 LEs                 ; Yes        ; |sys_top|emu:emu|pico8_video_top:native_video|pico8_video_reader:reader|cart_total_bytes[22]                ;
 ; 4:1                ; 16 bits   ; 32 LEs        ; 32 LEs               ; 0 LEs                  ; Yes        ; |sys_top|alsa:alsa|buf_rptr[3]                                                                              ;
 ; 5:1                ; 5 bits    ; 15 LEs        ; 10 LEs               ; 5 LEs                  ; Yes        ; |sys_top|emu:emu|pico8_video_top:native_video|pico8_video_reader:reader|stale_vblank_count[4]               ;
-; 5:1                ; 8 bits    ; 24 LEs        ; 8 LEs                ; 16 LEs                 ; Yes        ; |sys_top|alsa:alsa|ce_cnt[6]                                                                                ;
+; 5:1                ; 8 bits    ; 24 LEs        ; 8 LEs                ; 16 LEs                 ; Yes        ; |sys_top|alsa:alsa|ce_cnt[3]                                                                                ;
 ; 5:1                ; 8 bits    ; 24 LEs        ; 0 LEs                ; 24 LEs                 ; Yes        ; |sys_top|emu:emu|pico8_video_top:native_video|pico8_video_reader:reader|cart_buf[7]                         ;
-; 5:1                ; 8 bits    ; 24 LEs        ; 0 LEs                ; 24 LEs                 ; Yes        ; |sys_top|emu:emu|pico8_video_top:native_video|pico8_video_reader:reader|cart_buf[14]                        ;
-; 5:1                ; 8 bits    ; 24 LEs        ; 0 LEs                ; 24 LEs                 ; Yes        ; |sys_top|emu:emu|pico8_video_top:native_video|pico8_video_reader:reader|cart_buf[18]                        ;
-; 5:1                ; 8 bits    ; 24 LEs        ; 0 LEs                ; 24 LEs                 ; Yes        ; |sys_top|emu:emu|pico8_video_top:native_video|pico8_video_reader:reader|cart_buf[27]                        ;
+; 5:1                ; 8 bits    ; 24 LEs        ; 0 LEs                ; 24 LEs                 ; Yes        ; |sys_top|emu:emu|pico8_video_top:native_video|pico8_video_reader:reader|cart_buf[15]                        ;
+; 5:1                ; 8 bits    ; 24 LEs        ; 0 LEs                ; 24 LEs                 ; Yes        ; |sys_top|emu:emu|pico8_video_top:native_video|pico8_video_reader:reader|cart_buf[17]                        ;
+; 5:1                ; 8 bits    ; 24 LEs        ; 0 LEs                ; 24 LEs                 ; Yes        ; |sys_top|emu:emu|pico8_video_top:native_video|pico8_video_reader:reader|cart_buf[26]                        ;
 ; 5:1                ; 8 bits    ; 24 LEs        ; 0 LEs                ; 24 LEs                 ; Yes        ; |sys_top|emu:emu|pico8_video_top:native_video|pico8_video_reader:reader|cart_buf[32]                        ;
 ; 5:1                ; 8 bits    ; 24 LEs        ; 0 LEs                ; 24 LEs                 ; Yes        ; |sys_top|emu:emu|pico8_video_top:native_video|pico8_video_reader:reader|cart_buf[40]                        ;
 ; 5:1                ; 8 bits    ; 24 LEs        ; 0 LEs                ; 24 LEs                 ; Yes        ; |sys_top|emu:emu|pico8_video_top:native_video|pico8_video_reader:reader|cart_buf[48]                        ;
 ; 5:1                ; 8 bits    ; 24 LEs        ; 0 LEs                ; 24 LEs                 ; Yes        ; |sys_top|emu:emu|pico8_video_top:native_video|pico8_video_reader:reader|cart_buf[61]                        ;
-; 5:1                ; 32 bits   ; 96 LEs        ; 0 LEs                ; 96 LEs                 ; Yes        ; |sys_top|emu:emu|pico8_video_top:native_video|pico8_video_reader:reader|audio_l_out[14]                     ;
-; 6:1                ; 3 bits    ; 12 LEs        ; 9 LEs                ; 3 LEs                  ; Yes        ; |sys_top|emu:emu|pico8_video_top:native_video|pico8_video_reader:reader|cart_byte_cnt[0]                    ;
-; 6:1                ; 9 bits    ; 36 LEs        ; 9 LEs                ; 27 LEs                 ; Yes        ; |sys_top|alsa:alsa|len[10]                                                                                  ;
-; 5:1                ; 4 bits    ; 12 LEs        ; 8 LEs                ; 4 LEs                  ; Yes        ; |sys_top|emu:emu|pico8_video_top:native_video|pico8_video_reader:reader|fifo_aclr_cnt[2]                    ;
-; 9:1                ; 16 bits   ; 96 LEs        ; 32 LEs               ; 64 LEs                 ; Yes        ; |sys_top|emu:emu|pico8_video_top:native_video|pico8_video_reader:reader|b_out[3]                            ;
-; 7:1                ; 2 bits    ; 8 LEs         ; 4 LEs                ; 4 LEs                  ; Yes        ; |sys_top|emu:emu|pico8_video_top:native_video|pico8_video_reader:reader|pixel_sub[1]                        ;
-; 7:1                ; 9 bits    ; 36 LEs        ; 0 LEs                ; 36 LEs                 ; Yes        ; |sys_top|emu:emu|pico8_video_top:native_video|pico8_video_reader:reader|display_line[7]                     ;
+; 5:1                ; 32 bits   ; 96 LEs        ; 0 LEs                ; 96 LEs                 ; Yes        ; |sys_top|emu:emu|pico8_video_top:native_video|pico8_video_reader:reader|audio_r_out[15]                     ;
+; 6:1                ; 3 bits    ; 12 LEs        ; 9 LEs                ; 3 LEs                  ; Yes        ; |sys_top|emu:emu|pico8_video_top:native_video|pico8_video_reader:reader|cart_byte_cnt[2]                    ;
+; 6:1                ; 9 bits    ; 36 LEs        ; 9 LEs                ; 27 LEs                 ; Yes        ; |sys_top|alsa:alsa|len[15]                                                                                  ;
+; 5:1                ; 4 bits    ; 12 LEs        ; 8 LEs                ; 4 LEs                  ; Yes        ; |sys_top|emu:emu|pico8_video_top:native_video|pico8_video_reader:reader|fifo_aclr_cnt[1]                    ;
+; 6:1                ; 2 bits    ; 8 LEs         ; 4 LEs                ; 4 LEs                  ; Yes        ; |sys_top|emu:emu|pico8_video_top:native_video|pico8_video_reader:reader|aud_need_refill                     ;
+; 9:1                ; 16 bits   ; 96 LEs        ; 32 LEs               ; 64 LEs                 ; Yes        ; |sys_top|emu:emu|pico8_video_top:native_video|pico8_video_reader:reader|b_out[0]                            ;
+; 7:1                ; 2 bits    ; 8 LEs         ; 4 LEs                ; 4 LEs                  ; Yes        ; |sys_top|emu:emu|pico8_video_top:native_video|pico8_video_reader:reader|pixel_sub[0]                        ;
+; 7:1                ; 9 bits    ; 36 LEs        ; 0 LEs                ; 36 LEs                 ; Yes        ; |sys_top|emu:emu|pico8_video_top:native_video|pico8_video_reader:reader|display_line[0]                     ;
 ; 8:1                ; 3 bits    ; 15 LEs        ; 12 LEs               ; 3 LEs                  ; Yes        ; |sys_top|alsa:alsa|hurryup[0]                                                                               ;
-; 6:1                ; 32 bits   ; 128 LEs       ; 0 LEs                ; 128 LEs                ; Yes        ; |sys_top|emu:emu|pico8_video_top:native_video|pico8_video_reader:reader|ddr_din[40]                         ;
-; 10:1               ; 5 bits    ; 30 LEs        ; 15 LEs               ; 15 LEs                 ; Yes        ; |sys_top|emu:emu|pico8_video_top:native_video|pico8_video_reader:reader|ddr_din[29]                         ;
+; 6:1                ; 32 bits   ; 128 LEs       ; 0 LEs                ; 128 LEs                ; Yes        ; |sys_top|emu:emu|pico8_video_top:native_video|pico8_video_reader:reader|ddr_din[39]                         ;
+; 10:1               ; 5 bits    ; 30 LEs        ; 15 LEs               ; 15 LEs                 ; Yes        ; |sys_top|emu:emu|pico8_video_top:native_video|pico8_video_reader:reader|ddr_din[30]                         ;
 ; 12:1               ; 15 bits   ; 120 LEs       ; 30 LEs               ; 90 LEs                 ; Yes        ; |sys_top|emu:emu|pico8_video_top:native_video|pico8_video_reader:reader|ddr_din[17]                         ;
-; 12:1               ; 11 bits   ; 88 LEs        ; 44 LEs               ; 44 LEs                 ; Yes        ; |sys_top|emu:emu|pico8_video_top:native_video|pico8_video_reader:reader|ddr_din[7]                          ;
-; 8:1                ; 20 bits   ; 100 LEs       ; 0 LEs                ; 100 LEs                ; Yes        ; |sys_top|emu:emu|pico8_video_top:native_video|pico8_video_reader:reader|timeout_cnt[10]                     ;
+; 12:1               ; 11 bits   ; 88 LEs        ; 44 LEs               ; 44 LEs                 ; Yes        ; |sys_top|emu:emu|pico8_video_top:native_video|pico8_video_reader:reader|ddr_din[1]                          ;
+; 8:1                ; 20 bits   ; 100 LEs       ; 0 LEs                ; 100 LEs                ; Yes        ; |sys_top|emu:emu|pico8_video_top:native_video|pico8_video_reader:reader|timeout_cnt[12]                     ;
 ; 3:1                ; 2 bits    ; 4 LEs         ; 4 LEs                ; 0 LEs                  ; No         ; |sys_top|alsa:alsa|state                                                                                    ;
 ; 23:1               ; 5 bits    ; 75 LEs        ; 40 LEs               ; 35 LEs                 ; No         ; |sys_top|emu:emu|pico8_video_top:native_video|pico8_video_reader:reader|state                               ;
 ; 3:1                ; 12 bits   ; 24 LEs        ; 0 LEs                ; 24 LEs                 ; Yes        ; |sys_top|ascal:ascal|i_vcpt[11]                                                                             ;
@@ -6408,14 +6409,14 @@ Note: In order to hide this table in the UI and the text report file, please set
 ; arriav_ddio_out                            ; 3      ;
 ; arriav_ff                                  ; 13021  ;
 ;     CLR                                    ; 139    ;
-;     ENA                                    ; 4900   ;
+;     ENA                                    ; 4902   ;
 ;     ENA CLR                                ; 313    ;
 ;     ENA CLR SCLR                           ; 9      ;
 ;     ENA CLR SLD                            ; 16     ;
 ;     ENA SCLR                               ; 1691   ;
 ;     ENA SCLR SLD                           ; 310    ;
 ;     ENA SLD                                ; 1034   ;
-;     SCLR                                   ; 788    ;
+;     SCLR                                   ; 786    ;
 ;     SLD                                    ; 390    ;
 ;     plain                                  ; 3431   ;
 ; arriav_hps_interface_boot_from_fpga        ; 1      ;
@@ -6431,7 +6432,7 @@ Note: In order to hide this table in the UI and the text report file, please set
 ; arriav_hps_interface_peripheral_uart       ; 1      ;
 ; arriav_hps_interface_tpiu_trace            ; 1      ;
 ; arriav_io_obuf                             ; 66     ;
-; arriav_lcell_comb                          ; 12756  ;
+; arriav_lcell_comb                          ; 12757  ;
 ;     arith                                  ; 4535   ;
 ;         0 data inputs                      ; 85     ;
 ;         1 data inputs                      ; 2042   ;
@@ -6439,16 +6440,16 @@ Note: In order to hide this table in the UI and the text report file, please set
 ;         3 data inputs                      ; 386    ;
 ;         4 data inputs                      ; 182    ;
 ;         5 data inputs                      ; 202    ;
-;     extend                                 ; 165    ;
-;         7 data inputs                      ; 165    ;
+;     extend                                 ; 166    ;
+;         7 data inputs                      ; 166    ;
 ;     normal                                 ; 6854   ;
 ;         0 data inputs                      ; 11     ;
 ;         1 data inputs                      ; 131    ;
-;         2 data inputs                      ; 703    ;
-;         3 data inputs                      ; 1075   ;
-;         4 data inputs                      ; 1411   ;
-;         5 data inputs                      ; 1381   ;
-;         6 data inputs                      ; 2142   ;
+;         2 data inputs                      ; 707    ;
+;         3 data inputs                      ; 1090   ;
+;         4 data inputs                      ; 1397   ;
+;         5 data inputs                      ; 1333   ;
+;         6 data inputs                      ; 2185   ;
 ;     shared                                 ; 1202   ;
 ;         0 data inputs                      ; 94     ;
 ;         1 data inputs                      ; 252    ;
@@ -6484,7 +6485,7 @@ Note: In order to hide this table in the UI and the text report file, please set
 Info: *******************************************************************
 Info: Running Quartus Prime Analysis & Synthesis
     Info: Version 17.0.0 Build 595 04/25/2017 SJ Lite Edition
-    Info: Processing started: Fri Apr 17 11:53:14 2026
+    Info: Processing started: Fri Apr 17 13:22:01 2026
 Info: Command: quartus_map --read_settings_files=on --write_settings_files=off PICO8 -c PICO8
 Info (16303): High Performance Effort optimization mode selected -- timing performance will be prioritized at the potential cost of increased compilation time
     Info (16304): Mode behavior is affected by advanced setting Physical Synthesis Effort Level (default for this mode is Normal)
@@ -7137,9 +7138,9 @@ Info (12128): Elaborating entity "pico8_video_top" for hierarchy "emu:emu|pico8_
 Info (12128): Elaborating entity "pico8_video_timing" for hierarchy "emu:emu|pico8_video_top:native_video|pico8_video_timing:timing" File: C:/Users/miste/OneDrive/Desktop/MiSTerOrganize/MiSTer_Frontier/MiSTer_PICO-8/fpga/rtl/pico8_video_top.sv Line: 83
 Info (12128): Elaborating entity "pico8_video_reader" for hierarchy "emu:emu|pico8_video_top:native_video|pico8_video_reader:reader" File: C:/Users/miste/OneDrive/Desktop/MiSTerOrganize/MiSTer_Frontier/MiSTer_PICO-8/fpga/rtl/pico8_video_top.sv Line: 131
 Warning (10230): Verilog HDL assignment warning at pico8_video_reader.sv(232): truncated value with size 8 to match size of target (7) File: C:/Users/miste/OneDrive/Desktop/MiSTerOrganize/MiSTer_Frontier/MiSTer_PICO-8/fpga/rtl/pico8_video_reader.sv Line: 232
-Info (12128): Elaborating entity "dcfifo" for hierarchy "emu:emu|pico8_video_top:native_video|pico8_video_reader:reader|dcfifo:line_fifo" File: C:/Users/miste/OneDrive/Desktop/MiSTerOrganize/MiSTer_Frontier/MiSTer_PICO-8/fpga/rtl/pico8_video_reader.sv Line: 652
-Info (12130): Elaborated megafunction instantiation "emu:emu|pico8_video_top:native_video|pico8_video_reader:reader|dcfifo:line_fifo" File: C:/Users/miste/OneDrive/Desktop/MiSTerOrganize/MiSTer_Frontier/MiSTer_PICO-8/fpga/rtl/pico8_video_reader.sv Line: 652
-Info (12133): Instantiated megafunction "emu:emu|pico8_video_top:native_video|pico8_video_reader:reader|dcfifo:line_fifo" with the following parameter: File: C:/Users/miste/OneDrive/Desktop/MiSTerOrganize/MiSTer_Frontier/MiSTer_PICO-8/fpga/rtl/pico8_video_reader.sv Line: 652
+Info (12128): Elaborating entity "dcfifo" for hierarchy "emu:emu|pico8_video_top:native_video|pico8_video_reader:reader|dcfifo:line_fifo" File: C:/Users/miste/OneDrive/Desktop/MiSTerOrganize/MiSTer_Frontier/MiSTer_PICO-8/fpga/rtl/pico8_video_reader.sv Line: 653
+Info (12130): Elaborated megafunction instantiation "emu:emu|pico8_video_top:native_video|pico8_video_reader:reader|dcfifo:line_fifo" File: C:/Users/miste/OneDrive/Desktop/MiSTerOrganize/MiSTer_Frontier/MiSTer_PICO-8/fpga/rtl/pico8_video_reader.sv Line: 653
+Info (12133): Instantiated megafunction "emu:emu|pico8_video_top:native_video|pico8_video_reader:reader|dcfifo:line_fifo" with the following parameter: File: C:/Users/miste/OneDrive/Desktop/MiSTerOrganize/MiSTer_Frontier/MiSTer_PICO-8/fpga/rtl/pico8_video_reader.sv Line: 653
     Info (12134): Parameter "intended_device_family" = "Cyclone V"
     Info (12134): Parameter "lpm_numwords" = "64"
     Info (12134): Parameter "lpm_showahead" = "ON"
@@ -7581,19 +7582,19 @@ Warning (21074): Design contains 3 input pin(s) that do not drive logic
     Warning (15610): No output dependent on input pin "HDMI_TX_INT" File: C:/Users/miste/OneDrive/Desktop/MiSTerOrganize/MiSTer_Frontier/MiSTer_PICO-8/fpga/sys/sys_top.v Line: 44
     Warning (15610): No output dependent on input pin "SD_SPI_MISO" File: C:/Users/miste/OneDrive/Desktop/MiSTerOrganize/MiSTer_Frontier/MiSTer_PICO-8/fpga/sys/sys_top.v Line: 100
     Warning (15610): No output dependent on input pin "ADC_SDO" File: C:/Users/miste/OneDrive/Desktop/MiSTerOrganize/MiSTer_Frontier/MiSTer_PICO-8/fpga/sys/sys_top.v Line: 110
-Info (21057): Implemented 21815 device resources after synthesis - the final resource count might be different
+Info (21057): Implemented 21817 device resources after synthesis - the final resource count might be different
     Info (21058): Implemented 16 input pins
     Info (21059): Implemented 97 output pins
     Info (21060): Implemented 32 bidirectional pins
-    Info (21061): Implemented 20675 logic cells
+    Info (21061): Implemented 20677 logic cells
     Info (21064): Implemented 936 RAM segments
     Info (21065): Implemented 3 PLLs
     Info (21062): Implemented 35 DSP elements
 Info: Quartus Prime Analysis & Synthesis was successful. 0 errors, 47 warnings
-    Info: Peak virtual memory: 5580 megabytes
-    Info: Processing ended: Fri Apr 17 11:53:50 2026
-    Info: Elapsed time: 00:00:36
-    Info: Total CPU time (on all processors): 00:01:06
+    Info: Peak virtual memory: 5591 megabytes
+    Info: Processing ended: Fri Apr 17 13:22:51 2026
+    Info: Elapsed time: 00:00:50
+    Info: Total CPU time (on all processors): 00:01:04
 
 
 +------------------------------------------+
