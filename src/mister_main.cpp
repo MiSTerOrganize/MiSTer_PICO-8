@@ -359,6 +359,7 @@ int main(int argc, char **argv)
 
     if (enable_native_video) {
         setenv("SDL_VIDEODRIVER", "dummy", 1);
+        setenv("SDL_AUDIODRIVER", "dummy", 1);
         if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_JOYSTICK) < 0) {
             fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
             return 1;
