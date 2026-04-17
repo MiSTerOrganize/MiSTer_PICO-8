@@ -34,12 +34,11 @@ mkdir -p /media/fat/docs/PICO-8
 
 FAIL=0
 
-echo "  Downloading FPGA core..."
+# Bump this when a new RBF is committed to _Console/.
+RBF_NAME="PICO-8_20260409.rbf"
+
+echo "  Downloading FPGA core ($RBF_NAME)..."
 rm -f /media/fat/_Console/PICO-8_*.rbf /media/fat/_Console/PICO-8.rbf
-RBF_NAME=$(wget -q -O - "https://api.github.com/repos/$REPO/contents/_Console" | grep -o '"PICO-8_[0-9]*.rbf"' | tr -d '"')
-if [ -z "$RBF_NAME" ]; then
-    RBF_NAME="PICO-8.rbf"
-fi
 wget -q --show-progress -O "/media/fat/_Console/$RBF_NAME" "$BASE_URL/_Console/$RBF_NAME" || FAIL=1
 
 echo "  Downloading ARM binary..."
