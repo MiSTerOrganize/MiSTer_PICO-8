@@ -438,6 +438,9 @@ private:
     std::vector<std::shared_ptr<u4mat2<128, 128>>> m_multiscreens;
 
     bool m_in_pause = false;
+public:
+    bool is_paused() const { return m_in_pause; }
+private:
 
     // Files
     int m_save_slot = 0;
