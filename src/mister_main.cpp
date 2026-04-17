@@ -427,13 +427,6 @@ int main(int argc, char **argv)
         }
     }
 
-    // ── Init audio ─────────────────────────────────────────────────────
-    // In native video mode, audio goes through DDR3 ring buffer to FPGA.
-    // No ALSA init needed — the ring buffer is part of the DDR3 writer.
-    bool have_audio = false;
-    if (enable_sound && have_native_video)
-        have_audio = true;
-
     // ── Init native video DDR3 writer (for FPGA native output) ────────
     // Only when -nativevideo flag is passed (requires PICO-8 FPGA core loaded).
     bool have_native_video = false;
@@ -444,6 +437,13 @@ int main(int argc, char **argv)
         else
             fprintf(stderr, "Native video: DDR3 init failed, falling back to SDL\n");
     }
+
+    // ── Init audio ─────────────────────────────────────────────────────
+    // In native video mode, audio goes through DDR3 ring buffer to FPGA.
+    // No ALSA init needed — the ring buffer is part of the DDR3 writer.
+    bool have_audio = false;
+    if (enable_sound && have_native_video)
+        have_audio = true;
 
     // Joystick is handled by SDL (opened after SDL_Init above)
     // Cart browser opens /dev/input/js0 directly when needed
