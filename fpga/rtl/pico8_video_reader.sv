@@ -397,8 +397,8 @@ always @(posedge ddr_clk) begin
                     state <= ST_WRITE_CART;
                 else if (cart_size_pending)
                     state <= ST_WRITE_CART_SIZE;
-                else if (aud_need_refill && (aud_rd_ptr != aud_wr_ptr))
-                    state <= ST_READ_AUDIO;
+                else if (aud_need_refill)
+                    state <= ST_READ_AUD_WPTR;
             end
 
             ST_WRITE_JOY: begin
@@ -420,7 +420,7 @@ always @(posedge ddr_clk) begin
                     ddr_din        <= {32'd0, vblank_counter + 30'd1, active_buffer, 1'b0};
                     ddr_burstcnt   <= 8'd1;
                     ddr_we         <= 1'b1;
-                    state          <= ST_READ_AUD_WPTR;
+                    state          <= ST_POLL_CTRL;
                 end
             end
 
@@ -438,10 +438,14 @@ always @(posedge ddr_clk) begin
             ST_WAIT_AUD_WPTR: begin
                 if (ddr_dout_ready) begin
                     aud_wr_ptr <= ddr_dout[11:0];
-                    state      <= ST_WRITE_AUD_RPTR;
+                    // Fresh wr_ptr: if data available, read it; else back to idle
+                    if (ddr_dout[11:0] != aud_rd_ptr)
+                        state <= ST_READ_AUDIO;
+                    else
+                        state <= ST_IDLE;
                 end
                 else if (timeout_cnt == TIMEOUT_MAX)
-                    state <= ST_WRITE_AUD_RPTR;
+                    state <= ST_IDLE;
                 else
                     timeout_cnt <= timeout_cnt + 20'd1;
             end
@@ -453,7 +457,7 @@ always @(posedge ddr_clk) begin
                     ddr_din      <= {52'd0, aud_rd_ptr};
                     ddr_burstcnt <= 8'd1;
                     ddr_we       <= 1'b1;
-                    state        <= ST_POLL_CTRL;
+                    state        <= ST_IDLE;
                 end
             end
 
@@ -475,7 +479,7 @@ always @(posedge ddr_clk) begin
                     aud_buf_valid    <= 1'b1;
                     aud_need_refill  <= 1'b0;
                     aud_rd_ptr       <= (aud_rd_ptr + 12'd2) & AUD_RING_MASK;
-                    state            <= ST_IDLE;
+                    state            <= ST_WRITE_AUD_RPTR;
                 end
                 else if (timeout_cnt == TIMEOUT_MAX)
                     state <= ST_IDLE;
