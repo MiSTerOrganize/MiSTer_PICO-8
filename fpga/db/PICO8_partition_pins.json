@@ -8,6 +8,70 @@
 					"strict" : false
 				},
 				{
+					"name" : "IO_SCL",
+					"strict" : false
+				},
+				{
+					"name" : "HDMI_TX_DE",
+					"strict" : false
+				},
+				{
+					"name" : "HDMI_TX_D[12]",
+					"strict" : false
+				},
+				{
+					"name" : "HDMI_TX_D[13]",
+					"strict" : false
+				},
+				{
+					"name" : "HDMI_TX_D[14]",
+					"strict" : false
+				},
+				{
+					"name" : "HDMI_TX_D[15]",
+					"strict" : false
+				},
+				{
+					"name" : "HDMI_TX_D[16]",
+					"strict" : false
+				},
+				{
+					"name" : "HDMI_TX_D[17]",
+					"strict" : false
+				},
+				{
+					"name" : "HDMI_TX_D[18]",
+					"strict" : false
+				},
+				{
+					"name" : "HDMI_TX_D[19]",
+					"strict" : false
+				},
+				{
+					"name" : "HDMI_TX_D[20]",
+					"strict" : false
+				},
+				{
+					"name" : "HDMI_TX_D[21]",
+					"strict" : false
+				},
+				{
+					"name" : "HDMI_TX_D[22]",
+					"strict" : false
+				},
+				{
+					"name" : "HDMI_TX_D[23]",
+					"strict" : false
+				},
+				{
+					"name" : "HDMI_TX_HS",
+					"strict" : false
+				},
+				{
+					"name" : "HDMI_TX_VS",
+					"strict" : false
+				},
+				{
 					"name" : "SDRAM_A[0]",
 					"strict" : false
 				},
@@ -92,14 +156,6 @@
 					"strict" : false
 				},
 				{
-					"name" : "HDMI_TX_HS",
-					"strict" : false
-				},
-				{
-					"name" : "IO_SCL",
-					"strict" : false
-				},
-				{
 					"name" : "HDMI_SCLK",
 					"strict" : false
 				},
@@ -121,10 +177,6 @@
 				},
 				{
 					"name" : "AUDIO_SPDIF",
-					"strict" : false
-				},
-				{
-					"name" : "HDMI_TX_DE",
 					"strict" : false
 				},
 				{
@@ -173,58 +225,6 @@
 				},
 				{
 					"name" : "HDMI_TX_D[11]",
-					"strict" : false
-				},
-				{
-					"name" : "HDMI_TX_D[12]",
-					"strict" : false
-				},
-				{
-					"name" : "HDMI_TX_D[13]",
-					"strict" : false
-				},
-				{
-					"name" : "HDMI_TX_D[14]",
-					"strict" : false
-				},
-				{
-					"name" : "HDMI_TX_D[15]",
-					"strict" : false
-				},
-				{
-					"name" : "HDMI_TX_D[16]",
-					"strict" : false
-				},
-				{
-					"name" : "HDMI_TX_D[17]",
-					"strict" : false
-				},
-				{
-					"name" : "HDMI_TX_D[18]",
-					"strict" : false
-				},
-				{
-					"name" : "HDMI_TX_D[19]",
-					"strict" : false
-				},
-				{
-					"name" : "HDMI_TX_D[20]",
-					"strict" : false
-				},
-				{
-					"name" : "HDMI_TX_D[21]",
-					"strict" : false
-				},
-				{
-					"name" : "HDMI_TX_D[22]",
-					"strict" : false
-				},
-				{
-					"name" : "HDMI_TX_D[23]",
-					"strict" : false
-				},
-				{
-					"name" : "HDMI_TX_VS",
 					"strict" : false
 				},
 				{
@@ -352,27 +352,7 @@
 					"strict" : false
 				},
 				{
-					"name" : "VGA_HS",
-					"strict" : false
-				},
-				{
-					"name" : "SDIO_DAT[0]",
-					"strict" : false
-				},
-				{
-					"name" : "SDIO_DAT[1]",
-					"strict" : false
-				},
-				{
-					"name" : "SDIO_DAT[2]",
-					"strict" : false
-				},
-				{
-					"name" : "SDIO_DAT[3]",
-					"strict" : false
-				},
-				{
-					"name" : "SDIO_CMD",
+					"name" : "IO_SDA",
 					"strict" : false
 				},
 				{
@@ -440,7 +420,27 @@
 					"strict" : false
 				},
 				{
-					"name" : "IO_SDA",
+					"name" : "VGA_HS",
+					"strict" : false
+				},
+				{
+					"name" : "SDIO_DAT[0]",
+					"strict" : false
+				},
+				{
+					"name" : "SDIO_DAT[1]",
+					"strict" : false
+				},
+				{
+					"name" : "SDIO_DAT[2]",
+					"strict" : false
+				},
+				{
+					"name" : "SDIO_DAT[3]",
+					"strict" : false
+				},
+				{
+					"name" : "SDIO_CMD",
 					"strict" : false
 				},
 				{
@@ -460,15 +460,7 @@
 					"strict" : false
 				},
 				{
-					"name" : "USER_IO[6]",
-					"strict" : false
-				},
-				{
 					"name" : "SW[3]",
-					"strict" : false
-				},
-				{
-					"name" : "SW[1]",
 					"strict" : false
 				},
 				{
@@ -509,6 +501,10 @@
 				},
 				{
 					"name" : "KEY[1]",
+					"strict" : false
+				},
+				{
+					"name" : "SW[1]",
 					"strict" : false
 				}
 			]

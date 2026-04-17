@@ -1,17 +1,23 @@
 
 State Machine - |sys_top|emu:emu|pico8_video_top:native_video|pico8_video_reader:reader|state
-Name state.ST_WRITE_CART_SIZE state.ST_WRITE_CART state.ST_WRITE_JOY state.ST_WAIT_DISPLAY state.ST_LINE_DONE state.ST_WAIT_LINE state.ST_READ_LINE state.ST_CHECK_CTRL state.ST_WAIT_CTRL state.ST_POLL_CTRL state.ST_IDLE 
-state.ST_IDLE 0 0 0 0 0 0 0 0 0 0 0 
-state.ST_POLL_CTRL 0 0 0 0 0 0 0 0 0 1 1 
-state.ST_WAIT_CTRL 0 0 0 0 0 0 0 0 1 0 1 
-state.ST_CHECK_CTRL 0 0 0 0 0 0 0 1 0 0 1 
-state.ST_READ_LINE 0 0 0 0 0 0 1 0 0 0 1 
-state.ST_WAIT_LINE 0 0 0 0 0 1 0 0 0 0 1 
-state.ST_LINE_DONE 0 0 0 0 1 0 0 0 0 0 1 
-state.ST_WAIT_DISPLAY 0 0 0 1 0 0 0 0 0 0 1 
-state.ST_WRITE_JOY 0 0 1 0 0 0 0 0 0 0 1 
-state.ST_WRITE_CART 0 1 0 0 0 0 0 0 0 0 1 
-state.ST_WRITE_CART_SIZE 1 0 0 0 0 0 0 0 0 0 1 
+Name state.ST_READ_AUDIO state.ST_WRITE_AUD_RPTR state.ST_WAIT_AUD_WPTR state.ST_READ_AUD_WPTR state.ST_WRITE_FEEDBACK state.ST_WRITE_CART_SIZE state.ST_WRITE_CART state.ST_WRITE_JOY state.ST_WAIT_DISPLAY state.ST_LINE_DONE state.ST_WAIT_LINE state.ST_READ_LINE state.ST_CHECK_CTRL state.ST_WAIT_CTRL state.ST_POLL_CTRL state.ST_IDLE state.ST_WAIT_AUDIO 
+state.ST_IDLE 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 
+state.ST_POLL_CTRL 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 1 0 
+state.ST_WAIT_CTRL 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 1 0 
+state.ST_CHECK_CTRL 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 1 0 
+state.ST_READ_LINE 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 1 0 
+state.ST_WAIT_LINE 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 1 0 
+state.ST_LINE_DONE 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 1 0 
+state.ST_WAIT_DISPLAY 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 1 0 
+state.ST_WRITE_JOY 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 1 0 
+state.ST_WRITE_CART 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 1 0 
+state.ST_WRITE_CART_SIZE 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 1 0 
+state.ST_WRITE_FEEDBACK 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 1 0 
+state.ST_READ_AUD_WPTR 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 1 0 
+state.ST_WAIT_AUD_WPTR 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 1 0 
+state.ST_WRITE_AUD_RPTR 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 
+state.ST_READ_AUDIO 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 
+state.ST_WAIT_AUDIO 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 1 
 
 State Machine - |sys_top|alsa:alsa|state
 Name state.01 
@@ -80,17 +86,17 @@ o_copy.sWAIT 0 0 0
 o_copy.sSHIFT 0 1 1 
 o_copy.sCOPY 1 0 1 
 
-State Machine - |sys_top|mcp23009:mcp23009|state
-Name state.00 state.10 state.01 
-state.00 0 0 0 
-state.01 1 0 1 
-state.10 1 1 0 
-
 State Machine - |sys_top|ascal:ascal|avl_state
 Name avl_state.sREAD avl_state.sWRITE avl_state.sIDLE 
 avl_state.sIDLE 0 0 0 
 avl_state.sWRITE 0 1 1 
 avl_state.sREAD 1 0 1 
+
+State Machine - |sys_top|mcp23009:mcp23009|state
+Name state.00 state.10 state.01 
+state.00 0 0 0 
+state.01 1 0 1 
+state.10 1 1 0 
 
 State Machine - |sys_top|pll_hdmi_adj:pll_hdmi_adj|state
 Name state.sW6 state.sW5 state.sW4 state.sW3 state.sW2 state.sW1 state.sIDLE 
