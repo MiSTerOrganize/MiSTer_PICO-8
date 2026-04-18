@@ -127,12 +127,38 @@ static void *audio_thread_func(void *arg)
 
     fprintf(stderr, "Audio: DDR3 ring buffer, %dHz mono → %dHz stereo\n", SRC_RATE, DST_RATE);
 
+    bool logged_first_nonzero = false;
+    int total_calls = 0;
+    int zero_calls = 0;
+
     while (g_audio_running)
     {
         if (!g_vm) break;
 
         // Render mono audio from zepto8 at 22050Hz
         g_vm->get_audio(mono_buf, AUDIO_BUF_SAMPLES * sizeof(int16_t));
+
+        total_calls++;
+        bool all_zero = true;
+        int16_t max_val = 0;
+        for (int i = 0; i < AUDIO_BUF_SAMPLES; i++) {
+            if (mono_buf[i] != 0) all_zero = false;
+            int16_t av = mono_buf[i] < 0 ? -mono_buf[i] : mono_buf[i];
+            if (av > max_val) max_val = av;
+        }
+        if (all_zero) zero_calls++;
+
+        if (!logged_first_nonzero && !all_zero) {
+            fprintf(stderr, "Audio: first non-zero at call %d, max=%d, samples[0..7]: %d %d %d %d %d %d %d %d\n",
+                    total_calls, max_val,
+                    mono_buf[0], mono_buf[1], mono_buf[2], mono_buf[3],
+                    mono_buf[4], mono_buf[5], mono_buf[6], mono_buf[7]);
+            logged_first_nonzero = true;
+        }
+        if (total_calls == 200) {
+            fprintf(stderr, "Audio: after 200 calls, %d zero, %d nonzero, max_seen=%d\n",
+                    zero_calls, total_calls - zero_calls, max_val);
+        }
 
         // Upsample to 48KHz stereo
         int out_samples = upsample_mono_to_stereo(mono_buf, AUDIO_BUF_SAMPLES,
@@ -591,8 +617,8 @@ int main(int argc, char **argv)
         // -- Input: read joystick from DDR3 (FPGA writes hps_io data) --
         // Main_MiSTer has exclusive access to /dev/input/js*, so we read
         // joystick state directly from DDR3 where the FPGA puts it.
-        // CONF_STR: "J1,O,X,Pause;" / "jn,A,X,Start;"
-        // joystick_0 bits: 0=R 1=L 2=D 3=U 4=O(A) 5=X(X) 6=Pause(Start)
+        // CONF_STR: "J1,O,X,Pause;" / "jn,B,Y,Start;" (SNES names: B=Xbox A, Y=Xbox X)
+        // joystick_0 bits: 0=R 1=L 2=D 3=U 4=Xbox A(O) 5=Xbox X(X) 6=Start(Pause)
         if (have_native_video) {
             uint32_t joy = NativeVideoWriter_ReadJoystick();
             g_vm->button(0, 0, (joy >> 1) & 1);  // Left
