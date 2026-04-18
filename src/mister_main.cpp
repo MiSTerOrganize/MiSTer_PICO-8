@@ -126,10 +126,11 @@ static void *audio_thread_func(void *arg)
     int16_t stereo_buf[2400];
 
     fprintf(stderr, "Audio: DDR3 ring buffer, %dHz mono → %dHz stereo\n", SRC_RATE, DST_RATE);
+    fflush(stderr);
 
-    bool logged_first_nonzero = false;
     int total_calls = 0;
-    int zero_calls = 0;
+    int nonzero_calls = 0;
+    int16_t global_max = 0;
 
     while (g_audio_running)
     {
@@ -137,27 +138,21 @@ static void *audio_thread_func(void *arg)
 
         // Render mono audio from zepto8 at 22050Hz
         g_vm->get_audio(mono_buf, AUDIO_BUF_SAMPLES * sizeof(int16_t));
-
         total_calls++;
-        bool all_zero = true;
+
         int16_t max_val = 0;
         for (int i = 0; i < AUDIO_BUF_SAMPLES; i++) {
-            if (mono_buf[i] != 0) all_zero = false;
             int16_t av = mono_buf[i] < 0 ? -mono_buf[i] : mono_buf[i];
             if (av > max_val) max_val = av;
         }
-        if (all_zero) zero_calls++;
+        if (max_val > 0) nonzero_calls++;
+        if (max_val > global_max) global_max = max_val;
 
-        if (!logged_first_nonzero && !all_zero) {
-            fprintf(stderr, "Audio: first non-zero at call %d, max=%d, samples[0..7]: %d %d %d %d %d %d %d %d\n",
-                    total_calls, max_val,
-                    mono_buf[0], mono_buf[1], mono_buf[2], mono_buf[3],
-                    mono_buf[4], mono_buf[5], mono_buf[6], mono_buf[7]);
-            logged_first_nonzero = true;
-        }
-        if (total_calls == 200) {
-            fprintf(stderr, "Audio: after 200 calls, %d zero, %d nonzero, max_seen=%d\n",
-                    zero_calls, total_calls - zero_calls, max_val);
+        // Log after each of the first 5 calls (before buffer can fill)
+        if (total_calls <= 5) {
+            fprintf(stderr, "Audio call %d: max=%d s[0]=%d s[1]=%d s[2]=%d s[3]=%d\n",
+                    total_calls, max_val, mono_buf[0], mono_buf[1], mono_buf[2], mono_buf[3]);
+            fflush(stderr);
         }
 
         // Upsample to 48KHz stereo
