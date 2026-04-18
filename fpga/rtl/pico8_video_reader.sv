@@ -203,27 +203,33 @@ reg  [4:0]  stale_vblank_count;
 reg         preloading;
 reg  [19:0] timeout_cnt;
 
-// Audio registers (ddr_clk domain — fills FIFO from DDR3)
-reg  [11:0] aud_wr_ptr;        // cached write pointer (sample units, from ARM)
-reg  [11:0] aud_rd_ptr;        // read pointer (sample units, written to DDR3)
+// Audio registers (ddr_clk domain — fills DCFIFO from DDR3)
+// Ported from OpenBOR's proven dual-clock FIFO architecture.
+// All planning uses 32-bit values to avoid 12-bit overflow.
+reg  [31:0] aud_wr_ptr;        // cached write pointer (sample units, from ARM)
+reg  [31:0] aud_rd_ptr;        // read pointer (sample units, written to DDR3)
 reg   [7:0] aud_burst_rem;     // remaining qwords in current burst
-reg   [7:0] aud_burst_qwords;  // total qwords in this burst (for ptr advance)
+reg  [31:0] aud_burst_samples; // total samples in this burst (for ptr advance)
 reg         aud_fifo_wr;
 reg  [63:0] aud_fifo_wr_data;
+reg  [19:0] aud_backoff;       // cooldown after fetch to let video run
 
 // FIFO fill level tracking
 wire  [9:0] aud_fifo_wrusedw;
+wire        aud_fifo_empty;
 localparam [9:0] AUD_FIFO_REFILL = 10'd384;
 wire aud_fifo_low = (aud_fifo_wrusedw < AUD_FIFO_REFILL);
-wire aud_fifo_empty;
 
-// Audio data available in DDR3 ring buffer (all in SAMPLE units)
-wire [11:0] aud_samples_avail = (aud_wr_ptr - aud_rd_ptr) & AUD_RING_MASK;
-wire [11:0] aud_plan_cand     = (aud_samples_avail > 12'd64) ? 12'd64 : aud_samples_avail;
-wire [11:0] aud_plan_wrap     = 12'd4096 - (aud_rd_ptr & AUD_RING_MASK);
-wire [11:0] aud_plan_samples  = ((aud_plan_cand > aud_plan_wrap) ? aud_plan_wrap : aud_plan_cand) & 12'hFFE;
-wire  [7:0] aud_plan_qwords   = aud_plan_samples[11:1];
-wire        aud_wake          = enable_ddr && aud_fifo_low;
+// Burst planning (32-bit, no overflow possible)
+localparam [31:0] AUD_RING_SAMPLES_32 = 32'd4096;
+localparam [31:0] AUD_RING_MASK_32    = 32'd4095;
+wire [31:0] aud_avail_32      = (aud_wr_ptr - aud_rd_ptr) & AUD_RING_MASK_32;
+wire [31:0] aud_plan_cand_a   = (aud_avail_32 > 32'd64) ? 32'd64 : aud_avail_32;
+wire [31:0] aud_plan_wrap     = AUD_RING_SAMPLES_32 - (aud_rd_ptr & AUD_RING_MASK_32);
+wire [31:0] aud_plan_cand_b   = (aud_plan_cand_a > aud_plan_wrap) ? aud_plan_wrap : aud_plan_cand_a;
+wire [31:0] aud_plan_samples  = aud_plan_cand_b & 32'hFFFFFFFE;
+wire  [7:0] aud_plan_qwords   = aud_plan_samples[8:1];
+wire        aud_wake          = enable_ddr && aud_fifo_low && (aud_backoff == 20'd0);
 
 // Cart loading registers
 reg  [63:0] cart_buf;
@@ -289,12 +295,13 @@ always @(posedge ddr_clk) begin
         new_frame_pending   <= 1'b0;
         synced              <= 1'b0;
         vblank_counter      <= 30'd0;
-        aud_wr_ptr          <= 12'd0;
-        aud_rd_ptr          <= 12'd0;
+        aud_wr_ptr          <= 32'd0;
+        aud_rd_ptr          <= 32'd0;
         aud_burst_rem       <= 8'd0;
-        aud_burst_qwords    <= 8'd0;
+        aud_burst_samples   <= 32'd0;
         aud_fifo_wr         <= 1'b0;
         aud_fifo_wr_data    <= 64'd0;
+        aud_backoff         <= 20'd0;
     end
     else begin
         fifo_wr <= 1'b0;
@@ -307,6 +314,7 @@ always @(posedge ddr_clk) begin
 
         // Audio FIFO write pulse is one-cycle
         aud_fifo_wr <= 1'b0;
+        if (aud_backoff != 20'd0) aud_backoff <= aud_backoff - 20'd1;
 
         // Beat capture (runs in parallel with state machine)
         if (state == ST_WAIT_LINE && ddr_dout_ready) begin
@@ -416,18 +424,17 @@ always @(posedge ddr_clk) begin
 
             ST_WAIT_AUD_WR: begin
                 if (ddr_dout_ready) begin
-                    aud_wr_ptr <= ddr_dout[11:0];
-                    // Plan uses registered aud_wr_ptr (one poll behind).
-                    // First poll with aud_wr_ptr=0 returns plan=0, but
-                    // next poll will use the value we just latched.
-                    if (!aud_fifo_low)
+                    aud_wr_ptr <= {20'd0, ddr_dout[11:0]};
+                    if (!aud_fifo_low) begin
                         state <= ST_IDLE;
-                    else if (aud_plan_qwords == 8'd0)
+                    end
+                    else if (aud_plan_qwords == 8'd0) begin
                         state <= ST_IDLE;
+                    end
                     else begin
-                        aud_burst_rem    <= aud_plan_qwords;
-                        aud_burst_qwords <= aud_plan_qwords;
-                        state            <= ST_READ_AUD_RING;
+                        aud_burst_rem     <= aud_plan_qwords;
+                        aud_burst_samples <= aud_plan_samples;
+                        state             <= ST_READ_AUD_RING;
                     end
                 end
                 else if (timeout_cnt == TIMEOUT_MAX)
@@ -438,9 +445,11 @@ always @(posedge ddr_clk) begin
 
             ST_READ_AUD_RING: begin
                 if (!ddr_busy) begin
-                    ddr_addr     <= AUD_RING_ADDR + {18'd0, aud_rd_ptr[11:1]};
+                    // DDR3 qword address: ring_base + rd_ptr_in_samples / 2
+                    ddr_addr     <= AUD_RING_ADDR + aud_rd_ptr[11:1];
                     ddr_burstcnt <= aud_burst_rem;
                     ddr_rd       <= 1'b1;
+                    timeout_cnt  <= 20'd0;
                     state        <= ST_WAIT_AUD_RING;
                 end
             end
@@ -451,19 +460,25 @@ always @(posedge ddr_clk) begin
                     aud_fifo_wr      <= 1'b1;
                     aud_burst_rem    <= aud_burst_rem - 8'd1;
                     if (aud_burst_rem == 8'd1) begin
-                        // Each qword = 2 samples, advance rd_ptr in sample units
-                        aud_rd_ptr <= (aud_rd_ptr + {1'b0, aud_burst_qwords, 1'b0}) & AUD_RING_MASK;
+                        aud_rd_ptr <= (aud_rd_ptr + aud_burst_samples) & AUD_RING_MASK_32;
                         state      <= ST_WRITE_AUD_RD;
                     end
+                end
+                else if (timeout_cnt == TIMEOUT_MAX) begin
+                    state <= ST_IDLE;
+                end
+                else begin
+                    timeout_cnt <= timeout_cnt + 20'd1;
                 end
             end
 
             ST_WRITE_AUD_RD: begin
                 if (!ddr_busy) begin
                     ddr_addr     <= AUD_RPTR_ADDR;
-                    ddr_din      <= {52'd0, aud_rd_ptr};
+                    ddr_din      <= {32'd0, aud_rd_ptr[31:0]};
                     ddr_burstcnt <= 8'd1;
                     ddr_we       <= 1'b1;
+                    aud_backoff  <= 20'd1000;
                     state        <= ST_IDLE;
                 end
             end

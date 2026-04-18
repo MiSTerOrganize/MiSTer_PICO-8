@@ -43,7 +43,8 @@ module pico8_video_top (
     output wire        active,        // module is outputting valid video
     output wire        vsync_out,     // active-low vsync for frame sync
 
-    // Audio output (48KHz signed 16-bit from DDR3 ring buffer)
+    // Audio output (48KHz signed 16-bit, clk_audio domain via FIFO)
+    input  wire        clk_audio,
     output wire [15:0] audio_l,
     output wire [15:0] audio_r,
 
@@ -87,6 +88,11 @@ wire [7:0]  reader_r, reader_g, reader_b;
 wire        reader_frame_ready;
 wire [15:0] reader_audio_l, reader_audio_r;
 
+// Image area: 256px centered in 320px active (32px border each side)
+wire in_image = (tim_hcount >= 10'd32) && (tim_hcount < 10'd288);
+// Only drain FIFO during the image area, not during borders
+wire image_de = tim_de & in_image;
+
 pico8_video_reader reader (
     .ddr_clk        (clk_sys),
     .ddr_busy       (ddr_busy),
@@ -103,7 +109,7 @@ pico8_video_reader reader (
     .ce_pix         (ce_pix),
     .reset          (reset),
 
-    .de             (tim_de),
+    .de             (image_de),
     .hblank         (tim_hblank),
     .vblank         (tim_vblank),
     .new_frame      (tim_new_frame),
@@ -114,6 +120,7 @@ pico8_video_reader reader (
     .g_out          (reader_g),
     .b_out          (reader_b),
 
+    .clk_audio      (clk_audio),
     .audio_l_out    (reader_audio_l),
     .audio_r_out    (reader_audio_r),
 
@@ -131,9 +138,9 @@ pico8_video_reader reader (
 );
 
 // ── Output assignments ────────────────────────────────────────────────
-assign vga_r     = reader_r;
-assign vga_g     = reader_g;
-assign vga_b     = reader_b;
+assign vga_r     = (in_image && reader_frame_ready) ? reader_r : 8'd0;
+assign vga_g     = (in_image && reader_frame_ready) ? reader_g : 8'd0;
+assign vga_b     = (in_image && reader_frame_ready) ? reader_b : 8'd0;
 assign vga_hs    = tim_hsync;
 assign vga_vs    = tim_vsync;
 assign vga_de    = tim_de;
