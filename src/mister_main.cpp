@@ -599,10 +599,10 @@ int main(int argc, char **argv)
             g_vm->button(0, 1, (joy >> 0) & 1);  // Right
             g_vm->button(0, 2, (joy >> 3) & 1);  // Up
             g_vm->button(0, 3, (joy >> 2) & 1);  // Down
-            // Hardware bits: B=4, A=5, Y=6, X=7, Start=8
-            g_vm->button(0, 4, (joy >> 5) & 1);  // O ← A (bit 5)
-            g_vm->button(0, 5, (joy >> 7) & 1);  // X ← X (bit 7)
-            g_vm->button(0, 6, (joy >> 8) & 1);  // Pause ← Start (bit 8)
+            // jn,B,Y,Start; → bit 4=Xbox A, bit 5=Xbox X, bit 6=Start
+            g_vm->button(0, 4, (joy >> 4) & 1);  // O ← Xbox A (bit 4)
+            g_vm->button(0, 5, (joy >> 5) & 1);  // X ← Xbox X (bit 5)
+            g_vm->button(0, 6, (joy >> 6) & 1);  // Pause ← Start (bit 6)
         }
 
         // Check if VM requested exit or user pressed Back — return to browser

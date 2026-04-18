@@ -226,7 +226,7 @@ localparam CONF_STR = {
 	"F0,P8 PNG,Load Cart;",
 	"-;",
 	"J1,O,X,Pause;",
-	"jn,A,X,Start;",
+	"jn,B,Y,Start;",
 	"-;",
 	"V,v",`BUILD_DATE 
 };
@@ -459,9 +459,18 @@ end
 // FPGA reads and outputs directly. Same path as NES/SNES/Genesis.
 // No ALSA, no Linux kernel involvement.
 
-assign AUDIO_L = nv_audio_l;
-assign AUDIO_R = nv_audio_r;
-assign AUDIO_S = 1;  // signed — all emulation libraries output signed PCM
+// Cross audio from clk_sys to CLK_AUDIO domain.
+// Samples are stable for ~2083 clk_sys cycles (20us) so a simple
+// double-register is safe for the 16-bit bus.
+reg [15:0] aud_l_s1, aud_l_s2;
+reg [15:0] aud_r_s1, aud_r_s2;
+always @(posedge CLK_AUDIO) begin
+    aud_l_s1 <= nv_audio_l;  aud_l_s2 <= aud_l_s1;
+    aud_r_s1 <= nv_audio_r;  aud_r_s2 <= aud_r_s1;
+end
+assign AUDIO_L = aud_l_s2;
+assign AUDIO_R = aud_r_s2;
+assign AUDIO_S = 1;
 
 assign USER_OUT = '1;
 assign UART_TXD = UART_RXD;
