@@ -34,7 +34,7 @@ mkdir -p /media/fat/docs/PICO-8
 FAIL=0
 
 # Bump this when a new RBF is committed to _Console/.
-RBF_NAME="PICO-8_20260417.rbf"
+RBF_NAME="PICO-8_20260418.rbf"
 
 echo "  Downloading FPGA core ($RBF_NAME)..."
 rm -f /media/fat/_Console/PICO-8_*.rbf /media/fat/_Console/PICO-8.rbf
