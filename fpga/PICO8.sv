@@ -199,8 +199,8 @@ assign CE_PIXEL = ce_pix_div4;
 assign VGA_SL = 0;
 assign VGA_F1 = 0;
 // PICO-8 has a square 128x128 display. 1:1 aspect ratio.
-assign VIDEO_ARX = 13'd1;
-assign VIDEO_ARY = 13'd1;
+assign VIDEO_ARX = 13'd4;
+assign VIDEO_ARY = 13'd3;
 assign VGA_SCALER= 0;
 assign VGA_DISABLE = 0;
 
@@ -459,17 +459,9 @@ end
 // FPGA reads and outputs directly. Same path as NES/SNES/Genesis.
 // No ALSA, no Linux kernel involvement.
 
-// Cross audio from clk_sys to CLK_AUDIO domain.
-// Samples are stable for ~2083 clk_sys cycles (20us) so a simple
-// double-register is safe for the 16-bit bus.
-reg [15:0] aud_l_s1, aud_l_s2;
-reg [15:0] aud_r_s1, aud_r_s2;
-always @(posedge CLK_AUDIO) begin
-    aud_l_s1 <= nv_audio_l;  aud_l_s2 <= aud_l_s1;
-    aud_r_s1 <= nv_audio_r;  aud_r_s2 <= aud_r_s1;
-end
-assign AUDIO_L = aud_l_s2;
-assign AUDIO_R = aud_r_s2;
+// Audio outputs are in CLK_AUDIO domain (from dual-clock FIFO in video reader)
+assign AUDIO_L = nv_audio_l;
+assign AUDIO_R = nv_audio_r;
 assign AUDIO_S = 1;
 
 assign USER_OUT = '1;
@@ -588,7 +580,8 @@ pico8_video_top native_video
 	.active         (nv_active),
 	.vsync_out      (),
 
-	// Audio output (48KHz from DDR3 ring buffer)
+	// Audio output (48KHz, clk_audio domain via dual-clock FIFO)
+	.clk_audio      (CLK_AUDIO),
 	.audio_l        (nv_audio_l),
 	.audio_r        (nv_audio_r),
 

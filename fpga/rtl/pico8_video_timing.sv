@@ -2,20 +2,18 @@
 //
 //  PICO-8 Native Video Timing Generator
 //
-//  256x256 active area @ ~59.64 Hz (500x262 total)
+//  320x256 active area @ ~59.45 Hz (500x263 total)
+//  Matches OpenBOR/SNES/Genesis horizontal timing for CRT compatibility.
 //  CLK_VIDEO: 31.25 MHz, CE_PIXEL: divide-by-4 (7.8125 MHz effective)
 //
-//  H: 256 active + 52 FP + 38 sync + 154 BP = 500 total
-//  V: 256 active +  2 FP +  3 sync +   1 BP = 262 total
+//  H: 320 active + 20 FP + 38 sync + 122 BP = 500 total
+//  V: 256 active +  2 FP +  3 sync +   2 BP = 263 total
 //
-//  Refresh: 7,812,500 / (500*262) = 59.637 Hz
-//  H freq:  7,812,500 / 500       = 15,625 Hz (NTSC-compatible)
+//  Refresh: 7,812,500 / (500*263) = 59.411 Hz
+//  H freq:  7,812,500 / 500       = 15,625 Hz (CRT-safe)
 //
-//  NOTE: V blanking is only 6 lines (tight). Works on most CRTs and all
-//  HDMI displays. If a specific CRT loses sync, increase V_BP and reduce
-//  V_ACTIVE to 240 (losing 8 rows top/bottom from the PICO-8 image).
-//
-//  Reuses 3SX's PLL: 50 MHz * 5/8 = 31.25 MHz, /4 = 7.8125 MHz pixels.
+//  The 128x128 PICO-8 image is doubled to 256x256 and centered
+//  horizontally in the 320-pixel active area (32px black each side).
 //
 //  Adapted from 3SX project (kimchiman52/3sx-mister)
 //  Copyright (C) 2026 MiSTer Organize — GPL-3.0
@@ -39,18 +37,18 @@ module pico8_video_timing (
 );
 
 // ── Timing constants ──────────────────────────────────────────────────
-// 256×256 active, centered for 15kHz CRT
-localparam H_ACTIVE = 256;
-localparam H_FP     = 52;
+// 320×256 active, matches OpenBOR/SNES horizontal timing for CRT
+localparam H_ACTIVE = 320;
+localparam H_FP     = 20;
 localparam H_SYNC   = 38;
-localparam H_BP     = 154;
-localparam H_TOTAL  = 500;   // 256+52+38+154
+localparam H_BP     = 122;
+localparam H_TOTAL  = 500;   // 320+20+38+122
 
 localparam V_ACTIVE = 256;
 localparam V_FP     = 2;
 localparam V_SYNC   = 3;
-localparam V_BP     = 1;
-localparam V_TOTAL  = 262;   // 256+2+3+1
+localparam V_BP     = 2;
+localparam V_TOTAL  = 263;   // 256+2+3+2
 
 // Derived boundaries
 localparam H_SYNC_START = H_ACTIVE + H_FP;        // 308
