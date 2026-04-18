@@ -70,7 +70,8 @@ module pico8_video_reader (
     output reg   [7:0] g_out,
     output reg   [7:0] b_out,
 
-    // Audio output (48KHz, signed 16-bit, directly to AUDIO_L/R)
+    // Audio output (48KHz, signed 16-bit, clk_audio domain)
+    input  wire        clk_audio,
     output reg  [15:0] audio_l_out,
     output reg  [15:0] audio_r_out,
 
@@ -171,11 +172,11 @@ localparam [4:0] ST_WRITE_JOY   = 5'd8;
 localparam [4:0] ST_WRITE_CART  = 5'd9;
 localparam [4:0] ST_WRITE_CART_SIZE = 5'd10;
 localparam [4:0] ST_WRITE_FEEDBACK = 5'd11;
-localparam [4:0] ST_READ_AUD_WPTR  = 5'd12;
-localparam [4:0] ST_WAIT_AUD_WPTR  = 5'd13;
-localparam [4:0] ST_WRITE_AUD_RPTR = 5'd14;
-localparam [4:0] ST_READ_AUDIO     = 5'd15;
-localparam [4:0] ST_WAIT_AUDIO     = 5'd16;
+localparam [4:0] ST_POLL_AUD_WR    = 5'd12;
+localparam [4:0] ST_WAIT_AUD_WR    = 5'd13;
+localparam [4:0] ST_READ_AUD_RING  = 5'd14;
+localparam [4:0] ST_WAIT_AUD_RING  = 5'd15;
+localparam [4:0] ST_WRITE_AUD_RD   = 5'd16;
 
 // Cart loading DDR3 addresses
 localparam [28:0] CART_CTRL_ADDR = 29'h07400002;  // 0x3A000010 >> 3
@@ -188,8 +189,7 @@ localparam [28:0] AUD_RPTR_ADDR  = 29'h07400005;  // 0x3A000028 >> 3
 localparam [28:0] AUD_RING_ADDR  = 29'h07402040;  // 0x3A010200 >> 3
 localparam [11:0] AUD_RING_MASK  = 12'hFFF;        // 4096 samples
 
-// 48KHz tick: 100MHz / 48000 = 2083.3 -> count to 2083
-localparam [11:0] AUD_DIV_MAX    = 12'd2082;
+// 48kHz tick derived from CLK_AUDIO (24.576MHz / 512 = 48kHz) in output section
 
 reg  [4:0]  state;
 reg  [31:0] ctrl_word;
@@ -203,14 +203,27 @@ reg  [4:0]  stale_vblank_count;
 reg         preloading;
 reg  [19:0] timeout_cnt;
 
-// Audio registers
-reg  [11:0] aud_div;           // 48KHz divider counter
-reg  [11:0] aud_wr_ptr;        // cached write pointer (from ARM via DDR3)
-reg  [11:0] aud_rd_ptr;        // read pointer (local, written to DDR3 per frame)
-reg  [63:0] aud_sample_buf;    // qword = 2 stereo samples
-reg         aud_sample_phase;  // 0 = play low sample, 1 = play high sample
-reg         aud_need_refill;   // set when both samples consumed, need next qword
-reg         aud_buf_valid;     // true after first qword loaded
+// Audio registers (ddr_clk domain — fills FIFO from DDR3)
+reg  [11:0] aud_wr_ptr;        // cached write pointer (sample units, from ARM)
+reg  [11:0] aud_rd_ptr;        // read pointer (sample units, written to DDR3)
+reg   [7:0] aud_burst_rem;     // remaining qwords in current burst
+reg   [7:0] aud_burst_qwords;  // total qwords in this burst (for ptr advance)
+reg         aud_fifo_wr;
+reg  [63:0] aud_fifo_wr_data;
+
+// FIFO fill level tracking
+wire  [9:0] aud_fifo_wrusedw;
+localparam [9:0] AUD_FIFO_REFILL = 10'd384;
+wire aud_fifo_low = (aud_fifo_wrusedw < AUD_FIFO_REFILL);
+wire aud_fifo_empty;
+
+// Audio data available in DDR3 ring buffer (all in SAMPLE units)
+wire [11:0] aud_samples_avail = (aud_wr_ptr - aud_rd_ptr) & AUD_RING_MASK;
+wire [11:0] aud_plan_cand     = (aud_samples_avail > 12'd64) ? 12'd64 : aud_samples_avail;
+wire [11:0] aud_plan_wrap     = 12'd4096 - (aud_rd_ptr & AUD_RING_MASK);
+wire [11:0] aud_plan_samples  = ((aud_plan_cand > aud_plan_wrap) ? aud_plan_wrap : aud_plan_cand) & 12'hFFE;
+wire  [7:0] aud_plan_qwords   = aud_plan_samples[11:1];
+wire        aud_wake          = enable_ddr && aud_fifo_low;
 
 // Cart loading registers
 reg  [63:0] cart_buf;
@@ -276,15 +289,12 @@ always @(posedge ddr_clk) begin
         new_frame_pending   <= 1'b0;
         synced              <= 1'b0;
         vblank_counter      <= 30'd0;
-        aud_div             <= 12'd0;
         aud_wr_ptr          <= 12'd0;
         aud_rd_ptr          <= 12'd0;
-        aud_sample_buf      <= 64'd0;
-        aud_sample_phase    <= 1'b0;
-        aud_need_refill     <= 1'b0;
-        aud_buf_valid       <= 1'b0;
-        audio_l_out         <= 16'd0;
-        audio_r_out         <= 16'd0;
+        aud_burst_rem       <= 8'd0;
+        aud_burst_qwords    <= 8'd0;
+        aud_fifo_wr         <= 1'b0;
+        aud_fifo_wr_data    <= 64'd0;
     end
     else begin
         fifo_wr <= 1'b0;
@@ -295,38 +305,8 @@ always @(posedge ddr_clk) begin
         // Latch new_frame pulse so cart writes can't cause it to be missed
         if (new_frame_ddr) new_frame_pending <= 1'b1;
 
-        // -- 48KHz audio output (runs in parallel) ----------------
-        if (aud_div == AUD_DIV_MAX) begin
-            aud_div <= 12'd0;
-            if (aud_buf_valid) begin
-                if (aud_sample_phase == 1'b0) begin
-                    // Play low sample (first in qword)
-                    audio_l_out <= aud_sample_buf[15:0];
-                    audio_r_out <= aud_sample_buf[31:16];
-                    aud_sample_phase <= 1'b1;
-                end
-                else begin
-                    // Play high sample (second in qword)
-                    audio_l_out <= aud_sample_buf[47:32];
-                    audio_r_out <= aud_sample_buf[63:48];
-                    aud_sample_phase <= 1'b0;
-                    aud_buf_valid <= 1'b0;
-                    aud_need_refill <= 1'b1;
-                end
-            end
-            else begin
-                // Buffer empty — output silence. Only request refill
-                // if ARM has started writing (wr_ptr > 0); otherwise
-                // we'd read DDR3 garbage before audio thread launches.
-                audio_l_out <= 16'd0;
-                audio_r_out <= 16'd0;
-                if (aud_wr_ptr != 12'd0)
-                    aud_need_refill <= 1'b1;
-            end
-        end
-        else begin
-            aud_div <= aud_div + 12'd1;
-        end
+        // Audio FIFO write pulse is one-cycle
+        aud_fifo_wr <= 1'b0;
 
         // Beat capture (runs in parallel with state machine)
         if (state == ST_WAIT_LINE && ddr_dout_ready) begin
@@ -397,8 +377,8 @@ always @(posedge ddr_clk) begin
                     state <= ST_WRITE_CART;
                 else if (cart_size_pending)
                     state <= ST_WRITE_CART_SIZE;
-                else if (aud_need_refill)
-                    state <= ST_READ_AUD_WPTR;
+                else if (aud_wake)
+                    state <= ST_POLL_AUD_WR;
             end
 
             ST_WRITE_JOY: begin
@@ -424,25 +404,31 @@ always @(posedge ddr_clk) begin
                 end
             end
 
-            ST_READ_AUD_WPTR: begin
-                // Read audio write pointer from DDR3 (ARM updates this)
+            ST_POLL_AUD_WR: begin
                 if (!ddr_busy) begin
                     ddr_addr     <= AUD_WPTR_ADDR;
                     ddr_burstcnt <= 8'd1;
                     ddr_rd       <= 1'b1;
                     timeout_cnt  <= 20'd0;
-                    state        <= ST_WAIT_AUD_WPTR;
+                    state        <= ST_WAIT_AUD_WR;
                 end
             end
 
-            ST_WAIT_AUD_WPTR: begin
+            ST_WAIT_AUD_WR: begin
                 if (ddr_dout_ready) begin
                     aud_wr_ptr <= ddr_dout[11:0];
-                    // Fresh wr_ptr: if data available, read it; else back to idle
-                    if (ddr_dout[11:0] != aud_rd_ptr)
-                        state <= ST_READ_AUDIO;
-                    else
+                    // Plan uses registered aud_wr_ptr (one poll behind).
+                    // First poll with aud_wr_ptr=0 returns plan=0, but
+                    // next poll will use the value we just latched.
+                    if (!aud_fifo_low)
                         state <= ST_IDLE;
+                    else if (aud_plan_qwords == 8'd0)
+                        state <= ST_IDLE;
+                    else begin
+                        aud_burst_rem    <= aud_plan_qwords;
+                        aud_burst_qwords <= aud_plan_qwords;
+                        state            <= ST_READ_AUD_RING;
+                    end
                 end
                 else if (timeout_cnt == TIMEOUT_MAX)
                     state <= ST_IDLE;
@@ -450,8 +436,29 @@ always @(posedge ddr_clk) begin
                     timeout_cnt <= timeout_cnt + 20'd1;
             end
 
-            ST_WRITE_AUD_RPTR: begin
-                // Write audio read pointer to DDR3 (ARM reads this)
+            ST_READ_AUD_RING: begin
+                if (!ddr_busy) begin
+                    ddr_addr     <= AUD_RING_ADDR + {18'd0, aud_rd_ptr[11:1]};
+                    ddr_burstcnt <= aud_burst_rem;
+                    ddr_rd       <= 1'b1;
+                    state        <= ST_WAIT_AUD_RING;
+                end
+            end
+
+            ST_WAIT_AUD_RING: begin
+                if (ddr_dout_ready) begin
+                    aud_fifo_wr_data <= ddr_dout;
+                    aud_fifo_wr      <= 1'b1;
+                    aud_burst_rem    <= aud_burst_rem - 8'd1;
+                    if (aud_burst_rem == 8'd1) begin
+                        // Each qword = 2 samples, advance rd_ptr in sample units
+                        aud_rd_ptr <= (aud_rd_ptr + {1'b0, aud_burst_qwords, 1'b0}) & AUD_RING_MASK;
+                        state      <= ST_WRITE_AUD_RD;
+                    end
+                end
+            end
+
+            ST_WRITE_AUD_RD: begin
                 if (!ddr_busy) begin
                     ddr_addr     <= AUD_RPTR_ADDR;
                     ddr_din      <= {52'd0, aud_rd_ptr};
@@ -459,32 +466,6 @@ always @(posedge ddr_clk) begin
                     ddr_we       <= 1'b1;
                     state        <= ST_IDLE;
                 end
-            end
-
-            ST_READ_AUDIO: begin
-                // Read one qword (2 stereo samples) from audio ring buffer
-                if (!ddr_busy) begin
-                    ddr_addr     <= AUD_RING_ADDR + {18'd0, aud_rd_ptr[11:1]};
-                    ddr_burstcnt <= 8'd1;
-                    ddr_rd       <= 1'b1;
-                    timeout_cnt  <= 20'd0;
-                    state        <= ST_WAIT_AUDIO;
-                end
-            end
-
-            ST_WAIT_AUDIO: begin
-                if (ddr_dout_ready) begin
-                    aud_sample_buf   <= ddr_dout;
-                    aud_sample_phase <= 1'b0;
-                    aud_buf_valid    <= 1'b1;
-                    aud_need_refill  <= 1'b0;
-                    aud_rd_ptr       <= (aud_rd_ptr + 12'd2) & AUD_RING_MASK;
-                    state            <= ST_WRITE_AUD_RPTR;
-                end
-                else if (timeout_cnt == TIMEOUT_MAX)
-                    state <= ST_IDLE;
-                else
-                    timeout_cnt <= timeout_cnt + 20'd1;
             end
 
             ST_WRITE_CART: begin
@@ -750,6 +731,88 @@ always @(posedge clk_vid) begin
                 pixel_sub        <= 2'd0;
                 pixel_phase      <= 1'b0;
                 pixel_word_valid <= 1'b0;
+            end
+        end
+    end
+end
+
+// -- Audio dual-clock FIFO (ddr_clk write, clk_audio read) ---------------
+wire [63:0] aud_fifo_rd_data;
+reg         aud_fifo_rd;
+
+dcfifo #(
+    .intended_device_family ("Cyclone V"),
+    .lpm_numwords           (1024),
+    .lpm_showahead          ("ON"),
+    .lpm_type               ("dcfifo"),
+    .lpm_width              (64),
+    .lpm_widthu             (10),
+    .overflow_checking      ("ON"),
+    .rdsync_delaypipe       (4),
+    .underflow_checking     ("ON"),
+    .use_eab                ("ON"),
+    .wrsync_delaypipe       (4)
+) audio_fifo_inst (
+    .aclr     (reset),
+    .data     (aud_fifo_wr_data),
+    .rdclk    (clk_audio),
+    .rdreq    (aud_fifo_rd),
+    .wrclk    (ddr_clk),
+    .wrreq    (aud_fifo_wr),
+    .q        (aud_fifo_rd_data),
+    .rdempty  (aud_fifo_empty),
+    .wrfull   (),
+    .wrusedw  (aud_fifo_wrusedw),
+    .eccstatus(),
+    .rdfull   (),
+    .rdusedw  (),
+    .wrempty  ()
+);
+
+// -- 48 kHz sample clock (clk_audio / 512 = 48 kHz exactly) --------------
+reg [8:0] aud_clk_div;
+reg       aud_tick;
+reg [1:0] reset_aud_sync;
+always @(posedge clk_audio or posedge reset)
+    if (reset) reset_aud_sync <= 2'b11;
+    else       reset_aud_sync <= {reset_aud_sync[0], 1'b0};
+wire reset_aud = reset_aud_sync[1];
+
+always @(posedge clk_audio) begin
+    if (reset_aud) begin
+        aud_clk_div <= 9'd0;
+        aud_tick    <= 1'b0;
+    end
+    else begin
+        aud_clk_div <= aud_clk_div + 9'd1;
+        aud_tick    <= (aud_clk_div == 9'd0);
+    end
+end
+
+// -- Audio sample output (clk_audio domain) ------------------------------
+reg aud_half_sel;
+always @(posedge clk_audio) begin
+    if (reset_aud) begin
+        audio_l_out  <= 16'd0;
+        audio_r_out  <= 16'd0;
+        aud_fifo_rd  <= 1'b0;
+        aud_half_sel <= 1'b0;
+    end
+    else begin
+        aud_fifo_rd <= 1'b0;
+        if (aud_tick) begin
+            if (!aud_fifo_empty) begin
+                if (aud_half_sel == 1'b0) begin
+                    audio_l_out  <= aud_fifo_rd_data[15:0];
+                    audio_r_out  <= aud_fifo_rd_data[31:16];
+                    aud_half_sel <= 1'b1;
+                end
+                else begin
+                    audio_l_out  <= aud_fifo_rd_data[47:32];
+                    audio_r_out  <= aud_fifo_rd_data[63:48];
+                    aud_fifo_rd  <= 1'b1;
+                    aud_half_sel <= 1'b0;
+                end
             end
         end
     end
