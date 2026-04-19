@@ -90,6 +90,52 @@ Requires Intel Quartus Prime Lite 17.0. Project in `fpga/`, RTL in `fpga/rtl/`, 
 - **3SX MiSTer** — reference architecture for ARM-to-FPGA native video
 - **MiSTer FPGA** — open-source FPGA retro platform
 
+## MiSTer Companion Integration
+
+For tools like MiSTer Companion that want to automate installation:
+
+**Version manifest** — fetch the current RBF filename:
+```
+https://raw.githubusercontent.com/MiSTerOrganize/MiSTer_PICO-8/main/version.txt
+```
+
+**Download base URL** — all files at:
+```
+https://raw.githubusercontent.com/MiSTerOrganize/MiSTer_PICO-8/main/{path}
+```
+
+**Files to download:**
+
+| Source Path | Destination on MiSTer |
+|---|---|
+| `version.txt` | (read to get RBF filename) |
+| `_Console/{RBF_NAME}` | `/media/fat/_Console/{RBF_NAME}` |
+| `games/PICO-8/PICO-8` | `/media/fat/games/PICO-8/PICO-8` |
+| `games/PICO-8/boot.rom` | `/media/fat/games/PICO-8/boot.rom` |
+| `games/PICO-8/pico8_daemon.sh` | `/media/fat/games/PICO-8/pico8_daemon.sh` |
+| `docs/PICO-8/README.md` | `/media/fat/docs/PICO-8/README.md` |
+| `Scripts/Install_PICO-8.sh` | `/media/fat/Scripts/Install_PICO-8.sh` |
+
+**Directories to create:**
+```
+/media/fat/_Console/
+/media/fat/games/PICO-8/Carts/
+/media/fat/logs/PICO-8/
+/media/fat/saves/PICO-8/
+/media/fat/docs/PICO-8/
+```
+
+**Post-install steps:**
+1. `chmod +x` on the binary and daemon
+2. Remove old RBFs: `rm -f /media/fat/_Console/PICO-8_*.rbf` before placing the new one
+3. Remove old log folders: `rm -rf /media/fat/games/PICO-8/.Logs /media/fat/games/PICO-8/Logs`
+4. Register daemon in `/media/fat/linux/user-startup.sh` (check for duplicates first):
+   ```
+   /media/fat/games/PICO-8/pico8_daemon.sh &
+   ```
+
+The folder structure and download URLs are stable. Only `version.txt` content changes between releases.
+
 ## License
 
 GPL-3.0
