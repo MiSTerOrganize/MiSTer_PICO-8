@@ -27,7 +27,7 @@ Extract the release zip to the root of your MiSTer SD card (`/media/fat/`):
 
 ```
 /media/fat/
-├── _Console/
+├── _Other/
 │   └── PICO-8_YYYYMMDD.rbf               FPGA core (dated build)
 ├── docs/
 │   └── PICO-8/

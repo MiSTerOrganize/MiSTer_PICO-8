@@ -25,7 +25,7 @@ sleep 1
 # ── Download files from GitHub repo ───────────────────────────────
 echo "Downloading PICO-8..."
 
-mkdir -p /media/fat/_Console
+mkdir -p /media/fat/_Other
 mkdir -p /media/fat/games/PICO-8/Carts
 mkdir -p /media/fat/logs/PICO-8
 mkdir -p /media/fat/saves/PICO-8
@@ -44,8 +44,8 @@ if [ -z "$RBF_NAME" ]; then
 fi
 
 echo "  Downloading FPGA core ($RBF_NAME)..."
-rm -f /media/fat/_Console/PICO-8_*.rbf /media/fat/_Console/PICO-8.rbf
-wget -q --show-progress -O "/media/fat/_Console/$RBF_NAME" "$BASE_URL/_Console/$RBF_NAME" || FAIL=1
+rm -f /media/fat/_Other/PICO-8_*.rbf /media/fat/_Other/PICO-8.rbf
+wget -q --show-progress -O "/media/fat/_Other/$RBF_NAME" "$BASE_URL/_Other/$RBF_NAME" || FAIL=1
 
 echo "  Downloading ARM binary..."
 wget -q --show-progress -O /media/fat/games/PICO-8/PICO-8 "$BASE_URL/games/PICO-8/PICO-8" || FAIL=1
