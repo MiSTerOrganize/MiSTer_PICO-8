@@ -36,8 +36,12 @@ rm -rf /media/fat/games/PICO-8/.Logs /media/fat/games/PICO-8/Logs
 
 FAIL=0
 
-# Bump this when a new RBF is committed to _Console/.
-RBF_NAME="PICO-8_20260418.rbf"
+# Read current RBF name from version.txt manifest
+RBF_NAME=$(wget -q -O - "$BASE_URL/version.txt" | tr -d '\r\n')
+if [ -z "$RBF_NAME" ]; then
+    echo "Error: Could not fetch version.txt"
+    exit 1
+fi
 
 echo "  Downloading FPGA core ($RBF_NAME)..."
 rm -f /media/fat/_Console/PICO-8_*.rbf /media/fat/_Console/PICO-8.rbf
