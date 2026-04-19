@@ -37,8 +37,9 @@ Extract the release zip to the root of your MiSTer SD card (`/media/fat/`):
 │       ├── PICO-8                         ARM binary (emulator)
 │       ├── pico8_daemon.sh                Auto-launch daemon
 │       ├── boot.rom                       BIOS
-│       ├── Carts/                         Place your .p8 and .p8.png carts here
-│       └── .Logs/                         Debug logs (hidden from OSD)
+│       └── Carts/                         Place your .p8 and .p8.png carts here
+├── logs/
+│   └── PICO-8/                            Debug logs
 ├── saves/
 │   └── PICO-8/                            Game saves (created automatically)
 └── Scripts/

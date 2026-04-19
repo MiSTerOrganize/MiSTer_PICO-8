@@ -27,9 +27,12 @@ echo "Downloading PICO-8..."
 
 mkdir -p /media/fat/_Console
 mkdir -p /media/fat/games/PICO-8/Carts
-mkdir -p /media/fat/games/PICO-8/.Logs
+mkdir -p /media/fat/logs/PICO-8
 mkdir -p /media/fat/saves/PICO-8
 mkdir -p /media/fat/docs/PICO-8
+
+# Remove old log folders from games directory
+rm -rf /media/fat/games/PICO-8/.Logs /media/fat/games/PICO-8/Logs
 
 FAIL=0
 
