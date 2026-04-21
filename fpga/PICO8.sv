@@ -225,10 +225,13 @@ localparam CONF_STR = {
 	"PICO-8;;",
 	"F0,P8 PNG,Load Cart;",
 	"-;",
+	"O23,H Position,0,+1,+2,+3;",
+	"O9A,V Position,0,+1,+2,+3;",
+	"-;",
 	"J1,O,X,Pause;",
 	"jn,B,Y,Start;",
 	"-;",
-	"V,v",`BUILD_DATE 
+	"V,v",`BUILD_DATE
 };
 
 wire forced_scandoubler;
@@ -474,6 +477,8 @@ localparam lfsr_n = 63;
 wire PAL = status[4];
 wire FB  = status[5];
 wire [2:0] led = status[8:6];
+wire [1:0] h_pos = status[3:2];   // OSD H Position: 0=0, 1=-1, 2=-2, 3=-3
+wire [1:0] v_pos = status[10:9];  // OSD V Position: 0=0, 1=-1, 2=-2, 3=-3
 
 reg   [9:0] hc;
 reg   [9:0] vc;
@@ -579,6 +584,10 @@ pico8_video_top native_video
 	.enable         (use_nv),
 	.active         (nv_active),
 	.vsync_out      (),
+
+	// OSD position adjustment
+	.h_offset       (h_pos),
+	.v_offset       (v_pos),
 
 	// Audio output (48KHz, clk_audio domain via dual-clock FIFO)
 	.clk_audio      (CLK_AUDIO),

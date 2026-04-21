@@ -43,6 +43,10 @@ module pico8_video_top (
     output wire        active,        // module is outputting valid video
     output wire        vsync_out,     // active-low vsync for frame sync
 
+    // OSD position adjustment (0=none, 1=-1, 2=-2, 3=-3 pixels)
+    input  wire  [1:0] h_offset,
+    input  wire  [1:0] v_offset,
+
     // Audio output (48KHz signed 16-bit, clk_audio domain via FIFO)
     input  wire        clk_audio,
     output wire [15:0] audio_l,
@@ -141,8 +145,24 @@ pico8_video_reader reader (
 assign vga_r     = (in_image && reader_frame_ready) ? reader_r : 8'd0;
 assign vga_g     = (in_image && reader_frame_ready) ? reader_g : 8'd0;
 assign vga_b     = (in_image && reader_frame_ready) ? reader_b : 8'd0;
-assign vga_hs    = tim_hsync;
-assign vga_vs    = tim_vsync;
+// H/V position adjustment for CRT — delay sync pulses relative to active area.
+// Each step shifts the image ~4 pixels on the CRT.
+reg [11:0] hs_delay;
+reg [3:0]  vs_delay;
+always @(posedge clk_vid) if (ce_pix) begin
+    hs_delay <= {hs_delay[10:0], tim_hsync};
+    vs_delay <= {vs_delay[2:0], tim_vsync};
+end
+wire delayed_hs = h_offset == 2'd0 ? tim_hsync :
+                  h_offset == 2'd1 ? hs_delay[3] :
+                  h_offset == 2'd2 ? hs_delay[7] :
+                                     hs_delay[11];
+wire delayed_vs = v_offset == 2'd0 ? tim_vsync :
+                  v_offset == 2'd1 ? vs_delay[1] :
+                  v_offset == 2'd2 ? vs_delay[2] :
+                                     vs_delay[3];
+assign vga_hs    = delayed_hs;
+assign vga_vs    = delayed_vs;
 assign vga_de    = tim_de;
 assign active    = enable & reader_frame_ready;
 assign vsync_out = tim_vsync;
