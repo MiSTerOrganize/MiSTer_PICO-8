@@ -44,7 +44,9 @@ if [ -z "$RBF_NAME" ]; then
 fi
 
 echo "  Downloading FPGA core ($RBF_NAME)..."
+# Remove old RBFs from both _Other and legacy _Console location
 rm -f /media/fat/_Other/PICO-8_*.rbf /media/fat/_Other/PICO-8.rbf
+rm -f /media/fat/_Console/PICO-8_*.rbf /media/fat/_Console/PICO-8.rbf
 wget -q --show-progress -O "/media/fat/_Other/$RBF_NAME" "$BASE_URL/_Other/$RBF_NAME" || FAIL=1
 
 echo "  Downloading ARM binary..."
