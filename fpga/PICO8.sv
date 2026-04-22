@@ -225,8 +225,8 @@ localparam CONF_STR = {
 	"PICO-8;;",
 	"F0,P8 PNG,Load Cart;",
 	"-;",
-	"O23,H Position (CRT),0,+1,+2,+3;",
-	"O9A,V Position (CRT),0,+1,+2,+3;",
+	"OCE,H Position (CRT),0,+1,+2,+3,-3,-2,-1;",
+	"OFH,V Position (CRT),0,+1,+2,+3,-3,-2,-1;",
 	"-;",
 	"J1,O,X,Pause;",
 	"jn,B,Y,Start;",
@@ -477,8 +477,8 @@ localparam lfsr_n = 63;
 wire PAL = status[4];
 wire FB  = status[5];
 wire [2:0] led = status[8:6];
-wire [1:0] h_pos = status[3:2];   // OSD H Position: 0=0, 1=-1, 2=-2, 3=-3
-wire [1:0] v_pos = status[10:9];  // OSD V Position: 0=0, 1=-1, 2=-2, 3=-3
+wire [2:0] h_pos = status[14:12];  // OSD H Position (CRT): 0..6 → 0,+1,+2,+3,-3,-2,-1
+wire [2:0] v_pos = status[17:15];  // OSD V Position (CRT): 0..6 → 0,+1,+2,+3,-3,-2,-1
 
 reg   [9:0] hc;
 reg   [9:0] vc;
