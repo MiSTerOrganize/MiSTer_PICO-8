@@ -2,14 +2,14 @@
 //
 //  PICO-8 Native Video Timing Generator
 //
-//  320x256 active area @ ~59.45 Hz (500x263 total)
-//  Matches OpenBOR/SNES/Genesis horizontal timing for CRT compatibility.
+//  320x256 active area @ ~58.7 Hz (500x266 total)
+//  CRT-compatible blanking with balanced porches.
 //  CLK_VIDEO: 31.25 MHz, CE_PIXEL: divide-by-4 (7.8125 MHz effective)
 //
-//  H: 320 active + 20 FP + 38 sync + 122 BP = 500 total
-//  V: 256 active +  2 FP +  3 sync +   2 BP = 263 total
+//  H: 320 active + 36 FP + 32 sync + 112 BP = 500 total
+//  V: 256 active +  3 FP +  3 sync +   4 BP = 266 total
 //
-//  Refresh: 7,812,500 / (500*263) = 59.411 Hz
+//  Refresh: 7,812,500 / (500*266) = 58.7 Hz
 //  H freq:  7,812,500 / 500       = 15,625 Hz (CRT-safe)
 //
 //  The 128x128 PICO-8 image is doubled to 256x256 and centered
@@ -25,6 +25,10 @@ module pico8_video_timing (
     input  wire        ce_pix,     // pixel enable (divide-by-4 = 7.8125 MHz)
     input  wire        reset,
 
+    // CRT position offset (signed: -3 to +3, from OSD)
+    input  wire signed [3:0] h_adj,  // horizontal: positive = shift right
+    input  wire signed [3:0] v_adj,  // vertical: positive = shift down
+
     output reg         hsync,      // active low
     output reg         vsync,      // active low
     output reg         hblank,
@@ -37,24 +41,27 @@ module pico8_video_timing (
 );
 
 // ── Timing constants ──────────────────────────────────────────────────
-// 320×256 active, matches OpenBOR/SNES horizontal timing for CRT
+// 320×256 active, CRT-compatible blanking.
+// H: balanced porches (Genesis-like proportions, not extreme BP)
+// V: enough blanking for CRT raster repositioning (V_BP was 2 = too tight)
 localparam H_ACTIVE = 320;
-localparam H_FP     = 20;
-localparam H_SYNC   = 38;
-localparam H_BP     = 122;
-localparam H_TOTAL  = 500;   // 320+20+38+122
+localparam H_FP     = 36;
+localparam H_SYNC   = 32;
+localparam H_BP     = 112;
+localparam H_TOTAL  = 500;   // 320+36+32+112
 
 localparam V_ACTIVE = 256;
-localparam V_FP     = 2;
+localparam V_FP     = 3;
 localparam V_SYNC   = 3;
-localparam V_BP     = 2;
-localparam V_TOTAL  = 263;   // 256+2+3+2
+localparam V_BP     = 4;
+localparam V_TOTAL  = 266;   // 256+3+3+4 = 58.7 Hz
 
-// Derived boundaries
-localparam H_SYNC_START = H_ACTIVE + H_FP;        // 308
-localparam H_SYNC_END   = H_SYNC_START + H_SYNC;  // 346
-localparam V_SYNC_START = V_ACTIVE + V_FP;         // 258
-localparam V_SYNC_END   = V_SYNC_START + V_SYNC;   // 261
+// Derived boundaries — adjusted by OSD H/V position offset.
+// Each step shifts sync by 4 pixels (H) or 1 line (V), moving FP/BP balance.
+wire [9:0] h_sync_start = H_ACTIVE + H_FP + {{6{h_adj[3]}}, h_adj};
+wire [9:0] h_sync_end   = h_sync_start + H_SYNC;
+wire [8:0] v_sync_start = V_ACTIVE + V_FP + {{5{v_adj[3]}}, v_adj};
+wire [8:0] v_sync_end   = v_sync_start + V_SYNC;
 
 always @(posedge clk) begin
     if (reset) begin
@@ -91,9 +98,9 @@ always @(posedge clk) begin
             hblank <= 1'b0;
 
         // Horizontal sync (active low)
-        if (hcount == H_SYNC_START - 1)
+        if (hcount == h_sync_start - 1)
             hsync <= 1'b0;
-        else if (hcount == H_SYNC_END - 1)
+        else if (hcount == h_sync_end - 1)
             hsync <= 1'b1;
 
         // Vertical blanking (transitions on line boundaries)
@@ -106,9 +113,9 @@ always @(posedge clk) begin
 
         // Vertical sync (active low)
         if (hcount == H_TOTAL - 1) begin
-            if (vcount == V_SYNC_START - 1)
+            if (vcount == v_sync_start - 1)
                 vsync <= 1'b0;
-            else if (vcount == V_SYNC_END - 1)
+            else if (vcount == v_sync_end - 1)
                 vsync <= 1'b1;
         end
 

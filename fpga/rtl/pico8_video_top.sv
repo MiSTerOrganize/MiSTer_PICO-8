@@ -43,7 +43,7 @@ module pico8_video_top (
     output wire        active,        // module is outputting valid video
     output wire        vsync_out,     // active-low vsync for frame sync
 
-    // OSD position adjustment: 0=0, 1=+1, 2=+2, 3=+3, 4=-3, 5=-2, 6=-1
+    // CRT position adjustment (signed: -3 to +3 from OSD)
     input  wire  [2:0] h_offset,
     input  wire  [2:0] v_offset,
 
@@ -64,6 +64,24 @@ module pico8_video_top (
     output wire        ioctl_wait
 );
 
+// ── Convert OSD 3-bit (0..6) to signed adjustment ────────────────────
+// OSD values: 0=0, 1=+1, 2=+2, 3=+3, 4=-3, 5=-2, 6=-1
+// Multiply by 4 for H (4 pixels per step), 1 for V (1 line per step)
+wire signed [3:0] h_adj = (h_offset == 3'd0) ?  4'sd0 :
+                          (h_offset == 3'd1) ?  4'sd4 :
+                          (h_offset == 3'd2) ?  4'sd8 :
+                          (h_offset == 3'd3) ?  4'sd12 :
+                          (h_offset == 3'd4) ? -4'sd12 :
+                          (h_offset == 3'd5) ? -4'sd8 :
+                                               -4'sd4;
+wire signed [3:0] v_adj = (v_offset == 3'd0) ?  4'sd0 :
+                          (v_offset == 3'd1) ?  4'sd1 :
+                          (v_offset == 3'd2) ?  4'sd2 :
+                          (v_offset == 3'd3) ?  4'sd3 :
+                          (v_offset == 3'd4) ? -4'sd3 :
+                          (v_offset == 3'd5) ? -4'sd2 :
+                                               -4'sd1;
+
 // ── Timing Generator ──────────────────────────────────────────────────
 wire        tim_hsync, tim_vsync;
 wire        tim_hblank, tim_vblank;
@@ -76,6 +94,8 @@ pico8_video_timing timing (
     .clk       (clk_vid),
     .ce_pix    (ce_pix),
     .reset     (reset),
+    .h_adj     (h_adj),
+    .v_adj     (v_adj),
     .hsync     (tim_hsync),
     .vsync     (tim_vsync),
     .hblank    (tim_hblank),
@@ -145,32 +165,9 @@ pico8_video_reader reader (
 assign vga_r     = (in_image && reader_frame_ready) ? reader_r : 8'd0;
 assign vga_g     = (in_image && reader_frame_ready) ? reader_g : 8'd0;
 assign vga_b     = (in_image && reader_frame_ready) ? reader_b : 8'd0;
-// H/V position adjustment for CRT — delay sync pulses relative to active area.
-// Positive = delay sync (image shifts one way), negative = advance via longer delay
-// (image shifts the other way — wraps around the CRT scan period).
-// OSD values: 0=0, 1=+1, 2=+2, 3=+3, 4=-3, 5=-2, 6=-1
-reg [23:0] hs_delay;
-reg [7:0]  vs_delay;
-always @(posedge clk_vid) if (ce_pix) begin
-    hs_delay <= {hs_delay[22:0], tim_hsync};
-    vs_delay <= {vs_delay[6:0], tim_vsync};
-end
-wire delayed_hs = h_offset == 3'd0 ? tim_hsync :
-                  h_offset == 3'd1 ? hs_delay[3] :
-                  h_offset == 3'd2 ? hs_delay[7] :
-                  h_offset == 3'd3 ? hs_delay[11] :
-                  h_offset == 3'd4 ? hs_delay[23] :
-                  h_offset == 3'd5 ? hs_delay[19] :
-                                     hs_delay[15];
-wire delayed_vs = v_offset == 3'd0 ? tim_vsync :
-                  v_offset == 3'd1 ? vs_delay[1] :
-                  v_offset == 3'd2 ? vs_delay[2] :
-                  v_offset == 3'd3 ? vs_delay[3] :
-                  v_offset == 3'd4 ? vs_delay[7] :
-                  v_offset == 3'd5 ? vs_delay[6] :
-                                     vs_delay[5];
-assign vga_hs    = delayed_hs;
-assign vga_vs    = delayed_vs;
+// H/V position now handled inside timing module via FP/BP adjustment
+assign vga_hs    = tim_hsync;
+assign vga_vs    = tim_vsync;
 assign vga_de    = tim_de;
 assign active    = enable & reader_frame_ready;
 assign vsync_out = tim_vsync;
