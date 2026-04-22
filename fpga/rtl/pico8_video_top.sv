@@ -43,9 +43,9 @@ module pico8_video_top (
     output wire        active,        // module is outputting valid video
     output wire        vsync_out,     // active-low vsync for frame sync
 
-    // OSD position adjustment (0=none, 1=-1, 2=-2, 3=-3 pixels)
-    input  wire  [1:0] h_offset,
-    input  wire  [1:0] v_offset,
+    // OSD position adjustment: 0=0, 1=+1, 2=+2, 3=+3, 4=-3, 5=-2, 6=-1
+    input  wire  [2:0] h_offset,
+    input  wire  [2:0] v_offset,
 
     // Audio output (48KHz signed 16-bit, clk_audio domain via FIFO)
     input  wire        clk_audio,
@@ -146,21 +146,29 @@ assign vga_r     = (in_image && reader_frame_ready) ? reader_r : 8'd0;
 assign vga_g     = (in_image && reader_frame_ready) ? reader_g : 8'd0;
 assign vga_b     = (in_image && reader_frame_ready) ? reader_b : 8'd0;
 // H/V position adjustment for CRT — delay sync pulses relative to active area.
-// Each step shifts the image ~4 pixels on the CRT.
-reg [11:0] hs_delay;
-reg [3:0]  vs_delay;
+// Positive = delay sync (image shifts one way), negative = advance via longer delay
+// (image shifts the other way — wraps around the CRT scan period).
+// OSD values: 0=0, 1=+1, 2=+2, 3=+3, 4=-3, 5=-2, 6=-1
+reg [23:0] hs_delay;
+reg [7:0]  vs_delay;
 always @(posedge clk_vid) if (ce_pix) begin
-    hs_delay <= {hs_delay[10:0], tim_hsync};
-    vs_delay <= {vs_delay[2:0], tim_vsync};
+    hs_delay <= {hs_delay[22:0], tim_hsync};
+    vs_delay <= {vs_delay[6:0], tim_vsync};
 end
-wire delayed_hs = h_offset == 2'd0 ? tim_hsync :
-                  h_offset == 2'd1 ? hs_delay[3] :
-                  h_offset == 2'd2 ? hs_delay[7] :
-                                     hs_delay[11];
-wire delayed_vs = v_offset == 2'd0 ? tim_vsync :
-                  v_offset == 2'd1 ? vs_delay[1] :
-                  v_offset == 2'd2 ? vs_delay[2] :
-                                     vs_delay[3];
+wire delayed_hs = h_offset == 3'd0 ? tim_hsync :
+                  h_offset == 3'd1 ? hs_delay[3] :
+                  h_offset == 3'd2 ? hs_delay[7] :
+                  h_offset == 3'd3 ? hs_delay[11] :
+                  h_offset == 3'd4 ? hs_delay[23] :
+                  h_offset == 3'd5 ? hs_delay[19] :
+                                     hs_delay[15];
+wire delayed_vs = v_offset == 3'd0 ? tim_vsync :
+                  v_offset == 3'd1 ? vs_delay[1] :
+                  v_offset == 3'd2 ? vs_delay[2] :
+                  v_offset == 3'd3 ? vs_delay[3] :
+                  v_offset == 3'd4 ? vs_delay[7] :
+                  v_offset == 3'd5 ? vs_delay[6] :
+                                     vs_delay[5];
 assign vga_hs    = delayed_hs;
 assign vga_vs    = delayed_vs;
 assign vga_de    = tim_de;
