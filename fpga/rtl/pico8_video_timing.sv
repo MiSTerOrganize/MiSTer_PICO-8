@@ -13,8 +13,8 @@
 //  H freq:  5,369,318 / 341       = 15,746 Hz (exact NES)
 //  H active time: 256/5.369MHz = 47.68 µs (exact NES/SNES/Genesis)
 //
-//  The 128x128 PICO-8 image is doubled to 256x256 and centered
-//  horizontally in the 320-pixel active area (32px black each side).
+//  The 128x128 PICO-8 image is doubled to 256x256. H_ACTIVE=256
+//  matches the content exactly — no borders.
 //
 //  Adapted from 3SX project (kimchiman52/3sx-mister)
 //  Copyright (C) 2026 MiSTer Organize — GPL-3.0
