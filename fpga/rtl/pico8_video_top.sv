@@ -5,8 +5,8 @@
 //  Instantiates the timing generator and DDR3 reader, providing a clean
 //  interface for integration into menu.sv (or a standalone PICO-8 core).
 //
-//  Runs on CLK_VIDEO (31.25 MHz) with integer divide-by-4 ce_pix for
-//  7.8125 MHz effective pixel rate. Same PLL as 3SX.
+//  Runs on CLK_VIDEO (21.477 MHz) with integer divide-by-4 ce_pix for
+//  5.369 MHz effective pixel rate — exact NES pixel clock.
 //
 //  Adapted from 3SX project (kimchiman52/3sx-mister)
 //  Copyright (C) 2026 MiSTer Organize — GPL-3.0
@@ -15,8 +15,8 @@
 
 module pico8_video_top (
     input  wire        clk_sys,       // system clock (100 MHz) for DDR3
-    input  wire        clk_vid,       // video clock (31.25 MHz, CLK_VIDEO)
-    input  wire        ce_pix,        // pixel enable (divide-by-4 = 7.8125 MHz)
+    input  wire        clk_vid,       // video clock (21.477 MHz, CLK_VIDEO)
+    input  wire        ce_pix,        // pixel enable (divide-by-4 = 5.369 MHz, exact NES)
     input  wire        reset,
 
     // DDR3 Avalon-MM master
@@ -67,13 +67,13 @@ module pico8_video_top (
 // ── Convert OSD 3-bit (0..6) to signed adjustment ────────────────────
 // OSD values: 0=0, 1=+1, 2=+2, 3=+3, 4=-3, 5=-2, 6=-1
 // Multiply by 4 for H (4 pixels per step), 1 for V (1 line per step)
-wire signed [3:0] h_adj = (h_offset == 3'd0) ?  4'sd0 :
-                          (h_offset == 3'd1) ?  4'sd4 :
-                          (h_offset == 3'd2) ?  4'sd8 :
-                          (h_offset == 3'd3) ?  4'sd12 :
-                          (h_offset == 3'd4) ? -4'sd12 :
-                          (h_offset == 3'd5) ? -4'sd8 :
-                                               -4'sd4;
+wire signed [4:0] h_adj = (h_offset == 3'd0) ?  5'sd0 :
+                          (h_offset == 3'd1) ?  5'sd4 :
+                          (h_offset == 3'd2) ?  5'sd8 :
+                          (h_offset == 3'd3) ?  5'sd12 :
+                          (h_offset == 3'd4) ? -5'sd12 :
+                          (h_offset == 3'd5) ? -5'sd8 :
+                                               -5'sd4;
 wire signed [3:0] v_adj = (v_offset == 3'd0) ?  4'sd0 :
                           (v_offset == 3'd1) ?  4'sd1 :
                           (v_offset == 3'd2) ?  4'sd2 :
@@ -112,10 +112,8 @@ wire [7:0]  reader_r, reader_g, reader_b;
 wire        reader_frame_ready;
 wire [15:0] reader_audio_l, reader_audio_r;
 
-// Image area: 256px centered in 320px active (32px border each side)
-wire in_image = (tim_hcount >= 10'd32) && (tim_hcount < 10'd288);
-// Only drain FIFO during the image area, not during borders
-wire image_de = tim_de & in_image;
+// H_ACTIVE=256 matches content exactly — no borders, no gating needed
+wire image_de = tim_de;
 
 pico8_video_reader reader (
     .ddr_clk        (clk_sys),
@@ -162,9 +160,9 @@ pico8_video_reader reader (
 );
 
 // ── Output assignments ────────────────────────────────────────────────
-assign vga_r     = (in_image && reader_frame_ready) ? reader_r : 8'd0;
-assign vga_g     = (in_image && reader_frame_ready) ? reader_g : 8'd0;
-assign vga_b     = (in_image && reader_frame_ready) ? reader_b : 8'd0;
+assign vga_r     = reader_frame_ready ? reader_r : 8'd0;
+assign vga_g     = reader_frame_ready ? reader_g : 8'd0;
+assign vga_b     = reader_frame_ready ? reader_b : 8'd0;
 // H/V position now handled inside timing module via FP/BP adjustment
 assign vga_hs    = tim_hsync;
 assign vga_vs    = tim_vsync;
