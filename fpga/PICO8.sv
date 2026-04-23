@@ -198,7 +198,7 @@ assign CE_PIXEL = ce_pix_ntsc;
 
 assign VGA_SL = 0;
 assign VGA_F1 = 0;
-// PICO-8 128x128 content doubled to 256x256, output as 320x256 with 4:3 aspect.
+// PICO-8 128x128 content doubled to 256x256, exact NES timing, 4:3 aspect.
 assign VIDEO_ARX = 13'd4;
 assign VIDEO_ARY = 13'd3;
 assign VGA_SCALER= 0;
