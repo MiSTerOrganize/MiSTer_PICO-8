@@ -23,6 +23,11 @@
 namespace z8::pico8
 {
 
+static uint8_t normalize_palette_color(uint8_t color)
+{
+    return color & 0x8f;
+}
+
 void vm::private_end_render()
 {
     if (m_in_pause) return;
@@ -104,7 +109,7 @@ uint8_t vm::pixel(int x, int y, u4mat2<128, 128> const& screen) const
     {
         // Raster mode: alternate palette
         if (hw_state.raster.bits[y])
-            return hw_state.raster.palette[c] & 0x8f;
+            return normalize_palette_color(hw_state.raster.palette[c]);
     }
     else if ((hw_state.raster.mode & 0x30) == 0x30)
     {
@@ -112,12 +117,11 @@ uint8_t vm::pixel(int x, int y, u4mat2<128, 128> const& screen) const
         if ((hw_state.raster.mode & 0x0f) == c)
         {
             int c2 = (y / 8 + (hw_state.raster.bits[y] ? 1 : 0)) % 16;
-            return hw_state.raster.palette[c2] & 0x8f;
+            return normalize_palette_color(hw_state.raster.palette[c2]);
         }
     }
 
-    // Apply screen palette — mask to valid LUT range (bit 7 = hidden palette, bits 0-3 = index)
-    return draw_state.screen_palette[c] & 0x8f;
+    return normalize_palette_color(draw_state.screen_palette[c]);
 }
 
 int vm::get_ansi_color(uint8_t c) const
@@ -142,8 +146,7 @@ int vm::get_ansi_color(uint8_t c) const
         223, // ffccaa → ffdfaf
     };
 
-    // FIXME: support the extended palette!
-    return ansi_palette[m_front_draw_state.screen_palette[c & 0xf] & 0xf];
+    return ansi_palette[normalize_palette_color(m_front_draw_state.screen_palette[c & 0xf]) & 0xf];
 }
 
 } // namespace z8::pico8
