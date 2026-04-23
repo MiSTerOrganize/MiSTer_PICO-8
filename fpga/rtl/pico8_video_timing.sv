@@ -2,15 +2,16 @@
 //
 //  PICO-8 Native Video Timing Generator
 //
-//  320x256 active area @ ~58.7 Hz (500x266 total)
-//  CRT-compatible blanking with balanced porches.
-//  CLK_VIDEO: 31.25 MHz, CE_PIXEL: divide-by-4 (7.8125 MHz effective)
+//  256x256 active area @ 60.1 Hz (341x262 total)
+//  Exact NES timing — NTSC-derived pixel clock from colorburst crystal.
+//  CLK_VIDEO: 21.477 MHz, CE_PIXEL: divide-by-4 (5.36932 MHz effective)
 //
-//  H: 320 active + 36 FP + 32 sync + 112 BP = 500 total
-//  V: 256 active +  3 FP +  3 sync +   4 BP = 266 total
+//  H: 256 active + 15 FP + 25 sync + 45 BP = 341 total
+//  V: 256 active +  1 FP +  3 sync +  2 BP = 262 total
 //
-//  Refresh: 7,812,500 / (500*266) = 58.7 Hz
-//  H freq:  7,812,500 / 500       = 15,625 Hz (CRT-safe)
+//  Refresh: 5,369,318 / (341*262) = 60.10 Hz (exact NES)
+//  H freq:  5,369,318 / 341       = 15,746 Hz (exact NES)
+//  H active time: 256/5.369MHz = 47.68 µs (exact NES/SNES/Genesis)
 //
 //  The 128x128 PICO-8 image is doubled to 256x256 and centered
 //  horizontally in the 320-pixel active area (32px black each side).
@@ -21,12 +22,12 @@
 //============================================================================
 
 module pico8_video_timing (
-    input  wire        clk,        // CLK_VIDEO (31.25 MHz)
-    input  wire        ce_pix,     // pixel enable (divide-by-4 = 7.8125 MHz)
+    input  wire        clk,        // CLK_VIDEO (21.477 MHz)
+    input  wire        ce_pix,     // pixel enable (divide-by-4 = 5.369 MHz, exact NES)
     input  wire        reset,
 
     // CRT position offset (signed: -3 to +3, from OSD)
-    input  wire signed [3:0] h_adj,  // horizontal: positive = shift right
+    input  wire signed [4:0] h_adj,  // horizontal: positive = shift right
     input  wire signed [3:0] v_adj,  // vertical: positive = shift down
 
     output reg         hsync,      // active low
@@ -41,24 +42,24 @@ module pico8_video_timing (
 );
 
 // ── Timing constants ──────────────────────────────────────────────────
-// 320×256 active, CRT-compatible blanking.
-// H: balanced porches (Genesis-like proportions, not extreme BP)
-// V: enough blanking for CRT raster repositioning (V_BP was 2 = too tight)
-localparam H_ACTIVE = 320;
-localparam H_FP     = 36;
-localparam H_SYNC   = 32;
-localparam H_BP     = 112;
-localparam H_TOTAL  = 500;   // 320+36+32+112
+// 256×256 active, exact NES horizontal and vertical timing.
+// H: 85 blanking pixels, sync width ~4.7 µs (25/5.369 MHz)
+// V: 6 blanking lines (tight but tested — prior V_BP=2 issue was H timing)
+localparam H_ACTIVE = 256;
+localparam H_FP     = 15;
+localparam H_SYNC   = 25;
+localparam H_BP     = 45;
+localparam H_TOTAL  = 341;   // 256+15+25+45 (exact NES)
 
 localparam V_ACTIVE = 256;
-localparam V_FP     = 3;
+localparam V_FP     = 1;
 localparam V_SYNC   = 3;
-localparam V_BP     = 4;
-localparam V_TOTAL  = 266;   // 256+3+3+4 = 58.7 Hz
+localparam V_BP     = 2;
+localparam V_TOTAL  = 262;   // 256+1+3+2 = 60.10 Hz (exact NES)
 
 // Derived boundaries — adjusted by OSD H/V position offset.
 // Each step shifts sync by 4 pixels (H) or 1 line (V), moving FP/BP balance.
-wire [9:0] h_sync_start = H_ACTIVE + H_FP + {{6{h_adj[3]}}, h_adj};
+wire [9:0] h_sync_start = H_ACTIVE + H_FP + {{5{h_adj[4]}}, h_adj};
 wire [9:0] h_sync_end   = h_sync_start + H_SYNC;
 wire [8:0] v_sync_start = V_ACTIVE + V_FP + {{5{v_adj[3]}}, v_adj};
 wire [8:0] v_sync_end   = v_sync_start + V_SYNC;

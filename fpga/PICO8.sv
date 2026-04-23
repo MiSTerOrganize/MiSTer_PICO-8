@@ -186,15 +186,15 @@ assign {SD_SCK, SD_MOSI, SD_CS} = 'Z;
 
 assign DDRAM_CLK = clk_sys;
 
-// CE_PIXEL: divide CLK_VIDEO (31.25 MHz) by 4 for ~7.8125 MHz effective pixel rate.
-// Integer divider = zero pixel timing jitter.
+// CE_PIXEL: divide CLK_VIDEO (21.477 MHz) by 4 for 5.369 MHz effective pixel rate.
+// Exact NES pixel clock — 47.68 µs active time matches NES/SNES/Genesis CRT width.
 reg [1:0] ce_div;
-wire ce_pix_div4 = (ce_div == 2'd0);
+wire ce_pix_ntsc = (ce_div == 2'd0);
 always @(posedge CLK_VIDEO) begin
 	if (RESET) ce_div <= 2'd0;
 	else ce_div <= ce_div + 2'd1;
 end
-assign CE_PIXEL = ce_pix_div4;
+assign CE_PIXEL = ce_pix_ntsc;
 
 assign VGA_SL = 0;
 assign VGA_F1 = 0;
@@ -268,7 +268,7 @@ hps_io #(.CONF_STR(CONF_STR)) hps_io
 ////////////////////   CLOCKS   ///////////////////
 wire locked, clk_sys;
 wire clk_20m;   // PLL outclk_1 (unused, kept for future use)
-wire clk_pix;   // PLL outclk_2: 31.25 MHz (CLK_VIDEO, divided by 4 for 7.8125 MHz pixels)
+wire clk_pix;   // PLL outclk_2: 21.477 MHz (CLK_VIDEO, divided by 4 for 5.369 MHz — exact NES)
 pll pll
 (
 	.refclk(CLK_50M),
@@ -492,7 +492,7 @@ wire  [5:0] rnd_c = {rnd_reg[0],rnd_reg[1],rnd_reg[2],rnd_reg[2],rnd_reg[2],rnd_
 lfsr #(lfsr_n) random(rnd);
 
 always @(posedge CLK_VIDEO) begin
-	ce_pix <= ce_pix_div4;
+	ce_pix <= ce_pix_ntsc;
 
 	if(ce_pix) begin
 		if(hc == 499) begin
@@ -558,7 +558,7 @@ pico8_video_top native_video
 (
 	.clk_sys        (clk_sys),
 	.clk_vid        (CLK_VIDEO),
-	.ce_pix         (ce_pix_div4),
+	.ce_pix         (ce_pix_ntsc),
 	.reset          (RESET),
 
 	// DDR3 interface (directly to mux)
