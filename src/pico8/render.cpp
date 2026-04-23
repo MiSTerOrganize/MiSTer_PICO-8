@@ -104,7 +104,7 @@ uint8_t vm::pixel(int x, int y, u4mat2<128, 128> const& screen) const
     {
         // Raster mode: alternate palette
         if (hw_state.raster.bits[y])
-            return hw_state.raster.palette[c];
+            return hw_state.raster.palette[c] & 0x8f;
     }
     else if ((hw_state.raster.mode & 0x30) == 0x30)
     {
@@ -112,12 +112,12 @@ uint8_t vm::pixel(int x, int y, u4mat2<128, 128> const& screen) const
         if ((hw_state.raster.mode & 0x0f) == c)
         {
             int c2 = (y / 8 + (hw_state.raster.bits[y] ? 1 : 0)) % 16;
-            return hw_state.raster.palette[c2];
+            return hw_state.raster.palette[c2] & 0x8f;
         }
     }
 
-    // Apply screen palette
-    return draw_state.screen_palette[c];
+    // Apply screen palette — mask to valid LUT range (bit 7 = hidden palette, bits 0-3 = index)
+    return draw_state.screen_palette[c] & 0x8f;
 }
 
 int vm::get_ansi_color(uint8_t c) const
