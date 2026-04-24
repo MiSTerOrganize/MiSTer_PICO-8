@@ -157,7 +157,7 @@ opt<bool> vm::private_cartdata(opt<std::string> str)
 std::string vm::get_path_config()
 {
 #if defined(__MISTER__)
-    return "/media/fat/config/PICO-8.cfg";
+    return "/media/fat/config/zepto8.cfg";
 #elif __NX__
     std::string file_path = "save:/";
 #else

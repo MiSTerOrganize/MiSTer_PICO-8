@@ -344,7 +344,7 @@ int main(int argc, char **argv)
     // Set ZEPTO8_BASE_DIR for cart path resolution.
     // With __MISTER__ defined, private.cpp uses this for:
     //   Carts:  $ZEPTO8_BASE_DIR/Carts/
-    // Config: /media/fat/config/PICO-8.cfg
+    // Config: /media/fat/config/zepto8.cfg
     // Saves:  /media/fat/saves/PICO-8/
     setenv("ZEPTO8_BASE_DIR", data_dir.c_str(), 1);
 
