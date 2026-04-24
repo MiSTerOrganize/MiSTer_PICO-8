@@ -157,9 +157,7 @@ opt<bool> vm::private_cartdata(opt<std::string> str)
 std::string vm::get_path_config()
 {
 #if defined(__MISTER__)
-    std::string base_dir = lol::sys::getenv("ZEPTO8_BASE_DIR");
-    if (base_dir.empty()) base_dir = ".";
-    return base_dir + "/config.txt";
+    return "/media/fat/config/PICO-8.cfg";
 #elif __NX__
     std::string file_path = "save:/";
 #else

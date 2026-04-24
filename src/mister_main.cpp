@@ -341,11 +341,11 @@ int main(int argc, char **argv)
     }
     lol::sys::set_data_path(data_dir);
 
-    // Set ZEPTO8_BASE_DIR for config path resolution.
+    // Set ZEPTO8_BASE_DIR for cart path resolution.
     // With __MISTER__ defined, private.cpp uses this for:
-    //   Config: $ZEPTO8_BASE_DIR/config.txt
     //   Carts:  $ZEPTO8_BASE_DIR/Carts/
-    // Saves go to /media/fat/saves/PICO-8/ (not under ZEPTO8_BASE_DIR)
+    // Config: /media/fat/config/PICO-8.cfg
+    // Saves:  /media/fat/saves/PICO-8/
     setenv("ZEPTO8_BASE_DIR", data_dir.c_str(), 1);
 
     // Create standard MiSTer Organize folders
