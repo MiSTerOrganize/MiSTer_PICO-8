@@ -14,7 +14,7 @@
 //============================================================================
 
 module pico8_video_top (
-    input  wire        clk_sys,       // system clock (100 MHz) for DDR3
+    input  wire        clk_sys,       // system clock (105 MHz) for DDR3
     input  wire        clk_vid,       // video clock (21.477 MHz, CLK_VIDEO)
     input  wire        ce_pix,        // pixel enable (divide-by-4 = 5.369 MHz, exact NES)
     input  wire        reset,
