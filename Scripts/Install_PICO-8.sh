@@ -29,10 +29,17 @@ mkdir -p /media/fat/_Other
 mkdir -p /media/fat/games/PICO-8/Carts
 mkdir -p /media/fat/logs/PICO-8
 mkdir -p /media/fat/saves/PICO-8
+mkdir -p /media/fat/config
 mkdir -p /media/fat/docs/PICO-8
 
 # Remove old log folders from games directory
 rm -rf /media/fat/games/PICO-8/.Logs /media/fat/games/PICO-8/Logs
+
+# Migrate old config to new location
+if [ -f /media/fat/games/PICO-8/config.txt ] && [ ! -f /media/fat/config/PICO-8.cfg ]; then
+    mv /media/fat/games/PICO-8/config.txt /media/fat/config/PICO-8.cfg
+    echo "Migrated config to /media/fat/config/PICO-8.cfg"
+fi
 
 FAIL=0
 
