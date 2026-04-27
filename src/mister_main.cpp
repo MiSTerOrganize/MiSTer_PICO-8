@@ -690,9 +690,14 @@ int main(int argc, char **argv)
         g_return_to_browser = false;
 
         // Hot-swap: cart_path already set to new cart, outer loop reloads it.
-        // Normal exit: clear cart_path so outer loop shows browser.
+        // Normal exit (user picked Quit from PICO-8 pause menu): clear
+        // cart_path AND delete .s0 — otherwise the next outer-loop poll
+        // would see the old .s0 path and immediately reload the same cart
+        // (perceived as "Quit just resets the cartridge").
         if (!hot_swap_pending) {
             cart_path.clear();
+            unlink("/media/fat/config/PICO-8.s0");
+            fprintf(stderr, "Quit: cleared .s0, returning to OSD picker\n");
         } else {
             fprintf(stderr, "Hot-swap: reloading %s\n", cart_path.c_str());
         }
