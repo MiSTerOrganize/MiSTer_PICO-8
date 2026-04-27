@@ -335,13 +335,21 @@ bool vm::private_load(std::string name, opt<std::string> breadcrumb, opt<std::st
 
     std::string previous_cart = m_cart.get_filename();
 
+    std::string requested = name;
     name = get_path_active_dir() + "/" + name;
-    // tmp fix: if extension is not .p8 or .png, set it to .p8
-    if (!lol::ends_with(lol::tolower(name), ".p8") && !lol::ends_with(lol::tolower(name), ".png"))
+    // tmp fix: if extension is not .p8 or .png or .rom, set it to .p8
+    if (!lol::ends_with(lol::tolower(name), ".p8") &&
+        !lol::ends_with(lol::tolower(name), ".png") &&
+        !lol::ends_with(lol::tolower(name), ".rom"))
         name += ".p8";
+    fprintf(stderr, "[multicart] load() requested='%s' resolved='%s' params='%s'\n",
+            requested.c_str(), name.c_str(),
+            params.has_value() ? (*params).c_str() : "(none)");
     // Load cart from a file
-    if (!load_cart(m_cart, name))
+    if (!load_cart(m_cart, name)) {
+        fprintf(stderr, "[multicart] load() FAILED for %s\n", name.c_str());
         return false;
+    }
 
     if (breadcrumb.has_value() && (*breadcrumb).length() > 1)
     {
