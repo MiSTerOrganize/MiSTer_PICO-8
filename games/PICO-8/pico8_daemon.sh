@@ -10,6 +10,10 @@ PIDFILE="/tmp/pico8_arm.pid"
 BINARY="/media/fat/games/PICO-8/PICO-8"
 ARGS="-nativevideo -data /media/fat/games/PICO-8/"
 
+# Clear any stale .s0 from a previous boot so MiSTer doesn't auto-mount
+# a previously-selected cart on core load
+rm -f /media/fat/config/PICO-8.s0
+
 # Prevent multiple daemon instances
 if ! mkdir "$LOCKDIR" 2>/dev/null; then
     OLDPID=$(cat "$LOCKDIR/pid" 2>/dev/null)
@@ -57,12 +61,15 @@ while true; do
             continue
         fi
         if [ "$CUR" != "PICO-8" ]; then
-            # User left the core — kill binary
+            # User left the core — kill binary, clear .s0 so re-entry
+            # goes back through the OSD picker instead of auto-mounting
+            # the previous cart
             kill $CHILD 2>/dev/null
             wait $CHILD 2>/dev/null
             CHILD=""
             FIRST_LOAD=1
             rm -f "$PIDFILE"
+            rm -f /media/fat/config/PICO-8.s0
         fi
     fi
 

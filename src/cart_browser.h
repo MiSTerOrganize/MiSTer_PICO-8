@@ -83,6 +83,8 @@ static std::vector<BrowserEntry> scan_directory(const std::string &path)
                 entries.push_back(e);
             else if (lower.size() >= 7 && lower.substr(lower.size()-7) == ".p8.png")
                 entries.push_back(e);
+            else if (lower.size() >= 7 && lower.substr(lower.size()-7) == ".p8.rom")
+                entries.push_back(e);
         }
     }
     closedir(dir);
