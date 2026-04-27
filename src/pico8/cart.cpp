@@ -88,15 +88,24 @@ bool cart::load_rom(std::string const &filename)
     // The bytes are exactly what set_bin() expects (same payload
     // load_png() decodes from PNG steganography, just without the
     // image wrapper).
-    std::vector<uint8_t> bytes;
-    if (!lol::file::read(lol::sys::get_data_path(filename), bytes))
+    //
+    // Use ifstream rather than lol::file::read because lol::file::read
+    // only outputs to std::string (text-oriented) and we need a byte
+    // vector for set_bin's interface.
+    std::string resolved = lol::sys::get_data_path(filename);
+    std::ifstream f(resolved, std::ios::binary);
+    if (!f.good())
         return false;
+
+    std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(f)),
+                                std::istreambuf_iterator<char>());
+    f.close();
 
     if (bytes.size() < sizeof(m_rom))
         return false;
 
     // set_bin expects sizeof(m_rom) bytes; .p8.rom is exactly that
-    // (no label, no version byte after the rom). Resize to match.
+    // (no label, no version byte after the rom). Truncate to match.
     bytes.resize(sizeof(m_rom));
     set_bin(bytes);
     return true;
