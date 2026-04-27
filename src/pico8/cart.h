@@ -92,6 +92,7 @@ private:
     bool load_p8(std::string const &filename);
     bool load_lua(std::string const &filename);
     bool load_js(std::string const &filename);
+    bool load_rom(std::string const &filename);   // raw 32K binary cart (.p8.rom)
 
     bool save_p8(std::string const& filename) const;
     bool save_png(std::string const& filename) const;

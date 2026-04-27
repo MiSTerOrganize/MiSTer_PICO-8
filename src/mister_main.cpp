@@ -484,60 +484,53 @@ int main(int argc, char **argv)
         // Get cart path
         if (cart_path.empty()) {
             if (have_native_video) {
-                // Poll DDR3 for cart loaded via OSD file browser
-                fprintf(stderr, "Waiting for cart from OSD file browser...\n");
+                // SC0 mode: MiSTer writes the cart's source path to
+                // /media/fat/config/PICO-8.s0 instantly when the user
+                // picks from the OSD. We read the path and load the
+                // cart from its real SD location — that way zepto8's
+                // load("sibling.p8") for multicart games resolves to
+                // the right directory (vs the old /tmp/ copy approach
+                // which orphaned the cart from its siblings).
+                fprintf(stderr, "Waiting for OSD cart selection (.s0)...\n");
                 int poll_count = 0;
                 while (g_running) {
-                    uint32_t cart_size = NativeVideoWriter_CheckCart();
-                    
-                    // Debug: log every second
-                    if (++poll_count >= 60) {
-                        fprintf(stderr, "Cart poll: ctrl=0x%08X\n", cart_size);
+                    char s0_path[512] = {0};
+                    FILE *f = fopen("/media/fat/config/PICO-8.s0", "r");
+                    if (f) {
+                        if (fgets(s0_path, sizeof(s0_path), f)) {
+                            char *nl = strchr(s0_path, '\n'); if (nl) *nl = 0;
+                            char *cr = strchr(s0_path, '\r'); if (cr) *cr = 0;
+                            // MiSTer writes .s0 without truncating, so a
+                            // shorter new path can leak trailing bytes from
+                            // a previous longer one. Trim at the last cart
+                            // extension and strip trailing whitespace.
+                            char *cut = NULL;
+                            char *p;
+                            for (p = strstr(s0_path, ".p8.png"); p; p = strstr(p+1, ".p8.png"))
+                                cut = p + 7;
+                            if (!cut) for (p = strstr(s0_path, ".p8.rom"); p; p = strstr(p+1, ".p8.rom"))
+                                cut = p + 7;
+                            if (!cut) for (p = strstr(s0_path, ".p8"); p; p = strstr(p+1, ".p8"))
+                                cut = p + 3;
+                            if (cut) *cut = 0;
+                            int pl = (int)strlen(s0_path);
+                            while (pl > 0 && (s0_path[pl-1] == ' ' || s0_path[pl-1] == '\t'))
+                                s0_path[--pl] = 0;
+                        }
+                        fclose(f);
+                        if (strlen(s0_path) > 0) {
+                            char full[1024];
+                            snprintf(full, sizeof(full), "/media/fat/%s", s0_path);
+                            cart_path = std::string(full);
+                            fprintf(stderr, "OSD selected: %s\n", cart_path.c_str());
+                            break;
+                        }
+                    }
+                    if (++poll_count >= 30) {
+                        fprintf(stderr, "Still waiting for .s0...\n");
                         poll_count = 0;
                     }
-                    
-                    if (cart_size > 0) {
-                        // Ignore tiny sizes — startup ioctl noise from Main_MiSTer
-                        if (cart_size < 64) {
-                            NativeVideoWriter_AckCart();
-                            continue;
-                        }
-                        fprintf(stderr, "Cart received: %u bytes\n", cart_size);
-
-                        // Read cart data from DDR3
-                        uint8_t *cart_buf = (uint8_t *)malloc(cart_size);
-                        if (!cart_buf) {
-                            fprintf(stderr, "Failed to allocate %u bytes for cart\n", cart_size);
-                            NativeVideoWriter_AckCart();
-                            continue;
-                        }
-                        uint32_t actual = NativeVideoWriter_ReadCart(cart_buf, cart_size);
-                        NativeVideoWriter_AckCart();
-
-                        // Detect format: PNG starts with 0x89504E47
-                        const char *tmp_path;
-                        if (actual >= 8 && cart_buf[0] == 0x89 && cart_buf[1] == 0x50 &&
-                            cart_buf[2] == 0x4E && cart_buf[3] == 0x47)
-                            tmp_path = "/tmp/pico8_osd_cart.p8.png";
-                        else
-                            tmp_path = "/tmp/pico8_osd_cart.p8";
-
-                        // Save to temp file
-                        FILE *f = fopen(tmp_path, "wb");
-                        if (f) {
-                            fwrite(cart_buf, 1, actual, f);
-                            fclose(f);
-                            cart_path = std::string(tmp_path);
-                            fprintf(stderr, "Cart saved to %s\n", tmp_path);
-                        } else {
-                            fprintf(stderr, "Failed to write temp cart file\n");
-                        }
-                        free(cart_buf);
-                        break;
-                    }
-
-                    // Keep rendering black frame so FPGA has valid timing
-                    usleep(16000); // ~60fps polling
+                    usleep(200000); // poll every 200ms
                 }
                 if (cart_path.empty()) break; // quit was requested
             } else {
@@ -631,41 +624,41 @@ int main(int argc, char **argv)
         if (!g_vm->is_running() || g_return_to_browser)
             game_running = false;
 
-        // Check for new cart loaded via OSD during gameplay (hot-swap)
-        // In-process swap: save cart, stop game loop, let outer loop reload.
-        // No process restart needed — VM resets in-place.
+        // Check for OSD cart-swap during gameplay — poll .s0 for a
+        // path different from the currently-loaded cart. SC0 mode: the
+        // user picks a new cart from MiSTer's file browser, MiSTer
+        // updates .s0 instantly. Throttle to ~2 Hz so we're not
+        // hammering the SD card.
         if (have_native_video && game_running) {
-            uint32_t new_cart_size = NativeVideoWriter_CheckCart();
-            if (new_cart_size > 0) {
-                fprintf(stderr, "Hot-swap: new cart detected (%u bytes)\n", new_cart_size);
-                uint8_t *cart_buf = (uint8_t *)malloc(new_cart_size);
-                if (cart_buf) {
-                    uint32_t actual = NativeVideoWriter_ReadCart(cart_buf, new_cart_size);
-                    NativeVideoWriter_AckCart();
-
-                    // Detect format and save cart to temp file
-                    const char *tmp_path;
-                    if (actual >= 8 && cart_buf[0] == 0x89 && cart_buf[1] == 0x50 &&
-                        cart_buf[2] == 0x4E && cart_buf[3] == 0x47)
-                        tmp_path = "/tmp/pico8_osd_cart.p8.png";
-                    else
-                        tmp_path = "/tmp/pico8_osd_cart.p8";
-
-                    FILE *f = fopen(tmp_path, "wb");
-                    if (f) {
-                        fwrite(cart_buf, 1, actual, f);
-                        fclose(f);
-                        // Set new cart path — outer loop will reload
-                        cart_path = std::string(tmp_path);
-                        fprintf(stderr, "Hot-swap: saved cart to %s, reloading in-place\n", tmp_path);
+            static int swap_poll = 0;
+            if (++swap_poll >= 30) { // ~30 frames @ 60fps = 0.5s
+                swap_poll = 0;
+                char s0_path[512] = {0};
+                FILE *f = fopen("/media/fat/config/PICO-8.s0", "r");
+                if (f) {
+                    if (fgets(s0_path, sizeof(s0_path), f)) {
+                        char *nl = strchr(s0_path, '\n'); if (nl) *nl = 0;
+                        char *cr = strchr(s0_path, '\r'); if (cr) *cr = 0;
+                        char *cut = NULL; char *p;
+                        for (p = strstr(s0_path, ".p8.png"); p; p = strstr(p+1, ".p8.png")) cut = p + 7;
+                        if (!cut) for (p = strstr(s0_path, ".p8.rom"); p; p = strstr(p+1, ".p8.rom")) cut = p + 7;
+                        if (!cut) for (p = strstr(s0_path, ".p8"); p; p = strstr(p+1, ".p8")) cut = p + 3;
+                        if (cut) *cut = 0;
+                        int pl = (int)strlen(s0_path);
+                        while (pl > 0 && (s0_path[pl-1] == ' ' || s0_path[pl-1] == '\t')) s0_path[--pl] = 0;
                     }
-                    free(cart_buf);
-                } else {
-                    NativeVideoWriter_AckCart();
+                    fclose(f);
+                    if (strlen(s0_path) > 0) {
+                        char full[1024];
+                        snprintf(full, sizeof(full), "/media/fat/%s", s0_path);
+                        if (cart_path != full) {
+                            fprintf(stderr, "Hot-swap: new OSD cart %s\n", full);
+                            cart_path = std::string(full);
+                            game_running = false;
+                            hot_swap_pending = true;
+                        }
+                    }
                 }
-                // Break inner game loop — cleanup code below handles audio/VM
-                game_running = false;
-                hot_swap_pending = true;
             }
         }
 
