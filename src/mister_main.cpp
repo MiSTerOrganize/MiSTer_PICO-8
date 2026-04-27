@@ -4,7 +4,7 @@
 //  Copyright © 2024-2026 MiSTer Organize
 //
 //  Built on zepto8 by Sam Hocevar (WTFPL license)
-//  MiSTer frontend patterns from FAKE-08 MiSTer port session summary
+//  MiSTer frontend patterns for the zepto8 PICO-8 emulator on MiSTer
 //
 
 #include <cstdio>
@@ -263,7 +263,7 @@ static void blit_stretched(SDL_Surface *surface, const lol::u8vec4 *src)
 
 // ── Joystick input ────────────────────────────────────────────────────
 // Reads Linux joystick events from /dev/input/js0
-// Button mapping matches FAKE-08 MiSTer (verified on hardware):
+// Button mapping (verified on hardware):
 //
 //   Xbox SDL#  PICO-8
 //   A    0     O button (jump, in-game only — no menu function)

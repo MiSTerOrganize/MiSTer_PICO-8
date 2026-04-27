@@ -1,7 +1,7 @@
 //
 //  cart_browser.h — Visual cart browser for zepto8-mister
 //
-//  Controls (matching FAKE-08 MiSTer):
+//  Controls:
 //    D-pad Up/Down  — scroll through items
 //    D-pad Right    — enter folder
 //    D-pad Left     — go back to parent folder
