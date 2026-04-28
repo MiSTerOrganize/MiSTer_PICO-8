@@ -52,9 +52,6 @@ bool cart::load(std::string const &filename)
     if (lol::ends_with(lower, ".p8.png") && load_png(filename))
         return true;
 
-    if (lol::ends_with(lower, ".p8.rom") && load_rom(filename))
-        return true;
-
     if (lol::ends_with(lower, ".p8") && load_p8(filename))
         return true;
 
@@ -64,51 +61,14 @@ bool cart::load(std::string const &filename)
     if (lol::ends_with(lower, ".png") && load_png(filename))
         return true;
 
-    if (lol::ends_with(lower, ".rom") && load_rom(filename))
-        return true;
-
     if (lol::ends_with(lower, ".js") && load_js(filename))
         return true;
 
     // Unknown extension: try all formats (MiSTer BIOS convention)
     if (load_p8(filename)) return true;
     if (load_png(filename)) return true;
-    if (load_rom(filename)) return true;
 
     return false;
-}
-
-bool cart::load_rom(std::string const &filename)
-{
-    init_filename(filename);
-
-    // .p8.rom is a raw 32 KB binary dump of the cart's ROM area —
-    // the PICO-8 manual documents this as the "raw 32k binary format"
-    // produced by `save name.p8.rom` from the PICO-8 console.
-    // The bytes are exactly what set_bin() expects (same payload
-    // load_png() decodes from PNG steganography, just without the
-    // image wrapper).
-    //
-    // Use ifstream rather than lol::file::read because lol::file::read
-    // only outputs to std::string (text-oriented) and we need a byte
-    // vector for set_bin's interface.
-    std::string resolved = lol::sys::get_data_path(filename);
-    std::ifstream f(resolved, std::ios::binary);
-    if (!f.good())
-        return false;
-
-    std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(f)),
-                                std::istreambuf_iterator<char>());
-    f.close();
-
-    if (bytes.size() < sizeof(m_rom))
-        return false;
-
-    // set_bin expects sizeof(m_rom) bytes; .p8.rom is exactly that
-    // (no label, no version byte after the rom). Truncate to match.
-    bytes.resize(sizeof(m_rom));
-    set_bin(bytes);
-    return true;
 }
 
 bool cart::load_png(std::string const &filename)

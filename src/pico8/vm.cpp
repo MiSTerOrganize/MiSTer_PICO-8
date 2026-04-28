@@ -337,10 +337,8 @@ bool vm::private_load(std::string name, opt<std::string> breadcrumb, opt<std::st
 
     std::string requested = name;
     name = get_path_active_dir() + "/" + name;
-    // tmp fix: if extension is not .p8 or .png or .rom, set it to .p8
-    if (!lol::ends_with(lol::tolower(name), ".p8") &&
-        !lol::ends_with(lol::tolower(name), ".png") &&
-        !lol::ends_with(lol::tolower(name), ".rom"))
+    // tmp fix: if extension is not .p8 or .png, set it to .p8
+    if (!lol::ends_with(lol::tolower(name), ".p8") && !lol::ends_with(lol::tolower(name), ".png"))
         name += ".p8";
     fprintf(stderr, "[multicart] load() requested='%s' resolved='%s' params='%s'\n",
             requested.c_str(), name.c_str(),
