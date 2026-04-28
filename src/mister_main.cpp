@@ -556,6 +556,21 @@ int main(int argc, char **argv)
         // Create VM and load cart
         g_vm = std::make_unique<z8::pico8::vm>();
 
+        // Register no-op stubs for the optional std::function callbacks the VM
+        // uses for desktop features (mouse pointer lock, fullscreen toggle,
+        // CRT filter selection). Default-constructed std::function objects
+        // throw std::bad_function_call when invoked, and that exception
+        // propagates out through the Lua bindings as a function-typed error
+        // value — silently breaking any cart that touches mouse_flags.locked,
+        // sets fullscreen, or tweaks filters (POOM did this on its first
+        // _update_buttons() call; symptom = black screen, daemon log shows
+        // "err_type=function" on coresume). Stubs make these no-ops.
+        g_vm->registerPointerLockCallback([](bool){});
+        g_vm->registerSetFullscreenCallback([](int){});
+        g_vm->registerGetFullscreenCallback([]() -> std::string { return ""; });
+        g_vm->registerSetFilterCallback([](int v){ return v; });
+        g_vm->registerGetFilterNameCallback([](int) -> std::string { return ""; });
+
         // Register cart browser extcmd — when selected from pause menu,
         // sets flag to return to browser instead of quitting
         g_vm->add_extcmd("z8_cart_browser", [](std::string const &) {
