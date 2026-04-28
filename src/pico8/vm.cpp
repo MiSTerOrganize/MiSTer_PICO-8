@@ -351,6 +351,10 @@ bool vm::private_load(std::string name, opt<std::string> breadcrumb, opt<std::st
         return false;
     }
 
+    // Stash params so stat(6) can return them even when no breadcrumb
+    // was supplied (PICO-8 spec).
+    m_load_params = params.has_value() ? *params : "";
+
     if (breadcrumb.has_value() && (*breadcrumb).length() > 1)
     {
         breadcrumb_path new_breadcrumb;
@@ -1053,9 +1057,13 @@ var<bool, int16_t, fix32, std::string, std::nullptr_t> vm::api_stat(int16_t id)
 
     if (id == 6)
     {
-        // TODO: get console command at launch param?
+        // PICO-8 spec: stat(6) returns the param string passed to the
+        // most recent load() call, regardless of whether a breadcrumb
+        // was supplied. Prefer the breadcrumb's params if one exists
+        // (preserves return-from-breadcrumb behaviour); otherwise fall
+        // back to the standalone params we stashed in private_load.
         if (breadcrumbs.size() > 0) return breadcrumbs.back().params;
-        return "";
+        return m_load_params;
     }
 
     if (id == 7 || id == 8 || id == 9)
