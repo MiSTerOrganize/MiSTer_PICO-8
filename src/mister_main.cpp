@@ -508,8 +508,6 @@ int main(int argc, char **argv)
                             char *p;
                             for (p = strstr(s0_path, ".p8.png"); p; p = strstr(p+1, ".p8.png"))
                                 cut = p + 7;
-                            if (!cut) for (p = strstr(s0_path, ".p8.rom"); p; p = strstr(p+1, ".p8.rom"))
-                                cut = p + 7;
                             if (!cut) for (p = strstr(s0_path, ".p8"); p; p = strstr(p+1, ".p8"))
                                 cut = p + 3;
                             if (cut) *cut = 0;
@@ -641,7 +639,6 @@ int main(int argc, char **argv)
                         char *cr = strchr(s0_path, '\r'); if (cr) *cr = 0;
                         char *cut = NULL; char *p;
                         for (p = strstr(s0_path, ".p8.png"); p; p = strstr(p+1, ".p8.png")) cut = p + 7;
-                        if (!cut) for (p = strstr(s0_path, ".p8.rom"); p; p = strstr(p+1, ".p8.rom")) cut = p + 7;
                         if (!cut) for (p = strstr(s0_path, ".p8"); p; p = strstr(p+1, ".p8")) cut = p + 3;
                         if (cut) *cut = 0;
                         int pl = (int)strlen(s0_path);
