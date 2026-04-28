@@ -686,8 +686,12 @@ static std::string convert_fixed_point_hex_literals(std::string const &code)
                     int32_t signed_bits = (int32_t)bits;
                     double value = (double)signed_bits / 65536.0;
 
+                    // %.17f instead of %.17g — z8lua's lexer accepts only
+                    // digits and '.' in decimal literals (no 'e' exponent),
+                    // so we must avoid scientific notation that %g would
+                    // produce for small values like 0x0.0004 (~6.1e-05).
                     char buf[64];
-                    snprintf(buf, sizeof(buf), "%.17g", value);
+                    snprintf(buf, sizeof(buf), "%.17f", value);
                     out.append(buf);
                     i = p;
                     continue;
