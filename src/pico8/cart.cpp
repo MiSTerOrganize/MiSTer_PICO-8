@@ -535,183 +535,13 @@ bool cart::load_p8(std::string const& filename)
     return true;
 }
 
-// Workaround for a z8lua bug: cart code containing many PICO-8
-// "fixed-point" hex literals (0xNNNN.MMMM, 16.16 format) corrupts the
-// heap during compilation and crashes with realloc(): invalid next size.
-// Threshold around ~100+ literals in a single chunk. Carts that don't use
-// the fractional notation (POOM, Pico Sonic, Virtua Racing) are fine.
-// Carts that do (Another World, anything with generated atlas tables) crash.
-//
-// Workaround: rewrite each literal to a decimal value that produces the
-// exact same fix32 bits when re-parsed. 16.16 has only 24 significant bits
-// — well within double precision, so round-trip is exact with %.17g.
-//
-// Walks the source like a mini Lua tokenizer so we only convert literals
-// that appear in code, never inside strings or comments. Skips:
-//   --line comments       --[[block]]   --[=[block]=]   (any = level)
-//   //line comments  (PICO-8 C-style)
-//   "double" 'single' strings (with backslash escapes)
-//   [[long]]  [=[long]=]  (any = level)
-// And refuses to start a literal in the middle of an identifier so e.g.
-// `myvar0x10` (not a real Lua thing but defensive) is left alone.
-static std::string convert_fixed_point_hex_literals(std::string const &code)
-{
-    auto is_hex = [](char c) {
-        return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
-    };
-    auto is_ident = [](char c) {
-        return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_' || (c >= '0' && c <= '9');
-    };
-
-    std::string out;
-    out.reserve(code.size());
-    size_t i = 0, n = code.size();
-
-    while (i < n)
-    {
-        char c = code[i];
-
-        // -- comment (line or block, possibly with --[=[ level)
-        if (c == '-' && i + 1 < n && code[i + 1] == '-')
-        {
-            // check for long block: --[ =* [
-            size_t j = i + 2;
-            if (j < n && code[j] == '[')
-            {
-                size_t k = j + 1;
-                while (k < n && code[k] == '=') k++;
-                if (k < n && code[k] == '[')
-                {
-                    int eq = (int)(k - j - 1);
-                    std::string close = "]" + std::string((size_t)eq, '=') + "]";
-                    size_t end = code.find(close, k + 1);
-                    size_t copy_end = (end == std::string::npos) ? n : end + close.size();
-                    out.append(code, i, copy_end - i);
-                    i = copy_end;
-                    continue;
-                }
-            }
-            // line comment
-            size_t eol = code.find('\n', i);
-            size_t copy_end = (eol == std::string::npos) ? n : eol;
-            out.append(code, i, copy_end - i);
-            i = copy_end;
-            continue;
-        }
-
-        // // PICO-8 C-style line comment
-        if (c == '/' && i + 1 < n && code[i + 1] == '/')
-        {
-            size_t eol = code.find('\n', i);
-            size_t copy_end = (eol == std::string::npos) ? n : eol;
-            out.append(code, i, copy_end - i);
-            i = copy_end;
-            continue;
-        }
-
-        // string: " or '
-        if (c == '"' || c == '\'')
-        {
-            char quote = c;
-            out += c;
-            i++;
-            while (i < n && code[i] != quote)
-            {
-                if (code[i] == '\\' && i + 1 < n)
-                {
-                    out += code[i++];
-                    out += code[i++];
-                }
-                else if (code[i] == '\n')
-                {
-                    // unterminated short string at EOL — bail to avoid eating the rest of the file
-                    break;
-                }
-                else
-                {
-                    out += code[i++];
-                }
-            }
-            if (i < n && code[i] == quote) out += code[i++];
-            continue;
-        }
-
-        // long string: [[...]] or [=[...]=]
-        if (c == '[' && i + 1 < n && (code[i + 1] == '[' || code[i + 1] == '='))
-        {
-            size_t j = i + 1;
-            while (j < n && code[j] == '=') j++;
-            if (j < n && code[j] == '[')
-            {
-                int eq = (int)(j - i - 1);
-                std::string close = "]" + std::string((size_t)eq, '=') + "]";
-                size_t end = code.find(close, j + 1);
-                size_t copy_end = (end == std::string::npos) ? n : end + close.size();
-                out.append(code, i, copy_end - i);
-                i = copy_end;
-                continue;
-            }
-        }
-
-        // fixed-point hex literal: 0x[hex+].[hex+]
-        // — but only if not preceded by an identifier character, so e.g.
-        //   foo0x10 (impossible in valid Lua but defensive) doesn't trigger
-        if (c == '0' && i + 1 < n && (code[i + 1] == 'x' || code[i + 1] == 'X'))
-        {
-            bool start_ok = (i == 0) || !is_ident(code[i - 1]);
-            if (start_ok)
-            {
-                size_t p = i + 2;
-                size_t int_start = p;
-                while (p < n && is_hex(code[p])) p++;
-                size_t int_end = p;
-                if (int_end > int_start
-                    && p < n && code[p] == '.'
-                    && p + 1 < n && is_hex(code[p + 1]))
-                {
-                    size_t frac_start = p + 1;
-                    p++;
-                    while (p < n && is_hex(code[p])) p++;
-                    size_t frac_end = p;
-
-                    // mirror z8lua: at most 4 fractional hex digits matter
-                    std::string int_str(code, int_start, int_end - int_start);
-                    std::string frac_str(code, frac_start, frac_end - frac_start);
-                    if (frac_str.size() > 4) frac_str = frac_str.substr(0, 4);
-                    int e = (int)frac_str.size();
-                    uint32_t intp = std::stoul(int_str, nullptr, 16);
-                    uint32_t fracp = std::stoul(frac_str, nullptr, 16);
-                    uint32_t bits = ((intp & 0xFFFFu) << 16)
-                                  | ((fracp & ((1u << (e * 4)) - 1)) << (16 - e * 4));
-                    int32_t signed_bits = (int32_t)bits;
-                    double value = (double)signed_bits / 65536.0;
-
-                    // %.17f instead of %.17g — z8lua's lexer accepts only
-                    // digits and '.' in decimal literals (no 'e' exponent),
-                    // so we must avoid scientific notation that %g would
-                    // produce for small values like 0x0.0004 (~6.1e-05).
-                    char buf[64];
-                    snprintf(buf, sizeof(buf), "%.17f", value);
-                    out.append(buf);
-                    i = p;
-                    continue;
-                }
-            }
-        }
-
-        out += c;
-        i++;
-    }
-    return out;
-}
-
 std::string cart::preprocess_code() const
 {
     // fast path if no include is found in the file
     size_t found_hashtag = get_code().find("#include ");
     if (found_hashtag == std::string::npos)
     {
-        return convert_fixed_point_hex_literals(get_code());
+        return get_code();
     }
 
     // get file base path
@@ -761,7 +591,7 @@ std::string cart::preprocess_code() const
         }
     }
 
-    return convert_fixed_point_hex_literals(final_code);
+    return final_code;
 }
 
 bool cart::save(std::string const& filename) const
