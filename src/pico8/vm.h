@@ -455,6 +455,12 @@ private:
 
     // breadcrumb and params
     std::vector<breadcrumb_path> breadcrumbs;
+    // Last load() params arg (PICO-8 docs: stat(6) should return this
+    // regardless of whether a breadcrumb was supplied). Multicart games
+    // like Virtua Racing pass track-index in params with no breadcrumb;
+    // without this field stat(6) returned "" and the loaded cart could
+    // not tell which sub-cart was requested.
+    std::string m_load_params;
 
     double m_time;
     std::chrono::steady_clock::time_point m_timer_last;
