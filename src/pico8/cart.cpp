@@ -535,13 +535,60 @@ bool cart::load_p8(std::string const& filename)
     return true;
 }
 
+// Workaround for a z8lua bug: cart code containing many PICO-8
+// "fixed-point" hex literals (0xNNNN.MMMM, 16.16 format) corrupts the
+// heap during compilation and crashes with realloc(): invalid next size.
+// Threshold around ~100+ literals in a single chunk. Carts that don't use
+// the fractional notation (POOM, Pico Sonic, Virtua Racing) are fine.
+// Carts that do (Another World, anything with generated atlas tables) crash.
+//
+// Workaround: rewrite each literal to a decimal value that produces the
+// exact same fix32 bits when re-parsed. 16.16 has only 24 significant bits
+// — well within double precision, so round-trip is exact with %.17g.
+static std::string convert_fixed_point_hex_literals(std::string const &code)
+{
+    static const std::regex fp_re(R"(0x([0-9a-fA-F]+)\.([0-9a-fA-F]+))");
+    std::string out;
+    out.reserve(code.size());
+    auto last = code.cbegin();
+    auto begin = std::sregex_iterator(code.cbegin(), code.cend(), fp_re);
+    auto end = std::sregex_iterator();
+    for (auto it = begin; it != end; ++it)
+    {
+        std::smatch const &m = *it;
+        auto match_begin = code.cbegin() + m.position();
+        out.append(last, match_begin);
+
+        // PICO-8 number parsing (mirrors z8lua lua_strany2number):
+        //   r.bits() = integer_value << 16
+        //   f.bits() = fractional_value << 16
+        //   final bits = r.bits() | (f.bits() >> (e*4))
+        // where e = number of fractional hex digits (capped at 4).
+        uint32_t intp = std::stoul(m[1].str(), nullptr, 16);
+        std::string frac_str = m[2].str();
+        if (frac_str.size() > 4) frac_str = frac_str.substr(0, 4);
+        int e = (int)frac_str.size();
+        uint32_t fracp = std::stoul(frac_str, nullptr, 16);
+        uint32_t bits = ((intp & 0xFFFFu) << 16) | ((fracp & ((1u << (e*4)) - 1)) << (16 - e*4));
+        int32_t signed_bits = (int32_t)bits;
+        double value = (double)signed_bits / 65536.0;
+
+        char buf[64];
+        snprintf(buf, sizeof(buf), "%.17g", value);
+        out.append(buf);
+        last = match_begin + m.length();
+    }
+    out.append(last, code.cend());
+    return out;
+}
+
 std::string cart::preprocess_code() const
 {
     // fast path if no include is found in the file
     size_t found_hashtag = get_code().find("#include ");
     if (found_hashtag == std::string::npos)
     {
-        return get_code();
+        return convert_fixed_point_hex_literals(get_code());
     }
 
     // get file base path
@@ -591,7 +638,7 @@ std::string cart::preprocess_code() const
         }
     }
 
-    return final_code;
+    return convert_fixed_point_hex_literals(final_code);
 }
 
 bool cart::save(std::string const& filename) const
