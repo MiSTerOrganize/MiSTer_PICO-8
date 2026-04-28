@@ -64,6 +64,19 @@ Extract the release zip to the root of your MiSTer SD card (`/media/fat/`):
 | Start               | Pause       |
 | Menu button         | MiSTer OSD  |
 
+## CRT Display Notes
+
+PICO-8 outputs **256 active vertical lines** (128 doubled) — more than the ~240 lines that consumer NTSC CRTs are calibrated to display. On a typical SCART or composite CRT, this means the top and bottom 8–16 lines of the image may be cropped by the TV's overscan. PVMs and broadcast monitors (designed for tighter overscan) usually show the full image.
+
+**If you're losing pixels at the top/bottom of your CRT**, in order of effort:
+
+1. **Use the OSD `H Position (CRT)` and `V Position (CRT)` options** — these shift the active area within the FPGA's timing porches by ±3 pixels. Already in the OSD; no .ini editing required.
+2. **Set `vscale_border=N` in `MiSTer.ini`** (1–399 pixels) — adds a black border around the entire image to push content inside the CRT's safe area. **Only works through the MiSTer scaler** (HDMI users, Direct Video adapter users, or VGA users with `vga_scaler=1`). Won't help pure 15kHz analog out of the FPGA.
+3. **Adjust your CRT's vertical size knob** — most CRTs have a V-Size service-menu setting that can compress the image vertically to fit 256 lines without cropping.
+4. **Accept some edge cropping** — PICO-8 games rarely put critical UI in the outermost 8 rows, so this is often a non-issue in practice.
+
+A future "CRT Safe Mode" toggle that renders the game at 1.75× scale (224×224 with built-in 16-pixel borders) is on the roadmap if there's demand from CRT users without scaler-path access. For now, the workarounds above cover all the realistic configurations.
+
 ## Architecture
 
 Hybrid core: FPGA handles video/audio output and controller input, ARM CPU runs the PICO-8 emulator (zepto8).
