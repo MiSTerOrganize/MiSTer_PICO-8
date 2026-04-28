@@ -461,6 +461,11 @@ private:
     // without this field stat(6) returned "" and the loaded cart could
     // not tell which sub-cart was requested.
     std::string m_load_params;
+    // Original cart loaded via the public vm::load() (i.e. the cart MiSTer
+    // mounted via .s0). Multicart games swap m_cart out via private_load(),
+    // so a Reset Cart from the pause menu would otherwise restart the
+    // current sub-cart instead of returning to the entry cart's title.
+    std::string m_entry_cart;
 
     double m_time;
     std::chrono::steady_clock::time_point m_timer_last;

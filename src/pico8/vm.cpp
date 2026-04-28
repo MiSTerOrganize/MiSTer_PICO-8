@@ -374,6 +374,11 @@ void vm::load(std::string const &name)
 
     set_path_active_dir(name);
     load_cart(m_cart, name);
+    // Remember this as the entry cart so Reset Cart returns here even if
+    // the game later swaps to a sub-cart via load() / private_load().
+    m_entry_cart = m_cart.get_filename();
+    breadcrumbs.clear();
+    m_load_params.clear();
 }
 
 bool vm::load_cart(cart &target_cart, std::string const& filename)
@@ -408,7 +413,11 @@ bool vm::save_cart(cart& target_cart, std::string const& filename)
 
 void vm::reset()
 {
-    load(m_cart.get_filename());
+    // Prefer the entry cart (the one MiSTer mounted via .s0) so a reset on
+    // a multicart game returns to the title screen rather than restarting
+    // the current sub-cart.
+    std::string target = !m_entry_cart.empty() ? m_entry_cart : m_cart.get_filename();
+    load(target);
     run();
 }
 
@@ -1302,6 +1311,18 @@ void vm::api_extcmd(std::string cmdline)
     }
     else if (cmd == "reset")
     {
+        // For multicart games, the in-memory cart is a sub-cart loaded via
+        // load() from Lua. Vanilla api_run() would restart that sub-cart
+        // (e.g. Virtua Racing's current track). Detect that case and return
+        // to the entry cart (title screen) instead.
+        if (!m_entry_cart.empty() && m_entry_cart != m_cart.get_filename())
+        {
+            fprintf(stderr, "[multicart] reset: reloading entry cart '%s' (was '%s')\n",
+                    m_entry_cart.c_str(), m_cart.get_filename().c_str());
+            breadcrumbs.clear();
+            m_load_params.clear();
+            load_cart(m_cart, m_entry_cart);
+        }
         api_run();
     }
     else if (cmd == "pause")
