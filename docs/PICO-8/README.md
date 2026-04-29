@@ -68,14 +68,28 @@ Extract the release zip to the root of your MiSTer SD card (`/media/fat/`):
 
 PICO-8 outputs **256 active vertical lines** (128 doubled) — more than the ~240 lines that consumer NTSC CRTs are calibrated to display. On a typical SCART or composite CRT, this means the top and bottom 8–16 lines of the image may be cropped by the TV's overscan. PVMs and broadcast monitors (designed for tighter overscan) usually show the full image.
 
-**If you're losing pixels at the top/bottom of your CRT**, in order of effort:
+### CRT Safe Mode (recommended for consumer CRTs)
 
-1. **Use the OSD `H Position (CRT)` and `V Position (CRT)` options** — these shift the active area within the FPGA's timing porches by ±3 pixels. Already in the OSD; no .ini editing required.
-2. **Set `vscale_border=N` in `MiSTer.ini`** (1–399 pixels) — adds a black border around the entire image to push content inside the CRT's safe area. **Only works through the MiSTer scaler** (HDMI users, Direct Video adapter users, or VGA users with `vga_scaler=1`). Won't help pure 15kHz analog out of the FPGA.
-3. **Adjust your CRT's vertical size knob** — most CRTs have a V-Size service-menu setting that can compress the image vertically to fit 256 lines without cropping.
-4. **Accept some edge cropping** — PICO-8 games rarely put critical UI in the outermost 8 rows, so this is often a non-issue in practice.
+The OSD has a **`CRT Safe Mode (V)`** toggle (default Off). When On, the FPGA renders the game at **256×224** — same horizontal width, but vertically scaled 1.75× (128 → 224 lines) with 16-pixel black borders top and bottom. The full game stays visible inside the CRT's safe area; pixel aspect becomes 8:7 (slightly wider than tall), which actually matches NES/SNES proportions on a TV.
 
-A future "CRT Safe Mode" toggle that renders the game at 1.75× scale (224×224 with built-in 16-pixel borders) is on the roadmap if there's demand from CRT users without scaler-path access. For now, the workarounds above cover all the realistic configurations.
+CRT timing itself is unchanged (60.10 Hz, exact NES H/V totals), so there's no risk of the CRT failing to lock when you toggle the option.
+
+**When to use CRT Safe Mode:**
+- Consumer NTSC CRT via SCART, composite, or VGA→component, where you see the top/bottom of PICO-8 games getting clipped
+- Want NES-like pixel proportions
+
+**When to leave it Off:**
+- PVM/BVM (tighter overscan, full 256-line image fits)
+- HDMI / flat panel (overscan doesn't apply)
+- You want mathematically square pixels
+
+### Other adjustments
+
+The OSD also has **`H Position (CRT)`** and **`V Position (CRT)`** options (±3 pixels) for fine-tuning image centering on individual CRTs. These are independent of CRT Safe Mode and work in either mode.
+
+For HDMI / Direct Video / scaler-path users: setting `vscale_border=N` in `MiSTer.ini` (1–399 pixels) adds a framework-level border around the whole image. Only applies through the MiSTer scaler — pure 15kHz analog out of the FPGA bypasses it.
+
+If you can also reach your CRT's **service menu**, the vertical size knob can compress the image to fit 256 lines without cropping or pixel-aspect compromise.
 
 ## Architecture
 
