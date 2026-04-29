@@ -4,7 +4,7 @@ A PICO-8 fantasy console emulator for MiSTer FPGA with native video and audio ou
 
 ## Features
 
-- **Native FPGA video output** — 256×256 @ 60.10Hz with exact NES pixel clock (5.369 MHz from NTSC colorburst crystal). 128×128 doubled to 256×256, no borders. CRT image width matches NES/SNES/Genesis exactly (47.68 µs active time)
+- **Native FPGA video output** — 256×224 @ 60.10Hz, byte-for-byte identical to the MiSTer NES core's default timing. Exact NES pixel clock (5.369 MHz from NTSC colorburst crystal), 47.68 µs active time, 38 lines of vertical blanking. 128×128 source is 2× horizontal + 1.75× vertical (Bresenham 4/7) so all source pixels display at 8:7 pixel aspect — same proportions as NES games on a CRT TV
 - **Native FPGA audio output** — 48 kHz signed 16-bit stereo via DDR3 ring buffer and dual-clock DCFIFO (same audio path as NES/SNES/Genesis cores)
 - **CRT support** — scanlines, shadow masks, and analog video output for CRT displays
 - **MiSTer OSD integration** — load .p8 and .p8.png carts from the file browser
@@ -66,37 +66,24 @@ Extract the release zip to the root of your MiSTer SD card (`/media/fat/`):
 
 ## CRT Display Notes
 
-PICO-8 outputs **256 active vertical lines** (128 doubled) — more than the ~240 lines that consumer NTSC CRTs are calibrated to display. On a typical SCART or composite CRT, this means the top and bottom 8–16 lines of the image may be cropped by the TV's overscan. PVMs and broadcast monitors (designed for tighter overscan) usually show the full image.
+PICO-8 ships with **video timing identical to the MiSTer NES core's default output**: 256×224 active, 262 lines total, 60.10 Hz refresh, exact NES pixel clock. Game pixels render at **8:7 pixel aspect** (slightly wider than tall) — the same proportions an NES or SNES has on a CRT TV. The 128×128 PICO-8 source is doubled horizontally to 256 and Bresenham-scaled vertically (1.75×) to 224. **No source pixels are cropped.**
 
-### CRT Safe Mode (recommended for consumer CRTs)
+The result: PICO-8 games occupy the same physical area on a CRT as NES games, with identical scan timing, identical safe-area margin (38 lines of vertical blanking), and identical CRT lock behavior. Consumer NTSC CRTs that show NES games correctly will show PICO-8 games correctly. PVM/BVM users get the same image size they'd see for a real NES cart.
 
-The OSD has a **`CRT Safe Mode (V)`** toggle (default Off). When On, the FPGA renders the game at **256×224** — same horizontal width, but vertically scaled 1.75× (128 → 224 lines) with 16-pixel black borders top and bottom. The full game stays visible inside the CRT's safe area; pixel aspect becomes 8:7 (slightly wider than tall), which actually matches NES/SNES proportions on a TV.
+### Fine-tuning image position
 
-CRT timing itself is unchanged (60.10 Hz, exact NES H/V totals), so there's no risk of the CRT failing to lock when you toggle the option.
+The OSD has **`H Position (CRT)`** and **`V Position (CRT)`** options (±3 pixels) for fine-tuning image centering on individual CRTs. These adjust the timing porches so the picture shifts on the tube without changing refresh rate. No effect on HDMI (the scaler auto-centers).
 
-**When to use CRT Safe Mode:**
-- Consumer NTSC CRT via SCART, composite, or VGA→component, where you see the top/bottom of PICO-8 games getting clipped
-- Want NES-like pixel proportions
+### HDMI / scaler users
 
-**When to leave it Off:**
-- PVM/BVM (tighter overscan, full 256-line image fits)
-- HDMI / flat panel (overscan doesn't apply)
-- You want mathematically square pixels
-
-### Other adjustments
-
-The OSD also has **`H Position (CRT)`** and **`V Position (CRT)`** options (±3 pixels) for fine-tuning image centering on individual CRTs. These are independent of CRT Safe Mode and work in either mode.
-
-For HDMI / Direct Video / scaler-path users: setting `vscale_border=N` in `MiSTer.ini` (1–399 pixels) adds a framework-level border around the whole image. Only applies through the MiSTer scaler — pure 15kHz analog out of the FPGA bypasses it.
-
-If you can also reach your CRT's **service menu**, the vertical size knob can compress the image to fit 256 lines without cropping or pixel-aspect compromise.
+If you're on HDMI, Direct Video, or VGA-via-scaler and want extra margin around the image, set `vscale_border=N` in `MiSTer.ini` (1–399 pixels). Framework-level border, only applies through the MiSTer scaler — bypassed by pure 15kHz analog out of the FPGA.
 
 ## Architecture
 
 Hybrid core: FPGA handles video/audio output and controller input, ARM CPU runs the PICO-8 emulator (zepto8).
 
 - **ARM** renders 128×128 RGBA frames → RGB565 → DDR3
-- **FPGA** reads DDR3, doubles to 256×256, outputs native video (15,746 Hz horizontal, exact NES timing)
+- **FPGA** reads DDR3, scales 128×128 → 256×224 (2× H, 1.75× V via Bresenham), outputs native video (15,746 Hz horizontal, exact NES timing)
 - **Audio** — ARM writes 48 kHz S16 stereo to DDR3 ring buffer, FPGA reads and outputs via I2S/SPDIF/DAC
 - **Controller** — USB → Main_MiSTer → hps_io → FPGA → DDR3 → ARM
 - **Cart loading** — OSD file browser → hps_io ioctl → FPGA → DDR3 → ARM

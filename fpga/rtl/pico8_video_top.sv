@@ -46,12 +46,6 @@ module pico8_video_top (
     // CRT position adjustment (signed: -3 to +3 from OSD)
     input  wire  [2:0] h_offset,
     input  wire  [2:0] v_offset,
-    // CRT Safe Mode: when 1, scale 128->224 lines vertically (1.75x) and
-    // emit 16-pixel black borders at top and bottom inside the 256x256
-    // active area. Lets consumer-CRT users see the full image without
-    // top/bottom overscan cropping. Pixel aspect becomes ~8:7 (slightly
-    // wider than tall) which matches NES proportions on a TV.
-    input  wire        crt_safe,
 
     // Audio output (48KHz signed 16-bit, clk_audio domain via FIFO)
     input  wire        clk_audio,
@@ -162,9 +156,7 @@ pico8_video_reader reader (
     .ioctl_wr       (ioctl_wr),
     .ioctl_addr     (ioctl_addr),
     .ioctl_dout     (ioctl_dout),
-    .ioctl_wait     (ioctl_wait),
-
-    .crt_safe       (crt_safe)
+    .ioctl_wait     (ioctl_wait)
 );
 
 // ── Output assignments ────────────────────────────────────────────────

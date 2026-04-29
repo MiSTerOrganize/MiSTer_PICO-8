@@ -42,20 +42,24 @@ module pico8_video_timing (
 );
 
 // ── Timing constants ──────────────────────────────────────────────────
-// 256×256 active, exact NES horizontal and vertical timing.
-// H: 85 blanking pixels, sync width ~4.7 µs (25/5.369 MHz)
-// V: 6 blanking lines (tight but tested — prior V_BP=2 issue was H timing)
+// Byte-for-byte match with the MiSTer NES core's default output
+// (hide_overscan=2'b00) — see rtl/video.sv in NES_MiSTer.
+// H: 256 active + 21 FP + 25 sync + 39 BP = 341 (47.68 µs active, 15,746 Hz)
+// V: 224 active + 13 FP +  3 sync + 22 BP = 262 (60.10 Hz, 38 lines blanking)
+// Source 128×128 is doubled horizontally (256) and scaled 1.75× vertically
+// (224 via Bresenham 4/7) inside the reader. Pixel aspect 8:7 matches
+// NES/SNES proportions on a TV.
 localparam H_ACTIVE = 256;
-localparam H_FP     = 15;
+localparam H_FP     = 21;
 localparam H_SYNC   = 25;
-localparam H_BP     = 45;
-localparam H_TOTAL  = 341;   // 256+15+25+45 (exact NES)
+localparam H_BP     = 39;
+localparam H_TOTAL  = 341;   // 256+21+25+39 (NES exact)
 
-localparam V_ACTIVE = 256;
-localparam V_FP     = 1;
+localparam V_ACTIVE = 224;
+localparam V_FP     = 13;
 localparam V_SYNC   = 3;
-localparam V_BP     = 2;
-localparam V_TOTAL  = 262;   // 256+1+3+2 = 60.10 Hz (exact NES)
+localparam V_BP     = 22;
+localparam V_TOTAL  = 262;   // 224+13+3+22 = 60.10 Hz (NES exact)
 
 // Derived boundaries — adjusted by OSD H/V position offset.
 // Each step shifts sync by 4 pixels (H) or 1 line (V), moving FP/BP balance.
