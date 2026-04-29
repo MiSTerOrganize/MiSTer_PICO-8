@@ -613,8 +613,17 @@ always @(posedge ddr_clk) begin
                 // 4/7 pattern: per 4 source rows produce 7 display lines
                 // (2,2,2,1). Don't advance on the very last transition
                 // (V_ACTIVE-1 -> V_ACTIVE) since there's no next line.
+                //
+                // Critical: do the +4 in 4-bit arithmetic so the carry test
+                // does NOT truncate. With 3-bit (`safe_accum + 3'd4`), the
+                // sum overflows when safe_accum >= 4 (e.g., 4+4=8 truncates
+                // to 0, 5+4=9 truncates to 1, 6+4=10 truncates to 2), so
+                // the >=7 test silently misses every carry past the first
+                // and safe_src_line never advances past 0. Symptom:
+                // every display line reads source row 0, producing
+                // per-cart solid colors / vertical stripes.
                 if (display_line < V_ACTIVE - 9'd1) begin
-                    if (safe_accum + 3'd4 >= 3'd7) begin
+                    if ({1'b0, safe_accum} + 4'd4 >= 4'd7) begin
                         safe_src_line <= safe_src_line + 7'd1;
                         safe_accum    <= safe_accum + 3'd4 - 3'd7;
                     end
