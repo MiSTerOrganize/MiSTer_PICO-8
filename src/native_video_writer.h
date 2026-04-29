@@ -56,9 +56,10 @@ uint32_t NativeVideoWriter_ReadCart(void* buf, uint32_t max_size);
 void NativeVideoWriter_AckCart(void);
 
 /// Read joystick state from DDR3 (written by FPGA from hps_io).
-/// Returns MiSTer joystick_0 bitmask: bit0=R, bit1=L, bit2=D, bit3=U,
+/// Returns MiSTer joystick_N bitmask: bit0=R, bit1=L, bit2=D, bit3=U,
 /// bit4=A, bit5=B, bit6=X, bit7=Y, bit10=Select, bit11=Start
-uint32_t NativeVideoWriter_ReadJoystick(void);
+/// @param player  0..3 (P1..P4); out-of-range returns 0
+uint32_t NativeVideoWriter_ReadJoystick(int player);
 
 /// Read VSync feedback word from DDR3 (written by FPGA each vblank).
 /// Bits [31:2] = vblank_counter, bits [1:0] = buffer_status.
