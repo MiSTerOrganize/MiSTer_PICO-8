@@ -616,21 +616,24 @@ int main(int argc, char **argv)
         if (actual > next_frame + frame_ns * 2)
             next_frame = actual;
 
-        // -- Input: read joystick from DDR3 (FPGA writes hps_io data) --
+        // -- Input: read joysticks from DDR3 (FPGA writes hps_io data) --
         // Main_MiSTer has exclusive access to /dev/input/js*, so we read
-        // joystick state directly from DDR3 where the FPGA puts it.
-        // CONF_STR: "J1,O,X,Pause;" / "jn,B,Y,Start;" (SNES names: B=Xbox A, Y=Xbox X)
-        // joystick_0 bits: 0=R 1=L 2=D 3=U 4=Xbox A(O) 5=Xbox X(X) 6=Start(Pause)
+        // joystick state directly from DDR3 where the FPGA puts it. PICO-8
+        // supports up to 8 players via btn(b,p); MiSTer's hps_io provides
+        // up to 4 USB joysticks, so we feed players 0..3.
+        // CONF_STR: "J1,O,X,Pause;" / "jn,B,Y,Start;" (SNES: B=Xbox A, Y=Xbox X)
+        // joystick_N bits: 0=R 1=L 2=D 3=U 4=Xbox A(O) 5=Xbox X(X) 6=Start(Pause)
         if (have_native_video) {
-            uint32_t joy = NativeVideoWriter_ReadJoystick();
-            g_vm->button(0, 0, (joy >> 1) & 1);  // Left
-            g_vm->button(0, 1, (joy >> 0) & 1);  // Right
-            g_vm->button(0, 2, (joy >> 3) & 1);  // Up
-            g_vm->button(0, 3, (joy >> 2) & 1);  // Down
-            // jn,B,Y,Start; → bit 4=Xbox A, bit 5=Xbox X, bit 6=Start
-            g_vm->button(0, 4, (joy >> 4) & 1);  // O ← Xbox A (bit 4)
-            g_vm->button(0, 5, (joy >> 5) & 1);  // X ← Xbox X (bit 5)
-            g_vm->button(0, 6, (joy >> 6) & 1);  // Pause ← Start (bit 6)
+            for (int p = 0; p < 4; p++) {
+                uint32_t joy = NativeVideoWriter_ReadJoystick(p);
+                g_vm->button(p, 0, (joy >> 1) & 1);  // Left
+                g_vm->button(p, 1, (joy >> 0) & 1);  // Right
+                g_vm->button(p, 2, (joy >> 3) & 1);  // Up
+                g_vm->button(p, 3, (joy >> 2) & 1);  // Down
+                g_vm->button(p, 4, (joy >> 4) & 1);  // O   ← Xbox A
+                g_vm->button(p, 5, (joy >> 5) & 1);  // X   ← Xbox X
+                g_vm->button(p, 6, (joy >> 6) & 1);  // Pause ← Start
+            }
         }
 
         // Check if VM requested exit or user pressed Back — return to browser

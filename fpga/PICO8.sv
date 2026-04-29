@@ -237,6 +237,9 @@ localparam CONF_STR = {
 wire forced_scandoubler;
 wire [31:0] status;
 wire [31:0] joystick_0;
+wire [31:0] joystick_1;
+wire [31:0] joystick_2;
+wire [31:0] joystick_3;
 wire [15:0] joystick_l_analog_0;
 
 // ioctl signals for cart loading
@@ -263,6 +266,9 @@ hps_io #(.CONF_STR(CONF_STR)) hps_io
 	.status(status),
 	.status_menumask(cfg),
 	.joystick_0(joystick_0),
+	.joystick_1(joystick_1),
+	.joystick_2(joystick_2),
+	.joystick_3(joystick_3),
 	.joystick_l_analog_0(joystick_l_analog_0),
 	.ioctl_download(ioctl_download),
 	.ioctl_wr(ioctl_wr),
@@ -609,8 +615,11 @@ pico8_video_top native_video
 	.audio_l        (nv_audio_l),
 	.audio_r        (nv_audio_r),
 
-	// Joystick (from hps_io, written to DDR3 for ARM)
+	// Joysticks (P1-P4 from hps_io, written to DDR3 for ARM)
 	.joystick_0     (joystick_0),
+	.joystick_1     (joystick_1),
+	.joystick_2     (joystick_2),
+	.joystick_3     (joystick_3),
 	.joystick_l_analog_0 (joystick_l_analog_0),
 
 	// Cart loading

@@ -61,8 +61,11 @@ module pico8_video_reader (
     input  wire  [7:0] ioctl_dout,
     output wire        ioctl_wait,
 
-    // Joystick input (from hps_io, clk_sys domain = ddr_clk domain)
+    // Joystick inputs (P1-P4 from hps_io, clk_sys domain = ddr_clk domain)
     input  wire [31:0] joystick_0,
+    input  wire [31:0] joystick_1,
+    input  wire [31:0] joystick_2,
+    input  wire [31:0] joystick_3,
     input  wire [15:0] joystick_l_analog_0,
 
     // Pixel output
@@ -86,7 +89,12 @@ assign ddr_be  = 8'hFF;
 // -- DDR3 Address Constants --------------------------------------------
 // 29-bit qword addresses = physical >> 3
 localparam [28:0] CTRL_ADDR   = 29'h07400000;  // 0x3A000000 >> 3
-localparam [28:0] JOY_ADDR    = 29'h07400001;  // 0x3A000008 >> 3 (joystick data)
+localparam [28:0] JOY0_ADDR   = 29'h07400001;  // 0x3A000008 >> 3 (P1 joystick)
+// JOY1/2/3 placed at 0x030/0x038/0x040 — distinct from PICO-8's audio
+// pointers at 0x020/0x028 (which OpenBOR's layout uses for joy P3/P4).
+localparam [28:0] JOY1_ADDR   = 29'h07400006;  // 0x3A000030 >> 3 (P2 joystick)
+localparam [28:0] JOY2_ADDR   = 29'h07400007;  // 0x3A000038 >> 3 (P3 joystick)
+localparam [28:0] JOY3_ADDR   = 29'h07400008;  // 0x3A000040 >> 3 (P4 joystick)
 localparam [28:0] BUF0_ADDR   = 29'h07400020;  // 0x3A000100 >> 3
 localparam [28:0] BUF1_ADDR   = 29'h07401020;  // 0x3A008100 >> 3
 localparam [7:0]  LINE_BURST  = 8'd32;         // 128px * 2B / 8 = 32 beats
@@ -168,7 +176,7 @@ localparam [4:0] ST_READ_LINE    = 5'd4;
 localparam [4:0] ST_WAIT_LINE    = 5'd5;
 localparam [4:0] ST_LINE_DONE    = 5'd6;
 localparam [4:0] ST_WAIT_DISPLAY = 5'd7;
-localparam [4:0] ST_WRITE_JOY   = 5'd8;
+localparam [4:0] ST_WRITE_JOY0  = 5'd8;
 localparam [4:0] ST_WRITE_CART  = 5'd9;
 localparam [4:0] ST_WRITE_CART_SIZE = 5'd10;
 localparam [4:0] ST_WRITE_FEEDBACK = 5'd11;
@@ -177,6 +185,9 @@ localparam [4:0] ST_WAIT_AUD_WR    = 5'd13;
 localparam [4:0] ST_READ_AUD_RING  = 5'd14;
 localparam [4:0] ST_WAIT_AUD_RING  = 5'd15;
 localparam [4:0] ST_WRITE_AUD_RD   = 5'd16;
+localparam [4:0] ST_WRITE_JOY1  = 5'd17;
+localparam [4:0] ST_WRITE_JOY2  = 5'd18;
+localparam [4:0] ST_WRITE_JOY3  = 5'd19;
 
 // Cart loading DDR3 addresses
 localparam [28:0] CART_CTRL_ADDR = 29'h07400002;  // 0x3A000010 >> 3
@@ -390,7 +401,7 @@ always @(posedge ddr_clk) begin
                 // new_frame_pending is latched so it can't be missed.
                 if (enable_ddr && new_frame_pending) begin
                     new_frame_pending <= 1'b0;  // consumed
-                    state <= ST_WRITE_JOY;
+                    state <= ST_WRITE_JOY0;
                 end
                 else if (cart_write_pending)
                     state <= ST_WRITE_CART;
@@ -400,11 +411,44 @@ always @(posedge ddr_clk) begin
                     state <= ST_POLL_AUD_WR;
             end
 
-            ST_WRITE_JOY: begin
-                // Write joystick_0 to DDR3 so ARM can read it
+            ST_WRITE_JOY0: begin
+                // Write joystick_0 (P1) to DDR3 so ARM can read it
                 if (!ddr_busy) begin
-                    ddr_addr     <= JOY_ADDR;
+                    ddr_addr     <= JOY0_ADDR;
                     ddr_din      <= {32'd0, joystick_0};
+                    ddr_burstcnt <= 8'd1;
+                    ddr_we       <= 1'b1;
+                    state        <= ST_WRITE_JOY1;
+                end
+            end
+
+            ST_WRITE_JOY1: begin
+                // Write joystick_1 (P2) to DDR3
+                if (!ddr_busy) begin
+                    ddr_addr     <= JOY1_ADDR;
+                    ddr_din      <= {32'd0, joystick_1};
+                    ddr_burstcnt <= 8'd1;
+                    ddr_we       <= 1'b1;
+                    state        <= ST_WRITE_JOY2;
+                end
+            end
+
+            ST_WRITE_JOY2: begin
+                // Write joystick_2 (P3) to DDR3
+                if (!ddr_busy) begin
+                    ddr_addr     <= JOY2_ADDR;
+                    ddr_din      <= {32'd0, joystick_2};
+                    ddr_burstcnt <= 8'd1;
+                    ddr_we       <= 1'b1;
+                    state        <= ST_WRITE_JOY3;
+                end
+            end
+
+            ST_WRITE_JOY3: begin
+                // Write joystick_3 (P4) to DDR3, then vsync feedback
+                if (!ddr_busy) begin
+                    ddr_addr     <= JOY3_ADDR;
+                    ddr_din      <= {32'd0, joystick_3};
                     ddr_burstcnt <= 8'd1;
                     ddr_we       <= 1'b1;
                     state        <= ST_WRITE_FEEDBACK;
