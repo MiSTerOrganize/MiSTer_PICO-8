@@ -227,6 +227,7 @@ localparam CONF_STR = {
 	"-;",
 	"OCE,H Position (CRT),0,+1,+2,+3,-3,-2,-1;",
 	"OFH,V Position (CRT),0,+1,+2,+3,-3,-2,-1;",
+	"OI,CRT Safe Mode (V),Off,On;",
 	"-;",
 	"J1,O,X,Pause;",
 	"jn,B,Y,Start;",
@@ -494,6 +495,7 @@ wire FB  = status[5];
 wire [2:0] led = status[8:6];
 wire [2:0] h_pos = status[14:12];  // OSD H Position (CRT): 0..6 → 0,+1,+2,+3,-3,-2,-1
 wire [2:0] v_pos = status[17:15];  // OSD V Position (CRT): 0..6 → 0,+1,+2,+3,-3,-2,-1
+wire crt_safe   = status[18];      // OSD CRT Safe Mode (V): 0=2x→256x256, 1=1.75x→256x224 with 16px borders top/bottom
 
 reg   [9:0] hc;
 reg   [9:0] vc;
@@ -603,6 +605,7 @@ pico8_video_top native_video
 	// OSD position adjustment
 	.h_offset       (h_pos),
 	.v_offset       (v_pos),
+	.crt_safe       (crt_safe),
 
 	// Audio output (48KHz, clk_audio domain via dual-clock FIFO)
 	.clk_audio      (CLK_AUDIO),
