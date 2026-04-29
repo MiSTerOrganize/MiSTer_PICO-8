@@ -621,26 +621,27 @@ int main(int argc, char **argv)
         // joystick state directly from DDR3 where the FPGA puts it. PICO-8
         // supports up to 8 players via btn(b,p); MiSTer's hps_io provides
         // up to 4 USB joysticks, so we feed players 0..3.
+        //
+        // Standard PICO-8 input semantics: each player's controller maps
+        // ONLY to their own player slot. Single-player carts read btn(b)
+        // (= btn(b, 0)) and only see P1; multi-player carts read btn(b, p)
+        // for each p. Don't OR across controllers here — that breaks
+        // single-player carts (P2 would pause / move P1's character).
+        // The boot.rom pause-menu uses __z8_anybtnp() helpers so that once
+        // P1 opens the menu, any player can navigate it.
+        //
         // CONF_STR: "J1,O,X,Pause;" / "jn,B,Y,Start;" (SNES: B=Xbox A, Y=Xbox X)
         // joystick_N bits: 0=R 1=L 2=D 3=U 4=Xbox A(O) 5=Xbox X(X) 6=Start(Pause)
         if (have_native_video) {
-            uint32_t joy[4];
-            uint32_t any_pause = 0;
             for (int p = 0; p < 4; p++) {
-                joy[p] = NativeVideoWriter_ReadJoystick(p);
-                any_pause |= (joy[p] >> 6) & 1;   // OR Start across all controllers
-            }
-            for (int p = 0; p < 4; p++) {
-                g_vm->button(p, 0, (joy[p] >> 1) & 1);  // Left
-                g_vm->button(p, 1, (joy[p] >> 0) & 1);  // Right
-                g_vm->button(p, 2, (joy[p] >> 3) & 1);  // Up
-                g_vm->button(p, 3, (joy[p] >> 2) & 1);  // Down
-                g_vm->button(p, 4, (joy[p] >> 4) & 1);  // O   ← Xbox A
-                g_vm->button(p, 5, (joy[p] >> 5) & 1);  // X   ← Xbox X
-                // Pause: feed the OR of all controllers' Start to every player.
-                // PICO-8's BIOS only checks player 0's Start to open the pause
-                // menu, so any controller's Start should be able to pause.
-                g_vm->button(p, 6, any_pause);
+                uint32_t joy = NativeVideoWriter_ReadJoystick(p);
+                g_vm->button(p, 0, (joy >> 1) & 1);  // Left
+                g_vm->button(p, 1, (joy >> 0) & 1);  // Right
+                g_vm->button(p, 2, (joy >> 3) & 1);  // Up
+                g_vm->button(p, 3, (joy >> 2) & 1);  // Down
+                g_vm->button(p, 4, (joy >> 4) & 1);  // O     ← Xbox A
+                g_vm->button(p, 5, (joy >> 5) & 1);  // X     ← Xbox X
+                g_vm->button(p, 6, (joy >> 6) & 1);  // Pause ← Start (per-player)
             }
         }
 
