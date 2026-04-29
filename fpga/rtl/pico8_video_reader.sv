@@ -61,6 +61,12 @@ module pico8_video_reader (
     input  wire  [7:0] ioctl_dout,
     output wire        ioctl_wait,
 
+    // CRT Safe Mode (status[18]): when 1, render game at 128->224
+    // vertical scale (1.75x) with 16-line black border top and bottom
+    // inside the 256-line active area. Avoids top/bottom overscan
+    // cropping on consumer NTSC CRTs. Horizontal stays 2x (256).
+    input  wire        crt_safe,
+
     // Joystick input (from hps_io, clk_sys domain = ddr_clk domain)
     input  wire [31:0] joystick_0,
     input  wire [15:0] joystick_l_analog_0,
@@ -247,8 +253,24 @@ reg  [29:0] vblank_counter;
 
 assign ioctl_wait = cart_write_pending & ioctl_download;
 
-// Source line = display_line / 2 (vertical doubling)
-wire [6:0] source_line = display_line[8:1];
+// -- Source-line computation (mode-dependent) -------------------------
+// Normal mode (crt_safe=0): 128 source -> 256 display (2x doubling).
+//   source_line = display_line[8:1]  (display 0,1 -> src 0; 2,3 -> src 1; ...)
+//
+// CRT Safe Mode (crt_safe=1): 128 source -> 224 display (1.75x), centered
+// in the 256-line active area with 16 black border lines top and bottom.
+//   display_line   0..15  -> border (skip DDR3 read, FIFO empty -> black)
+//   display_line  16..239 -> game   (Bresenham 4/7 advance per line)
+//   display_line 240..255 -> border (skip DDR3 read)
+//
+// Bresenham state advanced in ST_LINE_DONE (about to enter next display
+// line). Reset at end of top border (display_line == 15) and at the
+// start of every frame (display_line == 0 in ST_CHECK_CTRL).
+reg [6:0] safe_src_line;   // 0..127, source row for current display_line
+reg [2:0] safe_accum;      // Bresenham accumulator, 0..6 (carries (eff*4) mod 7)
+
+wire is_border_line = crt_safe && (display_line < 9'd16 || display_line >= 9'd240);
+wire [6:0] source_line = crt_safe ? safe_src_line : display_line[8:1];
 
 // -- FIFO write signals -----------------------------------------------
 reg         fifo_wr;
@@ -302,6 +324,8 @@ always @(posedge ddr_clk) begin
         aud_fifo_wr         <= 1'b0;
         aud_fifo_wr_data    <= 64'd0;
         aud_backoff         <= 20'd0;
+        safe_src_line       <= 7'd0;
+        safe_accum          <= 3'd0;
     end
     else begin
         fifo_wr <= 1'b0;
@@ -550,6 +574,8 @@ always @(posedge ddr_clk) begin
                     stale_vblank_count <= 5'd0;
                     buf_base_addr      <= ctrl_word[0] ? BUF1_ADDR : BUF0_ADDR;
                     display_line       <= 9'd0;
+                    safe_src_line      <= 7'd0;   // reset Bresenham at frame start
+                    safe_accum         <= 3'd0;
                     preloading         <= 1'b1;
                     fifo_aclr_cnt      <= 4'd8;
                     state              <= ST_READ_LINE;
@@ -561,6 +587,8 @@ always @(posedge ddr_clk) begin
                     if (stale_vblank_count >= 5'd29)
                         frame_ready_reg <= 1'b0;
                     display_line  <= 9'd0;
+                    safe_src_line <= 7'd0;   // reset Bresenham on stale-frame replay too
+                    safe_accum    <= 3'd0;
                     preloading    <= 1'b1;
                     fifo_aclr_cnt <= 4'd8;
                     state         <= ST_READ_LINE;
@@ -571,15 +599,24 @@ always @(posedge ddr_clk) begin
 
             ST_READ_LINE: begin
                 if (!ddr_busy && !fifo_aclr_ddr_active) begin
-                    // source_line = display_line[8:1] gives vertical doubling:
-                    // display lines 0,1 -> source line 0
-                    // display lines 2,3 -> source line 1, etc.
-                    ddr_addr     <= buf_base_addr + ({22'd0, source_line} * LINE_STRIDE);
-                    ddr_burstcnt <= LINE_BURST;
-                    ddr_rd       <= 1'b1;
-                    beat_count   <= 7'd0;
-                    timeout_cnt  <= 20'd0;
-                    state        <= ST_WAIT_LINE;
+                    if (is_border_line) begin
+                        // CRT Safe Mode border: skip DDR3 read; FIFO stays
+                        // empty so the pixel-output path emits black for
+                        // this entire display line.
+                        state <= ST_LINE_DONE;
+                    end
+                    else begin
+                        // source_line drives the read address. In normal
+                        // mode this is display_line[8:1] (2x doubling); in
+                        // crt_safe mode it's the Bresenham-tracked
+                        // safe_src_line (1.75x).
+                        ddr_addr     <= buf_base_addr + ({22'd0, source_line} * LINE_STRIDE);
+                        ddr_burstcnt <= LINE_BURST;
+                        ddr_rd       <= 1'b1;
+                        beat_count   <= 7'd0;
+                        timeout_cnt  <= 20'd0;
+                        state        <= ST_WAIT_LINE;
+                    end
                 end
             end
 
@@ -594,6 +631,27 @@ always @(posedge ddr_clk) begin
 
             ST_LINE_DONE: begin
                 display_line <= display_line + 9'd1;
+
+                // CRT Safe Mode: advance Bresenham state for the NEXT
+                // display line, but only inside the game region.
+                //   line 15 -> 16: about to enter game area, force src=0
+                //   line 16..238 -> next: advance src by 0 or 1 (4/7 pattern)
+                //   line 239 -> 240: about to enter bottom border, freeze
+                if (crt_safe) begin
+                    if (display_line == 9'd15) begin
+                        safe_src_line <= 7'd0;
+                        safe_accum    <= 3'd0;
+                    end
+                    else if (display_line >= 9'd16 && display_line < 9'd239) begin
+                        if (safe_accum + 3'd4 >= 3'd7) begin
+                            safe_src_line <= safe_src_line + 7'd1;
+                            safe_accum    <= safe_accum + 3'd4 - 3'd7;
+                        end
+                        else begin
+                            safe_accum <= safe_accum + 3'd4;
+                        end
+                    end
+                end
 
                 if (display_line == V_ACTIVE - 9'd1) begin
                     first_frame_loaded <= 1'b1;
