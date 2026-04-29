@@ -467,12 +467,6 @@ end
 --
 
 __z8_menu = { cursor=0, optioncursor=0, quitcursor=0, items={}, inoption=false, inquitmsg=nil, pause_btn=false, pause_act=false, in_menu_item=-1 }
-
--- Multi-player pause-menu helpers: read button across all 4 players so any
--- controller can navigate the pause menu (PICO-8 BIOS would otherwise only
--- check player 0). Used inside __z8_pause_menu() for cursor / activate / back.
-function __z8_anybtn(b)  return btn(b,0)  or btn(b,1)  or btn(b,2)  or btn(b,3)  end
-function __z8_anybtnp(b) return btnp(b,0) or btnp(b,1) or btnp(b,2) or btnp(b,3) end
 function menuitem(index, label, callback)
     if (__z8_menu.in_menu_item > 0 and index==nil) index = __z8_menu.in_menu_item -- calling from inside menuitem callback
     if index < 1 or index > 5 then return end
@@ -538,8 +532,8 @@ function __z8_pause_menu()
         add(entries, { l = stat(206), c = function (e) if e == 112 then __z8_menu.inquitmsg = nil return true end end })
         add(entries, { l = __z8_menu.inquitmsg.l, c = function (e) if e == 112 then __z8_menu.inquitmsg.c(112) __z8_menu.inquitmsg = nil end end })
         
-        if (__z8_anybtnp(2)) __z8_menu.quitcursor -= 1
-        if (__z8_anybtnp(3)) __z8_menu.quitcursor += 1
+        if (btnp(2)) __z8_menu.quitcursor -= 1
+        if (btnp(3)) __z8_menu.quitcursor += 1
         if (#entries>0) __z8_menu.quitcursor = (__z8_menu.quitcursor + #entries) % #entries
 
         cursor = __z8_menu.quitcursor
@@ -554,8 +548,8 @@ function __z8_pause_menu()
         -- add(entries, { l = stat(205), c = __z8_update_filter, d = __z8_draw_filter})
         add(entries, { l = stat(206), c = function (e) if e == 112 then __z8_menu.inoption = false end end })
 
-        if (__z8_anybtnp(2)) __z8_menu.optioncursor -= 1
-        if (__z8_anybtnp(3)) __z8_menu.optioncursor += 1
+        if (btnp(2)) __z8_menu.optioncursor -= 1
+        if (btnp(3)) __z8_menu.optioncursor += 1
         if (#entries>0) __z8_menu.optioncursor = (__z8_menu.optioncursor + #entries) % #entries
 
         cursor = __z8_menu.optioncursor
@@ -574,8 +568,8 @@ function __z8_pause_menu()
         end
         add(entries, { l = stat(209), c = function (e) if e == 112 then extcmd("z8_app_requestexit") end end, ask = true})
 
-        if (__z8_anybtnp(2)) __z8_menu.cursor -= 1
-        if (__z8_anybtnp(3)) __z8_menu.cursor += 1
+        if (btnp(2)) __z8_menu.cursor -= 1
+        if (btnp(3)) __z8_menu.cursor += 1
         if (#entries > 0) __z8_menu.cursor = (__z8_menu.cursor + #entries) % #entries
 
         cursor = __z8_menu.cursor
@@ -618,9 +612,9 @@ function __z8_pause_menu()
 
     local stay = true
     local prev_act = __z8_menu.pause_act
-    __z8_menu.pause_act = __z8_anybtn(4) or __z8_anybtn(6)
+    __z8_menu.pause_act = btn(4) or btn(6)
     -- X button (btn 5) = back: close submenu, dismiss prompt, or exit pause
-    if __z8_anybtnp(5) then
+    if btnp(5) then
         if __z8_menu.inoption then
             __z8_menu.inoption = false
         elseif __z8_menu.inquitmsg then
@@ -641,9 +635,9 @@ function __z8_pause_menu()
                 else
                     stay = cur.c(112)
                 end
-            elseif __z8_anybtnp(0) then -- left button
+            elseif btnp(0) then -- left button
                 cur.c(1)
-            elseif __z8_anybtnp(1) then -- right button
+            elseif btnp(1) then -- right button
                 cur.c(2)
             end
             __z8_menu.in_menu_item = -1
