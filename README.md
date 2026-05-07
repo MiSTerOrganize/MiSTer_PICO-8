@@ -15,12 +15,26 @@ A PICO-8 fantasy console emulator for MiSTer FPGA with native video and audio ou
 
 ## Quick Install
 
-1. Copy `Scripts/Install_PICO-8.sh` to `/media/fat/Scripts/` on your MiSTer SD card
-2. From the MiSTer main menu, go to Scripts and run **Install_PICO-8**
-3. Place your `.p8` or `.p8.png` carts in `games/PICO-8/Carts/`
-4. Load **PICO-8** from the console menu to play
+The recommended path is via the **MiSTer Frontier** combined database, which auto-deploys the PICO-8 core (and any other Frontier core you opt into) every time you run `update_all`.
 
-The install script downloads and installs everything: the FPGA core, ARM binary, BIOS (`bios.p8` in `games/PICO-8/`), and daemon.
+Add this to `/media/fat/downloader.ini` on your MiSTer's SD card:
+
+```ini
+[MiSTerOrganize/MiSTer_Frontier]
+db_url = https://raw.githubusercontent.com/MiSTerOrganize/MiSTer_Frontier/db/db.json.zip
+filter = pico-8
+```
+
+The `filter = pico-8` line tells the downloader to install **only** PICO-8 from the Frontier database. Drop the filter line if you want every Frontier core, or pick others — see the [Frontier README](https://github.com/MiSTerOrganize/MiSTer_Frontier#choosing-what-to-install-filters) for the full filter list.
+
+After editing `downloader.ini`:
+
+1. Run `update_all` from MiSTer's Scripts menu — installs the FPGA core, ARM binary, BIOS (`bios.p8`), handler script, and docs
+2. Run `Scripts/Install_MiSTer_Frontier.sh` once — registers the Master Daemon that auto-launches the emulator. Idempotent
+3. Place your `.p8` or `.p8.png` carts in `/media/fat/games/PICO-8/Carts/`
+4. Load **PICO-8** from the MiSTer console menu — the emulator launches automatically
+
+**Inspecting the manifest:** [DB Inspector for MiSTer_Frontier](https://theypsilon.github.io/DB-Inspector_MiSTer/?database-url=https%3A%2F%2Fraw.githubusercontent.com%2FMiSTerOrganize%2FMiSTer_Frontier%2Fdb%2Fdb.json.zip) — every file, hash, size, and tag visible in the browser. Useful for verifying which files a given filter would install before you run `update_all`.
 
 ## Manual Install
 
