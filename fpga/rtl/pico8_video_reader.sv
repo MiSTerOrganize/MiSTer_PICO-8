@@ -68,6 +68,11 @@ module pico8_video_reader (
     input  wire [31:0] joystick_3,
     input  wire [15:0] joystick_l_analog_0,
 
+    // Save state triggers (clk_sys domain — ddr_clk domain)
+    input  wire        ss_save,
+    input  wire        ss_load,
+    input  wire  [1:0] ss_slot,
+
     // Pixel output
     output reg   [7:0] r_out,
     output reg   [7:0] g_out,
@@ -95,6 +100,7 @@ localparam [28:0] JOY0_ADDR   = 29'h07400001;  // 0x3A000008 >> 3 (P1 joystick)
 localparam [28:0] JOY1_ADDR   = 29'h07400006;  // 0x3A000030 >> 3 (P2 joystick)
 localparam [28:0] JOY2_ADDR   = 29'h07400007;  // 0x3A000038 >> 3 (P3 joystick)
 localparam [28:0] JOY3_ADDR   = 29'h07400008;  // 0x3A000040 >> 3 (P4 joystick)
+localparam [28:0] SS_ADDR     = 29'h07400009;  // 0x3A000048 >> 3 (save state control word)
 localparam [28:0] BUF0_ADDR   = 29'h07400020;  // 0x3A000100 >> 3
 localparam [28:0] BUF1_ADDR   = 29'h07401020;  // 0x3A008100 >> 3
 localparam [7:0]  LINE_BURST  = 8'd32;         // 128px * 2B / 8 = 32 beats
@@ -188,6 +194,7 @@ localparam [4:0] ST_WRITE_AUD_RD   = 5'd16;
 localparam [4:0] ST_WRITE_JOY1  = 5'd17;
 localparam [4:0] ST_WRITE_JOY2  = 5'd18;
 localparam [4:0] ST_WRITE_JOY3  = 5'd19;
+localparam [4:0] ST_WRITE_SS    = 5'd20;
 
 // Cart loading DDR3 addresses
 localparam [28:0] CART_CTRL_ADDR = 29'h07400002;  // 0x3A000010 >> 3
@@ -255,6 +262,33 @@ reg         cart_loading;
 
 // VSync feedback
 reg  [29:0] vblank_counter;
+
+// Save state — capture ss_save/ss_load 1-cycle pulses into a latched
+// command + slot, with a sequence counter so ARM detects new events
+// even if same command/slot is repeated.
+//   ss_cmd: 0=idle, 1=save, 2=load
+//   ss_seq: increments on every captured pulse
+reg  [1:0] ss_cmd_lat;
+reg  [1:0] ss_slot_lat;
+reg  [7:0] ss_seq;
+
+always @(posedge ddr_clk) begin
+    if (reset) begin
+        ss_cmd_lat  <= 2'd0;
+        ss_slot_lat <= 2'd0;
+        ss_seq      <= 8'd0;
+    end
+    else if (ss_save) begin
+        ss_cmd_lat  <= 2'd1;
+        ss_slot_lat <= ss_slot;
+        ss_seq      <= ss_seq + 8'd1;
+    end
+    else if (ss_load) begin
+        ss_cmd_lat  <= 2'd2;
+        ss_slot_lat <= ss_slot;
+        ss_seq      <= ss_seq + 8'd1;
+    end
+end
 
 assign ioctl_wait = cart_write_pending & ioctl_download;
 
@@ -445,10 +479,23 @@ always @(posedge ddr_clk) begin
             end
 
             ST_WRITE_JOY3: begin
-                // Write joystick_3 (P4) to DDR3, then vsync feedback
+                // Write joystick_3 (P4) to DDR3, then save state ctrl
                 if (!ddr_busy) begin
                     ddr_addr     <= JOY3_ADDR;
                     ddr_din      <= {32'd0, joystick_3};
+                    ddr_burstcnt <= 8'd1;
+                    ddr_we       <= 1'b1;
+                    state        <= ST_WRITE_SS;
+                end
+            end
+
+            ST_WRITE_SS: begin
+                // Write save state control word — ARM polls byte 0 (cmd),
+                // byte 1 (slot), byte 2 (seq). When seq changes, ARM
+                // dispatches savestate_save(slot) / savestate_load(slot).
+                if (!ddr_busy) begin
+                    ddr_addr     <= SS_ADDR;
+                    ddr_din      <= {40'd0, ss_seq, 6'd0, ss_slot_lat, 6'd0, ss_cmd_lat};
                     ddr_burstcnt <= 8'd1;
                     ddr_we       <= 1'b1;
                     state        <= ST_WRITE_FEEDBACK;

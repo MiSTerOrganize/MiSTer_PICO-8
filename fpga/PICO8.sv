@@ -228,6 +228,10 @@ localparam CONF_STR = {
 	"OCE,H Position (CRT),0,+1,+2,+3,-3,-2,-1;",
 	"OFH,V Position (CRT),0,+1,+2,+3,-3,-2,-1;",
 	"-;",
+	"OKL,Save Slot,1,2,3,4;",
+	"TI,Save State;",
+	"TJ,Load State;",
+	"-;",
 	"J1,O,X,Pause;",
 	"jn,B,Y,Start;",
 	"-;",
@@ -258,13 +262,27 @@ assign ioctl_wait = nv_ioctl_wait;
 wire        img_mounted;
 wire [63:0] img_size;
 
+// Save state UI signals
+wire        ss_save;        // 1-cycle pulse when OSD/keyboard requests save
+wire        ss_load;        // 1-cycle pulse when OSD/keyboard requests load
+wire  [1:0] ss_slot;        // currently selected slot (0..3)
+wire        ss_info_req;    // info-text overlay (unused — no info system)
+wire  [7:0] ss_info;
+wire        ss_statusUpdate; // tells hps_io to write status_in back as new status
+wire [10:0] ps2_key;
+
 hps_io #(.CONF_STR(CONF_STR)) hps_io
 (
 	.clk_sys(clk_sys),
 	.HPS_BUS(HPS_BUS),
 	.forced_scandoubler(forced_scandoubler),
 	.status(status),
+	.status_in({96'd0, status[31:22], ss_slot, status[19:0]}),
+	.status_set(ss_statusUpdate),
 	.status_menumask(cfg),
+	.info_req(ss_info_req),
+	.info(ss_info),
+	.ps2_key(ps2_key),
 	.joystick_0(joystick_0),
 	.joystick_1(joystick_1),
 	.joystick_2(joystick_2),
@@ -284,6 +302,30 @@ hps_io #(.CONF_STR(CONF_STR)) hps_io
 	.sd_rd(1'b0),
 	.sd_wr(1'b0),
 	.sd_buff_din('{8'd0})
+);
+
+// Save state UI — translates OSD/keyboard input into ss_save/ss_load
+// pulses and slot index. Joystick combo path tied off (no SELECT button
+// in PICO-8 controller layout); OSD pause-menu and F1-F4 are the active paths.
+savestate_ui #(.INFO_TIMEOUT_BITS(25)) savestate_ui_inst
+(
+	.clk           (clk_sys),
+	.ps2_key       (ps2_key),
+	.allow_ss      (1'b1),
+	.joySS         (1'b0),
+	.joyRight      (1'b0),
+	.joyLeft       (1'b0),
+	.joyDown       (1'b0),
+	.joyUp         (1'b0),
+	.joyStart      (1'b0),
+	.status_slot   (status[21:20]),
+	.OSD_saveload  ({status[19], status[18]}),
+	.ss_save       (ss_save),
+	.ss_load       (ss_load),
+	.ss_info_req   (ss_info_req),
+	.ss_info       (ss_info),
+	.statusUpdate  (ss_statusUpdate),
+	.selected_slot (ss_slot)
 );
 
 ////////////////////   CLOCKS   ///////////////////
@@ -627,7 +669,13 @@ pico8_video_top native_video
 	.ioctl_wr       (ioctl_wr),
 	.ioctl_addr     (ioctl_addr),
 	.ioctl_dout     (ioctl_dout),
-	.ioctl_wait     (nv_ioctl_wait)
+	.ioctl_wait     (nv_ioctl_wait),
+
+	// Save state triggers (1-cycle pulses) and slot index — written
+	// to a DDR3 control word the ARM polls between frames.
+	.ss_save        (ss_save),
+	.ss_load        (ss_load),
+	.ss_slot        (ss_slot)
 );
 
 // Mux VGA outputs: native video path vs. existing menu pattern

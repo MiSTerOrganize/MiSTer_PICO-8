@@ -65,6 +65,18 @@ uint32_t NativeVideoWriter_ReadJoystick(int player);
 /// Bits [31:2] = vblank_counter, bits [1:0] = buffer_status.
 uint32_t NativeVideoWriter_ReadFeedback(void);
 
+/// Read save state control word from DDR3 (written by FPGA each frame).
+/// Layout (little-endian): byte 0 = cmd (0=idle, 1=save, 2=load),
+///                         byte 1 = slot (0..3),
+///                         byte 2 = sequence counter (changes on each new event).
+/// ARM tracks the sequence counter; when it changes, dispatch save/load.
+uint32_t NativeVideoWriter_ReadSavestate(void);
+
+/// Helpers for unpacking the savestate control word.
+static inline uint8_t  NV_SsCmd (uint32_t w) { return (uint8_t)( w        & 0xFFu); }
+static inline uint8_t  NV_SsSlot(uint32_t w) { return (uint8_t)((w >> 8 ) & 0xFFu); }
+static inline uint8_t  NV_SsSeq (uint32_t w) { return (uint8_t)((w >> 16) & 0xFFu); }
+
 /// Extract vblank counter from feedback word.
 static inline uint32_t NV_FeedbackVblankCounter(uint32_t fb) { return fb >> 2; }
 

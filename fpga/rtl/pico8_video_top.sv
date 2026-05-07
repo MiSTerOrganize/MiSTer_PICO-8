@@ -64,7 +64,13 @@ module pico8_video_top (
     input  wire        ioctl_wr,
     input  wire [26:0] ioctl_addr,
     input  wire  [7:0] ioctl_dout,
-    output wire        ioctl_wait
+    output wire        ioctl_wait,
+
+    // Save state triggers — pulses from savestate_ui, latched and
+    // written to a DDR3 control word inside the reader.
+    input  wire        ss_save,
+    input  wire        ss_load,
+    input  wire  [1:0] ss_slot
 );
 
 // ── Convert OSD 3-bit (0..6) to signed adjustment ────────────────────
@@ -162,7 +168,11 @@ pico8_video_reader reader (
     .ioctl_wr       (ioctl_wr),
     .ioctl_addr     (ioctl_addr),
     .ioctl_dout     (ioctl_dout),
-    .ioctl_wait     (ioctl_wait)
+    .ioctl_wait     (ioctl_wait),
+
+    .ss_save        (ss_save),
+    .ss_load        (ss_load),
+    .ss_slot        (ss_slot)
 );
 
 // ── Output assignments ────────────────────────────────────────────────

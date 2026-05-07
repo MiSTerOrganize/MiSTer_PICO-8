@@ -441,7 +441,14 @@ private:
 public:
     bool is_paused() const { return m_in_pause; }
     void close_pause() { private_set_pause(false); }
+
+    // MiSTer Frontier save states (Phase 1A: m_ram snapshot only;
+    // Lua VM state via eris will be added in Phase 1B).
+    // slot is 0..3 (matches NES core's 4-slot UX).
+    bool savestate_save(int slot);
+    bool savestate_load(int slot);
 private:
+    std::string savestate_path(int slot) const;
 
     // Files
     int m_save_slot = 0;
