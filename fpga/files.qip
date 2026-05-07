@@ -6,3 +6,4 @@ set_global_assignment -name SYSTEMVERILOG_FILE PICO8.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/pico8_video_top.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/pico8_video_timing.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/pico8_video_reader.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/savestate_ui.sv

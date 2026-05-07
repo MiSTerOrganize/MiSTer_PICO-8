@@ -27,12 +27,14 @@
 #include <chrono>
 #include <ctime>
 #include <cassert>
+#include <vector>     // savestate_load — staging keys-to-delete during sandbox mutation
 #include <sstream> // std::stringstream
 
 #include "pico8/pico8.h"
 #include "pico8/vm.h"
 #include "bindings/lua.h"
 #include "bios.h"
+#include "eris.h"  // Lua state persistence — used by savestate (Phase 1B)
 
 // FIXME: activate this one day, when we use Lua 5.3 maybe?
 #define HAVE_LUA_GETEXTRASPACE 0
@@ -455,6 +457,11 @@ bool vm::step(float /* seconds */)
     {
         char const *message = lua_tostring(m_lua, -1);
         lol::msg::error("error %d in main loop: %s\n", status, message);
+        // Mirror to stderr (pico8.log) so cart-side Lua errors are visible
+        // alongside other debug output instead of being lost in lol::msg.
+        fprintf(stderr, "[lua-error] main loop status=%d msg=%s\n",
+                status, message ? message : "(null)");
+        fflush(stderr);
     }
     else
     {
@@ -862,6 +869,491 @@ bool vm::save_cartdata(bool force)
     return saved;
 }
 
+// ─────────────────────────────────────────────────────────────────────
+// Save states (MiSTer Frontier — same UX as NES core's 4-slot save)
+//
+// File format (version 3 — current):
+//   magic[4]         "ZS01"
+//   version[4]       uint32_t = 3
+//   ram_size[4]      uint32_t = sizeof(memory)
+//   ram[ram_size]    m_ram (PICO-8 memory map: gfx, sfx, map, persistent)
+//   cart_path_len[4] uint32_t
+//   cart_path[len]   active cart filename (for multicart restore)
+//   lua_blob_len[4]  uint32_t
+//   lua_blob[len]    eris-persisted __z8_sandbox (cart _ENV table)
+//   state_size[4]    uint32_t = sizeof(state)
+//   state[state_size]  m_state (audio sequencer, draw mirror, input)
+//   menu_blob_len[4] uint32_t
+//   menu_blob[len]   eris-persisted __z8_menu (pause-menu state + items)
+//
+// Restore strategy (KEY): the cart sandbox table object identity must be
+// preserved. The cart's compiled functions hold _ENV upvalues bound to
+// the original __z8_sandbox object. If we replace the global with a new
+// table, those upvalues still point at the orphan original. So load
+// IN-PLACE-MUTATES the existing __z8_sandbox: clear its keys, then
+// copy from the eris-restored temp table. Function _ENVs continue to
+// point at the same object, now with restored content. Same applies to
+// __z8_menu (BIOS code accesses it via global lookup, but we still
+// in-place mutate for consistency and to avoid orphaning the old menu
+// items table).
+//
+// Coroutine call stack is NOT restored. The cart's existing __z8_loop
+// coroutine continues from wherever it currently is. Cart globals are
+// restored, so the next _update60 / _draw cycle reads saved state and
+// renders the saved scene. This is the same approach v2/v3 used and
+// what works in practice — full coroutine persist (attempted in v4)
+// hit eris-related _G identity issues that proved intractable.
+//
+// Older formats are still loadable:
+//   v1 (Phase 1A): ram only.
+//   v2 (Phase 1B): + cart_path + sandbox-only lua_blob.
+//   v3 (this version): + m_state + menu_blob.
+// ─────────────────────────────────────────────────────────────────────
+
+static constexpr char SAVESTATE_MAGIC[4] = {'Z','S','0','1'};
+static constexpr uint32_t SAVESTATE_VERSION_MIN = 1;
+// v1: ram only.
+// v2: + cart filename + Lua sandbox via eris.
+// v3: + m_state (audio sequencer / draw / input mirror) + __z8_menu via eris.
+static constexpr uint32_t SAVESTATE_VERSION = 3;
+
+// eris perms-table builder. eris uses a "permanent" table to map values
+// (functions, userdata) that should be stored as references rather than
+// serialized. We populate it from the BIOS api function set so eris
+// references the live C/Lua functions on restore instead of trying to
+// serialize C closures (which it can't).
+//
+// IMPORTANT: iteration order must be stable across save and load. We use
+// the function name string as the perm-table key to avoid relying on
+// unordered_set iteration order.
+static void savestate_build_perms(lua_State* L, bool for_save)
+{
+    lua_newtable(L);  // perms table at top
+    for (auto const& name : api::functions) {
+        lua_getglobal(L, name.c_str());
+        if (lua_isnil(L, -1)) { lua_pop(L, 1); continue; }
+        if (for_save) {
+            // perms[function] = name_string  (so eris finds the id when serializing)
+            lua_pushstring(L, name.c_str());
+            lua_settable(L, -3);
+        } else {
+            // perms[name_string] = function  (so eris finds the value when restoring)
+            // value is at -1, perms at -2
+            lua_setfield(L, -2, name.c_str());
+        }
+    }
+}
+
+std::string vm::savestate_path(int slot) const
+{
+    // Per-cart filename, like NES: /media/fat/savestates/PICO-8/<basename>_<slot>.ss
+    std::string cart_path = m_entry_cart.empty() ? m_cart.get_filename() : m_entry_cart;
+    auto last_slash = cart_path.find_last_of('/');
+    std::string basename = (last_slash == std::string::npos) ? cart_path : cart_path.substr(last_slash + 1);
+    // Strip .p8.png or .p8 extension
+    if (basename.size() > 7 && basename.compare(basename.size() - 7, 7, ".p8.png") == 0)
+        basename.resize(basename.size() - 7);
+    else if (basename.size() > 3 && basename.compare(basename.size() - 3, 3, ".p8") == 0)
+        basename.resize(basename.size() - 3);
+    return "/media/fat/savestates/PICO-8/" + basename + "_" + std::to_string(slot) + ".ss";
+}
+
+bool vm::savestate_save(int slot)
+{
+    if (slot < 0 || slot > 3) {
+        fprintf(stderr, "[savestate] save: invalid slot %d (must be 0-3)\n", slot);
+        return false;
+    }
+
+    system("mkdir -p /media/fat/savestates/PICO-8");
+
+    std::string path = savestate_path(slot);
+    FILE* f = fopen(path.c_str(), "wb");
+    if (!f) {
+        fprintf(stderr, "[savestate] save slot %d: cannot open %s for write\n", slot, path.c_str());
+        return false;
+    }
+
+    // Header
+    fwrite(SAVESTATE_MAGIC, 1, 4, f);
+    uint32_t version = SAVESTATE_VERSION;
+    fwrite(&version, 4, 1, f);
+
+    // m_ram section
+    uint32_t ram_size = sizeof(memory);
+    fwrite(&ram_size, 4, 1, f);
+    fwrite(&m_ram, 1, sizeof(memory), f);
+
+    // Cart path section — what cart was active at save time. Used by load
+    // to handle multicarts: if the active cart at load time differs, we
+    // private_load() the saved one before restoring memory + Lua state.
+    std::string cart_path = m_cart.get_filename();
+    uint32_t cart_path_len = (uint32_t)cart_path.size();
+    fwrite(&cart_path_len, 4, 1, f);
+    if (cart_path_len) fwrite(cart_path.data(), 1, cart_path_len, f);
+
+    // Lua sandbox state via eris. Persist __z8_sandbox (the cart's _ENV)
+    // with a perms table mapping all api::functions to their name strings.
+    std::string lua_blob;
+    int top = lua_gettop(m_lua);
+    lua_getglobal(m_lua, "__z8_sandbox");
+    if (lua_istable(m_lua, -1)) {
+        int sandbox_idx = lua_gettop(m_lua);
+        savestate_build_perms(m_lua, /*for_save=*/true);
+        int perms_idx = lua_gettop(m_lua);
+        eris_persist(m_lua, perms_idx, sandbox_idx);
+        size_t blob_len = 0;
+        const char* blob_data = lua_tolstring(m_lua, -1, &blob_len);
+        if (blob_data && blob_len > 0) {
+            lua_blob.assign(blob_data, blob_len);
+        }
+    } else {
+        fprintf(stderr, "[savestate] save slot %d: __z8_sandbox not available, skipping Lua state\n", slot);
+    }
+    lua_settop(m_lua, top);
+
+    uint32_t lua_blob_len = (uint32_t)lua_blob.size();
+    fwrite(&lua_blob_len, 4, 1, f);
+    if (lua_blob_len) fwrite(lua_blob.data(), 1, lua_blob_len, f);
+
+    // m_state — audio sequencer / draw mirror / input. Pure POD.
+    uint32_t state_size = (uint32_t)sizeof(state);
+    fwrite(&state_size, 4, 1, f);
+    fwrite(&m_state, 1, sizeof(state), f);
+
+    // __z8_menu — pause-menu state + cart-defined menuitem callbacks.
+    std::string menu_blob;
+    {
+        int top2 = lua_gettop(m_lua);
+        lua_getglobal(m_lua, "__z8_menu");
+        if (lua_istable(m_lua, -1)) {
+            int menu_idx = lua_gettop(m_lua);
+            savestate_build_perms(m_lua, /*for_save=*/true);
+            int perms_idx = lua_gettop(m_lua);
+            eris_persist(m_lua, perms_idx, menu_idx);
+            size_t blob_len = 0;
+            const char* blob_data = lua_tolstring(m_lua, -1, &blob_len);
+            if (blob_data && blob_len > 0) {
+                menu_blob.assign(blob_data, blob_len);
+            }
+        }
+        lua_settop(m_lua, top2);
+    }
+    uint32_t menu_blob_len = (uint32_t)menu_blob.size();
+    fwrite(&menu_blob_len, 4, 1, f);
+    if (menu_blob_len) fwrite(menu_blob.data(), 1, menu_blob_len, f);
+
+    long pos = ftell(f);
+    fclose(f);
+    fprintf(stderr, "[savestate] saved slot %d: %ld bytes (ram=%u, cart=%u, lua=%u, state=%u, menu=%u) -> %s\n",
+            slot, pos, ram_size, cart_path_len, lua_blob_len, state_size, menu_blob_len, path.c_str());
+    return true;
+}
+
+bool vm::savestate_load(int slot)
+{
+    if (slot < 0 || slot > 3) {
+        fprintf(stderr, "[savestate] load: invalid slot %d (must be 0-3)\n", slot);
+        return false;
+    }
+
+    std::string path = savestate_path(slot);
+    FILE* f = fopen(path.c_str(), "rb");
+    if (!f) {
+        fprintf(stderr, "[savestate] load slot %d: cannot open %s (no save in this slot?)\n", slot, path.c_str());
+        return false;
+    }
+
+    char magic[4];
+    if (fread(magic, 1, 4, f) != 4 || memcmp(magic, SAVESTATE_MAGIC, 4) != 0) {
+        fprintf(stderr, "[savestate] load slot %d: bad magic in %s\n", slot, path.c_str());
+        fclose(f);
+        return false;
+    }
+
+    uint32_t version, ram_size;
+    if (fread(&version, 4, 1, f) != 1 || fread(&ram_size, 4, 1, f) != 1) {
+        fprintf(stderr, "[savestate] load slot %d: short read of header\n", slot);
+        fclose(f);
+        return false;
+    }
+
+    if (version < SAVESTATE_VERSION_MIN || version > SAVESTATE_VERSION) {
+        fprintf(stderr, "[savestate] load slot %d: unsupported version %u (this build supports %u..%u)\n",
+                slot, version, SAVESTATE_VERSION_MIN, SAVESTATE_VERSION);
+        fclose(f);
+        return false;
+    }
+
+    if (ram_size != sizeof(memory)) {
+        fprintf(stderr, "[savestate] load slot %d: ram_size mismatch (file=%u, expected=%zu)\n",
+                slot, ram_size, sizeof(memory));
+        fclose(f);
+        return false;
+    }
+
+    // Read m_ram into a staging buffer first — we may need to defer applying
+    // it until after a cart-reload (which resets m_ram).
+    memory staged_ram;
+    if (fread(&staged_ram, 1, sizeof(memory), f) != sizeof(memory)) {
+        fprintf(stderr, "[savestate] load slot %d: short read of m_ram\n", slot);
+        fclose(f);
+        return false;
+    }
+
+    // V2+ sections: cart path
+    std::string saved_cart_path;
+    if (version >= 2) {
+        uint32_t cart_path_len = 0;
+        if (fread(&cart_path_len, 4, 1, f) != 1) {
+            fprintf(stderr, "[savestate] load slot %d: short read of cart_path_len\n", slot);
+            fclose(f); return false;
+        }
+        if (cart_path_len) {
+            saved_cart_path.resize(cart_path_len);
+            if (fread(&saved_cart_path[0], 1, cart_path_len, f) != cart_path_len) {
+                fprintf(stderr, "[savestate] load slot %d: short read of cart_path\n", slot);
+                fclose(f); return false;
+            }
+        }
+    }
+
+    // V2+: lua_blob (sandbox-only persist via eris).
+    std::string lua_blob;
+    if (version >= 2) {
+        uint32_t lua_blob_len = 0;
+        if (fread(&lua_blob_len, 4, 1, f) != 1) {
+            fprintf(stderr, "[savestate] load slot %d: short read of lua_blob_len\n", slot);
+            fclose(f); return false;
+        }
+        if (lua_blob_len) {
+            lua_blob.resize(lua_blob_len);
+            if (fread(&lua_blob[0], 1, lua_blob_len, f) != lua_blob_len) {
+                fprintf(stderr, "[savestate] load slot %d: short read of lua_blob\n", slot);
+                fclose(f); return false;
+            }
+        }
+    }
+
+    // V3+ sections: m_state
+    bool have_state = false;
+    state staged_state;  // zero-initialized via default constructor
+    if (version >= 3) {
+        uint32_t state_size = 0;
+        if (fread(&state_size, 4, 1, f) != 1) {
+            fprintf(stderr, "[savestate] load slot %d: short read of state_size\n", slot);
+            fclose(f); return false;
+        }
+        if (state_size != sizeof(state)) {
+            fprintf(stderr, "[savestate] load slot %d: state size mismatch (file=%u, expected=%zu) — skipping state restore\n",
+                    slot, state_size, sizeof(state));
+            std::string skip(state_size, '\0');
+            fread(&skip[0], 1, state_size, f);
+        } else {
+            if (fread(&staged_state, 1, sizeof(state), f) != sizeof(state)) {
+                fprintf(stderr, "[savestate] load slot %d: short read of state\n", slot);
+                fclose(f); return false;
+            }
+            have_state = true;
+        }
+    }
+
+    // V3+: menu_blob (separate eris persist of __z8_menu).
+    std::string menu_blob;
+    if (version >= 3) {
+        uint32_t menu_blob_len = 0;
+        if (fread(&menu_blob_len, 4, 1, f) != 1) {
+            fprintf(stderr, "[savestate] load slot %d: short read of menu_blob_len\n", slot);
+            fclose(f); return false;
+        }
+        if (menu_blob_len) {
+            menu_blob.resize(menu_blob_len);
+            if (fread(&menu_blob[0], 1, menu_blob_len, f) != menu_blob_len) {
+                fprintf(stderr, "[savestate] load slot %d: short read of menu_blob\n", slot);
+                fclose(f); return false;
+            }
+        }
+    }
+
+    fclose(f);
+
+    // Multicart: if the saved cart differs from the currently active cart,
+    // load the saved cart and let it execute on subsequent __z8_tick.
+    //
+    // KNOWN UX WART: cart-mismatch loads require two Load State presses
+    // for the saved sub-cart's state to fully restore. First load reloads
+    // the cart and applies our memcpy+mutate, but on the next __z8_tick
+    // the new coroutine's setup runs (top-level + _init) which clobbers
+    // sandbox values with cart defaults. Second load now hits the
+    // matching-cart path and the in-place mutation sticks.
+    //
+    // We previously tried forcing one lua_resume here to drive the cart
+    // through its setup before applying restore. That broke multicart
+    // sub-carts that depend on inter-cart load() parameters: e.g.,
+    // vracing_main.p8 expects state set up by vracing_title.p8's
+    // load("vracing_main.p8", breadcrumb, params) call, and crashes at
+    // "attempt to index local 'b' (a nil value)" when run standalone.
+    // Reverted 2026-05-03 — the two-load UX is the lesser evil.
+    if (!saved_cart_path.empty() && saved_cart_path != m_cart.get_filename()) {
+        fprintf(stderr, "[savestate] load slot %d: cart mismatch — restarting with %s\n",
+                slot, saved_cart_path.c_str());
+        if (!load_cart(m_cart, saved_cart_path)) {
+            fprintf(stderr, "[savestate] load slot %d: failed to load saved cart %s\n",
+                    slot, saved_cart_path.c_str());
+            return false;
+        }
+        run();  // creates the __z8_loop coroutine (suspended at start)
+    }
+
+    // Apply m_ram (overwrites cart-init memory state).
+    memcpy(&m_ram, &staged_ram, sizeof(memory));
+
+    // Apply Lua state via eris. We mutate __z8_sandbox in place rather
+    // than replacing the global, so the cart's main-loop coroutine
+    // (which holds a reference to the table object) sees the new values.
+    if (!lua_blob.empty()) {
+        int top = lua_gettop(m_lua);
+        lua_getglobal(m_lua, "__z8_sandbox");
+        if (!lua_istable(m_lua, -1)) {
+            fprintf(stderr, "[savestate] load slot %d: __z8_sandbox not a table, skipping Lua restore\n", slot);
+            lua_settop(m_lua, top);
+        } else {
+            int sandbox_idx = lua_gettop(m_lua);  // absolute index of the sandbox
+
+            savestate_build_perms(m_lua, /*for_save=*/false);
+            int perms_idx = lua_gettop(m_lua);
+
+            // Push the blob as a Lua string and call eris_unpersist on it
+            lua_pushlstring(m_lua, lua_blob.data(), lua_blob.size());
+            int blob_idx = lua_gettop(m_lua);
+            eris_unpersist(m_lua, perms_idx, blob_idx);
+            // Stack now: ..., sandbox, perms, blob_string, restored_value
+
+            if (!lua_istable(m_lua, -1)) {
+                fprintf(stderr, "[savestate] load slot %d: eris restored value is not a table\n", slot);
+                lua_settop(m_lua, top);
+                return false;
+            }
+
+            int restored_idx = lua_gettop(m_lua);
+
+            // IN-PLACE MUTATION (the key to making this work).
+            //
+            // The cart's compiled code holds _ENV upvalues bound to the
+            // ORIGINAL __z8_sandbox table object. Replacing the global
+            // with a different table would orphan those upvalues — cart
+            // would see no state changes. Instead we mutate the existing
+            // sandbox in place: clear stale keys, then copy from the
+            // eris-restored temp table. Object identity preserved, so
+            // the cart's _ENV continues to point at the same table — now
+            // with restored content.
+            //
+            // Step 1: clear keys in current sandbox that aren't in the
+            // restored table (cart may have ADDED globals between save and
+            // load — those need to go away for a true "back to save" load).
+            // We collect keys-to-delete first so we don't mutate the table
+            // mid-traversal.
+            std::vector<std::string> keys_to_delete;
+            lua_pushnil(m_lua);
+            while (lua_next(m_lua, sandbox_idx) != 0) {
+                // stack: ..., sandbox, perms, restored, key, value
+                if (lua_type(m_lua, -2) == LUA_TSTRING) {
+                    std::string k = lua_tostring(m_lua, -2);
+                    // Check if this key exists in the restored table
+                    lua_pushvalue(m_lua, -2);   // copy key
+                    lua_gettable(m_lua, restored_idx);
+                    if (lua_isnil(m_lua, -1)) {
+                        keys_to_delete.push_back(k);
+                    }
+                    lua_pop(m_lua, 1);  // pop the lookup result
+                }
+                lua_pop(m_lua, 1);  // pop value, keep key for next iteration
+            }
+            for (auto const& k : keys_to_delete) {
+                lua_pushstring(m_lua, k.c_str());
+                lua_pushnil(m_lua);
+                lua_settable(m_lua, sandbox_idx);
+            }
+
+            // Step 2: copy keys from restored table to sandbox.
+            lua_pushnil(m_lua);
+            while (lua_next(m_lua, restored_idx) != 0) {
+                lua_pushvalue(m_lua, -2);  // copy key
+                lua_pushvalue(m_lua, -2);  // copy value
+                lua_settable(m_lua, sandbox_idx);
+                lua_pop(m_lua, 1);  // pop value, keep key
+            }
+
+            lua_settop(m_lua, top);
+            fprintf(stderr, "[savestate] load slot %d: sandbox restored (%zu bytes blob, %zu stale keys cleared)\n",
+                    slot, lua_blob.size(), keys_to_delete.size());
+        }
+    }
+
+    // Apply m_state. Brief audio click is possible if the audio thread
+    // is mid-read of channels[].reverb_2/4 during this memcpy — acceptable
+    // (~1 frame). State was captured at a coherent point on save.
+    if (have_state) {
+        memcpy(&m_state, &staged_state, sizeof(state));
+    }
+
+    // Restore __z8_menu via in-place mutation (same reasoning as sandbox:
+    // any code that captured a local reference to __z8_menu would otherwise
+    // be orphaned). The pause-menu items table is small so this is cheap.
+    if (!menu_blob.empty()) {
+        int top = lua_gettop(m_lua);
+        lua_getglobal(m_lua, "__z8_menu");
+        if (!lua_istable(m_lua, -1)) {
+            // Fall back to setglobal if __z8_menu isn't currently a table.
+            lua_pop(m_lua, 1);
+            savestate_build_perms(m_lua, /*for_save=*/false);
+            int perms_idx = lua_gettop(m_lua);
+            lua_pushlstring(m_lua, menu_blob.data(), menu_blob.size());
+            int blob_idx = lua_gettop(m_lua);
+            eris_unpersist(m_lua, perms_idx, blob_idx);
+            if (lua_istable(m_lua, -1)) {
+                lua_setglobal(m_lua, "__z8_menu");
+            }
+        } else {
+            int menu_idx = lua_gettop(m_lua);
+            savestate_build_perms(m_lua, /*for_save=*/false);
+            int perms_idx = lua_gettop(m_lua);
+            lua_pushlstring(m_lua, menu_blob.data(), menu_blob.size());
+            int blob_idx = lua_gettop(m_lua);
+            eris_unpersist(m_lua, perms_idx, blob_idx);
+            if (lua_istable(m_lua, -1)) {
+                int restored_idx = lua_gettop(m_lua);
+                // Clear and copy
+                std::vector<std::string> keys_to_delete;
+                lua_pushnil(m_lua);
+                while (lua_next(m_lua, menu_idx) != 0) {
+                    if (lua_type(m_lua, -2) == LUA_TSTRING) {
+                        keys_to_delete.push_back(lua_tostring(m_lua, -2));
+                    }
+                    lua_pop(m_lua, 1);
+                }
+                for (auto const& k : keys_to_delete) {
+                    lua_pushstring(m_lua, k.c_str());
+                    lua_pushnil(m_lua);
+                    lua_settable(m_lua, menu_idx);
+                }
+                lua_pushnil(m_lua);
+                while (lua_next(m_lua, restored_idx) != 0) {
+                    lua_pushvalue(m_lua, -2);
+                    lua_pushvalue(m_lua, -2);
+                    lua_settable(m_lua, menu_idx);
+                    lua_pop(m_lua, 1);
+                }
+            }
+        }
+        lua_settop(m_lua, top);
+        fprintf(stderr, "[savestate] load slot %d: menu restored (%zu bytes)\n", slot, menu_blob.size());
+    }
+
+    fprintf(stderr, "[savestate] loaded slot %d from %s\n", slot, path.c_str());
+    return true;
+}
+
 bool config_parse_256(std::string line, std::string name, float& value)
 {
     if (line.rfind(name, 0) != 0) return false;
@@ -1256,6 +1748,11 @@ void vm::api_printh(rich_string str, opt<std::string> filename, opt<bool> overwr
     {
         fprintf(stdout, "%s\n", decoded.c_str());
         fflush(stdout);
+        // MiSTer Frontier: mirror printh output to stderr (pico8.log) too,
+        // so cart-side and BIOS-side debug prints are visible in the log
+        // we tail. Upstream zepto8 only writes to stdout.
+        fprintf(stderr, "%s\n", decoded.c_str());
+        fflush(stderr);
     }
 }
 

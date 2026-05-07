@@ -74,17 +74,31 @@ jobs:
               ls -lh PICO-8
             '
 
-      - name: Package release
+      - name: Commit fresh ARM binary back to repo
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
-          mkdir -p release-staging/games/PICO-8 release-staging/Scripts release-staging/_Other release-staging/docs/PICO-8
+          cp build-arm/PICO-8 games/PICO-8/PICO-8
+          chmod +x games/PICO-8/PICO-8
+          git config user.email "ci@misterorganize"
+          git config user.name "MiSTer Organize CI"
+          if ! git diff --quiet games/PICO-8/PICO-8; then
+            git add games/PICO-8/PICO-8
+            git commit -m "CI: rebuild ARM binary for ${{ github.sha }}"
+            git push
+          else
+            echo "ARM binary unchanged."
+          fi
+
+      - name: Package release zip
+        run: |
+          mkdir -p release-staging/games/PICO-8 release-staging/_Other release-staging/docs/PICO-8
           cp build-arm/PICO-8 release-staging/games/PICO-8/
-          cp games/PICO-8/boot.rom release-staging/games/PICO-8/
-          cp games/PICO-8/pico8_daemon.sh release-staging/games/PICO-8/
-          cp Scripts/Install_PICO-8.sh release-staging/Scripts/
+          cp games/PICO-8/bios.p8 release-staging/games/PICO-8/
+          cp games/PICO-8/_handler.sh release-staging/games/PICO-8/
           cp _Other/PICO-8*.rbf release-staging/_Other/
           cp docs/PICO-8/README.md release-staging/docs/PICO-8/
-          chmod +x release-staging/games/PICO-8/PICO-8 release-staging/games/PICO-8/pico8_daemon.sh release-staging/Scripts/*.sh
-          cd release-staging && zip -r ../MiSTer-PICO-8-release.zip _Other/ docs/ games/ Scripts/
+          chmod +x release-staging/games/PICO-8/PICO-8 release-staging/games/PICO-8/_handler.sh
+          cd release-staging && zip -r ../MiSTer-PICO-8-release.zip _Other/ docs/ games/
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

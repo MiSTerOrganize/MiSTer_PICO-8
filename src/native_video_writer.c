@@ -37,6 +37,10 @@
 #define NV_JOY1_OFFSET      0x00000030u  /* P2 joystick_1 */
 #define NV_JOY2_OFFSET      0x00000038u  /* P3 joystick_2 */
 #define NV_JOY3_OFFSET      0x00000040u  /* P4 joystick_3 */
+#define NV_SS_OFFSET        0x00000048u  /* save state ctrl word (FPGA writes, ARM reads) */
+                                         /* layout (LE): byte 0 = cmd (0=idle 1=save 2=load),
+                                          *              byte 1 = slot (0..3),
+                                          *              byte 2 = sequence counter (changes each event) */
 #define NV_BUF0_OFFSET      0x00000100u
 #define NV_BUF1_OFFSET      0x00008100u
 #define NV_CART_CTRL_OFFSET  0x00000010u
@@ -179,6 +183,12 @@ uint32_t NativeVideoWriter_ReadFeedback(void) {
     if (!ddr_base) return 0;
     volatile uint32_t *fb = (volatile uint32_t *)(ddr_base + NV_FEEDBACK_OFFSET);
     return *fb;
+}
+
+uint32_t NativeVideoWriter_ReadSavestate(void) {
+    if (!ddr_base) return 0;
+    volatile uint32_t *ss = (volatile uint32_t *)(ddr_base + NV_SS_OFFSET);
+    return *ss;
 }
 
 uint32_t NativeVideoWriter_AudioSpace(void) {
