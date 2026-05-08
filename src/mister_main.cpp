@@ -722,6 +722,26 @@ int main(int argc, char **argv)
         // CONF_STR: "J1,O,X,Pause;" / "jn,B,Y,Start;" (SNES: B=Xbox A, Y=Xbox X)
         // joystick_N bits: 0=R 1=L 2=D 3=U 4=Xbox A(O) 5=Xbox X(X) 6=Start(Pause)
         if (have_native_video) {
+            // DIAGNOSTIC: log player-0 joystick byte for first 120 frames
+            // after cart load to investigate why MGL load shows the
+            // first-input freeze. Theory: hps_io feeds garbage to DDR3
+            // for first few frames before MiSTer Main syncs, FPGA writes
+            // that garbage to DDR3, our cart sees phantom button bits.
+            // Will be removed after diagnosis. Safe — one fprintf per
+            // frame for 120 frames = 2 seconds of logs, then quiet.
+            static int frames_since_cart_load = 0;
+            static uint32_t last_logged_joy = 0xFFFFFFFFu;
+            if (frames_since_cart_load < 120) {
+                uint32_t joy0 = NativeVideoWriter_ReadJoystick(0);
+                if (frames_since_cart_load < 10 || joy0 != last_logged_joy) {
+                    fprintf(stderr, "[joy-diag] frame=%d joy0=0x%02x\n",
+                            frames_since_cart_load, joy0 & 0xFF);
+                    fflush(stderr);
+                    last_logged_joy = joy0;
+                }
+                frames_since_cart_load++;
+            }
+
             for (int p = 0; p < 4; p++) {
                 uint32_t joy = NativeVideoWriter_ReadJoystick(p);
                 g_vm->button(p, 0, (joy >> 1) & 1);  // Left
