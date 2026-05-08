@@ -53,6 +53,12 @@ bool NativeVideoWriter_IsActive(void);
 /// add latency to real frames since it's a single 32-bit ctrl-word write.
 void NativeVideoWriter_KeepaliveTick(void);
 
+/// Zero both DDR3 frame buffers and tick the control word so the FPGA flips
+/// to a freshly-cleared black frame. Use on Quit (when returning to the
+/// .s0-wait loop) so the keepalive thread doesn't keep showing the previous
+/// cart's last frame frozen on screen — would look like the game crashed.
+void NativeVideoWriter_ClearScreen(void);
+
 /// Check if a new cart has been loaded via OSD file browser.
 /// Returns file size in bytes if a new cart is available, 0 otherwise.
 uint32_t NativeVideoWriter_CheckCart(void);

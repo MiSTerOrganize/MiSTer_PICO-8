@@ -806,6 +806,13 @@ int main(int argc, char **argv)
             cart_path.clear();
             unlink("/media/fat/config/PICO-8.s0");
             fprintf(stderr, "Quit: cleared .s0, returning to OSD picker\n");
+            // Wipe DDR3 to black before returning to the .s0-wait loop —
+            // otherwise the keepalive thread keeps the cart's last frame
+            // visible on screen (the user sees a frozen game and assumes
+            // it crashed). Hot-swap path skips this since the new cart
+            // will overwrite DDR3 within ~300ms anyway.
+            if (have_native_video)
+                NativeVideoWriter_ClearScreen();
         } else {
             fprintf(stderr, "Hot-swap: reloading %s\n", cart_path.c_str());
         }

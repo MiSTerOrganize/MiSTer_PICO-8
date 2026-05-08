@@ -161,6 +161,21 @@ void NativeVideoWriter_KeepaliveTick(void) {
     *ctrl = (frame_counter << 2) | ((active_buf ^ 1) & 1);
 }
 
+void NativeVideoWriter_ClearScreen(void) {
+    if (!ddr_base) return;
+    /* Zero both buffers so the FPGA shows clean black no matter which
+     * one the ctrl word points at. Then bump the frame counter so the
+     * FPGA reader picks up the cleared buffer immediately (otherwise
+     * it would keep showing the cached previous frame for up to a
+     * vblank). */
+    memset((void*)(ddr_base + NV_BUF0_OFFSET), 0, NV_FRAME_BYTES);
+    memset((void*)(ddr_base + NV_BUF1_OFFSET), 0, NV_FRAME_BYTES);
+    frame_counter++;
+    volatile uint32_t* ctrl = (volatile uint32_t*)(ddr_base + NV_CTRL_OFFSET);
+    *ctrl = (frame_counter << 2) | (active_buf & 1);
+    active_buf ^= 1;
+}
+
 uint32_t NativeVideoWriter_CheckCart(void) {
     if (!ddr_base) return 0;
     volatile uint32_t *ctrl = (volatile uint32_t *)(ddr_base + NV_CART_CTRL_OFFSET);
