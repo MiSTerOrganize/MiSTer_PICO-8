@@ -76,6 +76,7 @@ jobs:
 
       - name: Commit fresh ARM binary back to repo
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        continue-on-error: true   # don't lose the artifact upload if push races
         run: |
           cp build-arm/PICO-8 games/PICO-8/PICO-8
           chmod +x games/PICO-8/PICO-8
@@ -84,7 +85,13 @@ jobs:
           if ! git diff --quiet games/PICO-8/PICO-8; then
             git add games/PICO-8/PICO-8
             git commit -m "CI: rebuild ARM binary for ${{ github.sha }}"
-            git push
+            # Push with retry — if main moved during build, fast-forward and try again
+            for i in 1 2 3; do
+              git push && break
+              echo "Push failed (attempt $i), pulling and retrying..."
+              git pull --rebase origin main || break
+              sleep 2
+            done
           else
             echo "ARM binary unchanged."
           fi

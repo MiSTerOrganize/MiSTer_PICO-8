@@ -24,6 +24,7 @@
 #include "compat_format.h"
 #include <cstring>    // memset, memcpy (MiSTer shim patch)
 #include <cmath>      // std::abs (MiSTer shim patch)
+#include <unistd.h>   // _exit (MiSTer Reset Cart pause-menu handler)
 #include <chrono>
 #include <ctime>
 #include <cassert>
@@ -1806,19 +1807,27 @@ void vm::api_extcmd(std::string cmdline)
     }
     else if (cmd == "reset")
     {
-        // For multicart games, the in-memory cart is a sub-cart loaded via
-        // load() from Lua. Vanilla api_run() would restart that sub-cart
-        // (e.g. Virtua Racing's current track). Detect that case and return
-        // to the entry cart (title screen) instead.
-        if (!m_entry_cart.empty() && m_entry_cart != m_cart.get_filename())
-        {
-            fprintf(stderr, "[multicart] reset: reloading entry cart '%s' (was '%s')\n",
-                    m_entry_cart.c_str(), m_cart.get_filename().c_str());
-            breadcrumbs.clear();
-            m_load_params.clear();
-            load_cart(m_cart, m_entry_cart);
-        }
-        api_run();
+        // Universal hybrid-core Reset pattern: _exit(0) and let
+        // Master_Daemon respawn _handler.sh, which spawns a fresh ARM
+        // binary that boots into wait-for-OSD-cart-selection. .s0 is
+        // NOT deleted (unlike Quit) so the new process auto-mounts the
+        // same cart from scratch, with cleanly zeroed DDR3, fresh Lua
+        // VM, fresh audio thread, fresh SDL state.
+        //
+        // Same architecture as OpenBOR's Reset Pak (pausemenu_patch.c
+        // case 2). Cost is ~1s for the respawn vs ~100ms for the old
+        // in-process api_run() reload, but eliminates state-leakage
+        // edge cases (audio thread persistence, lingering Lua globals,
+        // etc.) and matches the universal hybrid-core architectural
+        // contract — every cart-end action exits the process.
+        //
+        // Multicart entry-cart preservation is automatic: .s0 holds
+        // the entry cart's path (whatever MiSTer mounted via OSD or
+        // MGL), so respawn lands on the entry cart even if the user
+        // reset while a sub-cart was active.
+        fprintf(stderr, "Reset: keeping .s0, _exit(0) — Master_Daemon will respawn same cart\n");
+        fflush(stderr);
+        _exit(0);
     }
     else if (cmd == "pause")
     {
