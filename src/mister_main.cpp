@@ -615,9 +615,19 @@ int main(int argc, char **argv)
         g_vm->registerGetFilterNameCallback([](int) -> std::string { return ""; });
 
         // Register cart browser extcmd — when selected from pause menu,
-        // sets flag to return to browser instead of quitting
+        // delete .s0 and exit(0). Master_Daemon's child-respawn logic
+        // re-execs _handler.sh which starts a fresh PICO-8 binary that
+        // boots into the wait-for-OSD-cart-selection loop with cleanly
+        // zeroed DDR3 (Init() does the memset). Same architecture as
+        // OpenBOR's pause-menu Quit. Universal hybrid core rule: every
+        // pause-menu Quit must exit(0), not return-to-loop, so the
+        // post-Quit state is identical to a fresh handler spawn (no
+        // stale DDR3, no stale VM state, no audio thread quirks).
         g_vm->add_extcmd("z8_cart_browser", [](std::string const &) {
-            g_return_to_browser = true;
+            unlink("/media/fat/config/PICO-8.s0");
+            fprintf(stderr, "Quit: cleared .s0, exit(0) — Master_Daemon will respawn\n");
+            fflush(stderr);
+            _exit(0);
         });
 
         g_vm->load(cart_path);
@@ -802,15 +812,18 @@ int main(int argc, char **argv)
         // cart_path AND delete .s0 — otherwise the next outer-loop poll
         // would see the old .s0 path and immediately reload the same cart
         // (perceived as "Quit just resets the cartridge").
+        // Reachable only for cart-driven shutdowns (rare — extcmd("shutdown")
+        // from a cart) or hot-swap. User-driven Quit-from-pause-menu now
+        // exit(0)s directly via the z8_cart_browser extcmd handler above —
+        // never reaches this cleanup path. Master_Daemon respawns _handler.sh
+        // for the next cart, fresh process inits DDR3 to zero. Same architecture
+        // as OpenBOR's Quit. Universal rule: pause-menu Quit must exit(0).
         if (!hot_swap_pending) {
             cart_path.clear();
             unlink("/media/fat/config/PICO-8.s0");
-            fprintf(stderr, "Quit: cleared .s0, returning to OSD picker\n");
-            // Wipe DDR3 to black before returning to the .s0-wait loop —
-            // otherwise the keepalive thread keeps the cart's last frame
-            // visible on screen (the user sees a frozen game and assumes
-            // it crashed). Hot-swap path skips this since the new cart
-            // will overwrite DDR3 within ~300ms anyway.
+            fprintf(stderr, "Cart-driven shutdown: cleared .s0, will wait for OSD\n");
+            // Cart-driven shutdown: explicit DDR3 clear, since binary stays
+            // alive (vs Quit which exits and re-inits).
             if (have_native_video)
                 NativeVideoWriter_ClearScreen();
         } else {
