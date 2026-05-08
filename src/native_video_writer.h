@@ -42,6 +42,17 @@ void NativeVideoWriter_WriteFrame(const void* rgba8_pixels, int width, int heigh
 /// True if the DDR3 writer has been initialized and is ready for frames.
 bool NativeVideoWriter_IsActive(void);
 
+/// Increment the FPGA frame counter without writing pixel data. Points the
+/// active-buffer bit at the LAST-written buffer so the FPGA video reader
+/// keeps re-displaying that frame instead of hitting its 30-vblank staleness
+/// timeout (~500ms) which would blank the screen to black.
+///
+/// Use case: keep the previous frame visible during cart hot-swap, save-state
+/// load, or any other operation that pauses real frame writes for >500ms.
+/// Run on a timer thread at ~150ms cadence — well under the timeout, doesn't
+/// add latency to real frames since it's a single 32-bit ctrl-word write.
+void NativeVideoWriter_KeepaliveTick(void);
+
 /// Check if a new cart has been loaded via OSD file browser.
 /// Returns file size in bytes if a new cart is available, 0 otherwise.
 uint32_t NativeVideoWriter_CheckCart(void);

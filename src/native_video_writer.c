@@ -145,6 +145,22 @@ bool NativeVideoWriter_IsActive(void) {
     return ddr_base != NULL;
 }
 
+void NativeVideoWriter_KeepaliveTick(void) {
+    if (!ddr_base) return;
+    /* Bump the frame counter so the FPGA reader's stale-vblank detector
+     * resets, but point the active-buffer bit at the LAST-written buffer.
+     * After WriteFrame, active_buf has been toggled to the NEXT-write
+     * target, so last-written = active_buf ^ 1.
+     *
+     * If we pointed at the next-to-write buffer instead, the FPGA would
+     * jitter between the last-rendered frame and the previous one
+     * (since we double-buffer with toggle). Pointing at last-written
+     * keeps the same frame visible — frozen, not flickering. */
+    frame_counter++;
+    volatile uint32_t* ctrl = (volatile uint32_t*)(ddr_base + NV_CTRL_OFFSET);
+    *ctrl = (frame_counter << 2) | ((active_buf ^ 1) & 1);
+}
+
 uint32_t NativeVideoWriter_CheckCart(void) {
     if (!ddr_base) return 0;
     volatile uint32_t *ctrl = (volatile uint32_t *)(ddr_base + NV_CART_CTRL_OFFSET);
