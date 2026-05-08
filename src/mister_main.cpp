@@ -780,8 +780,22 @@ int main(int argc, char **argv)
             }
         }
 
-        // Step the VM
-        g_vm->step(1.0f / target_fps);
+        // Step the VM — with slow-frame instrumentation. Cart's _update60
+        // and _draw run inside step(). If a cart does something heavy on
+        // a particular frame (cart load() chain, big Lua compute, file
+        // I/O via cstore/cartdata), step() takes >> 16ms. Log only slow
+        // frames so we don't hammer the SD card with per-frame fprintfs.
+        // Threshold 50ms = 3 frames at 60fps; anything above is visible
+        // to the user as a hitch. Single fprintf per slow frame is safe.
+        {
+            uint64_t step_start = get_time_ns();
+            g_vm->step(1.0f / target_fps);
+            uint64_t step_dur = get_time_ns() - step_start;
+            if (step_dur > 50'000'000ULL) {
+                fprintf(stderr, "Slow VM step: %.0fms\n", step_dur / 1e6);
+                fflush(stderr);
+            }
+        }
 
         // Render video
         g_vm->render(rgba_buf);
