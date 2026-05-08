@@ -730,17 +730,28 @@ int main(int argc, char **argv)
             // Will be removed after diagnosis. Safe — one fprintf per
             // frame for 120 frames = 2 seconds of logs, then quiet.
             static int frames_since_cart_load = 0;
-            static uint32_t last_logged_joy = 0xFFFFFFFFu;
-            if (frames_since_cart_load < 120) {
-                uint32_t joy0 = NativeVideoWriter_ReadJoystick(0);
-                if (frames_since_cart_load < 10 || joy0 != last_logged_joy) {
-                    fprintf(stderr, "[joy-diag] frame=%d joy0=0x%02x\n",
-                            frames_since_cart_load, joy0 & 0xFF);
-                    fflush(stderr);
-                    last_logged_joy = joy0;
-                }
-                frames_since_cart_load++;
+            static uint32_t last_logged_joy = 0;
+            static int frames_after_first_press = -1;
+            uint32_t joy0_diag = NativeVideoWriter_ReadJoystick(0);
+            if (frames_since_cart_load < 5) {
+                // Initial baseline (first 5 frames unconditionally)
+                fprintf(stderr, "[joy-diag] frame=%d joy0=0x%02x\n",
+                        frames_since_cart_load, joy0_diag & 0xFF);
+                fflush(stderr);
+                last_logged_joy = joy0_diag;
             }
+            else if (joy0_diag != last_logged_joy && frames_after_first_press < 60) {
+                // Log every change until 1 second past first press
+                fprintf(stderr, "[joy-diag] frame=%d joy0=0x%02x (delta from 0x%02x)\n",
+                        frames_since_cart_load, joy0_diag & 0xFF, last_logged_joy & 0xFF);
+                fflush(stderr);
+                last_logged_joy = joy0_diag;
+                if (joy0_diag != 0 && frames_after_first_press < 0)
+                    frames_after_first_press = 0;
+            }
+            if (frames_after_first_press >= 0 && frames_after_first_press < 60)
+                frames_after_first_press++;
+            frames_since_cart_load++;
 
             for (int p = 0; p < 4; p++) {
                 uint32_t joy = NativeVideoWriter_ReadJoystick(p);
