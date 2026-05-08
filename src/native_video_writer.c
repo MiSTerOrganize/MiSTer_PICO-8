@@ -92,6 +92,18 @@ bool NativeVideoWriter_Init(void) {
     volatile uint32_t* aud_rptr = (volatile uint32_t*)(ddr_base + NV_AUD_RPTR_OFFSET);
     *aud_rptr = 0;
     memset((void*)(ddr_base + NV_AUD_RING_OFFSET), 0, NV_AUD_RING_SAMPLES * 4);
+    /* Zero the joystick offsets so the cart's first frame doesn't read
+     * leftover state from whatever was in DDR3 before the RBF loaded.
+     * Without this, the cart sees a "button held" state on frame 1
+     * (whatever bits happened to be set in stale DDR3), which causes
+     * btnp() edge detection to miss the user's real first press —
+     * symptom: user must press button TWICE on every MGL cart load
+     * for the cart to register the input. The FPGA writes fresh
+     * joystick state every frame, so this only matters for frame 0. */
+    *(volatile uint32_t*)(ddr_base + NV_JOY0_OFFSET) = 0;
+    *(volatile uint32_t*)(ddr_base + NV_JOY1_OFFSET) = 0;
+    *(volatile uint32_t*)(ddr_base + NV_JOY2_OFFSET) = 0;
+    *(volatile uint32_t*)(ddr_base + NV_JOY3_OFFSET) = 0;
     frame_counter = 0;
     active_buf = 0;
 
