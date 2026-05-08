@@ -15,6 +15,8 @@
 #include <cmath>
 #include <string>
 #include <memory>
+#include <thread>
+#include <atomic>
 
 #include <time.h>
 #include <unistd.h>
@@ -474,6 +476,28 @@ int main(int argc, char **argv)
             fprintf(stderr, "Native video: DDR3 init failed, falling back to SDL\n");
     }
 
+    // ── Keepalive thread ──────────────────────────────────────────────
+    // FPGA pico8_video_reader.sv has a 30-vblank (~500ms) staleness
+    // timeout that blanks the screen when no fresh frame counter ticks
+    // arrive. During cart hot-swap, save-state load, or .s0-wait loops,
+    // the main thread doesn't write frames for hundreds of ms — long
+    // enough to hit the timeout and produce a black flash.
+    //
+    // Solution: lightweight thread bumps the frame counter every 150ms
+    // pointing at the LAST-written buffer. FPGA's stale detector resets
+    // and keeps re-displaying the frozen previous frame instead of
+    // blanking. Same pattern as OpenBOR uses (CLAUDE.md keepalive rule).
+    std::thread keepalive_thread;
+    std::atomic<bool> keepalive_run{true};
+    if (have_native_video) {
+        keepalive_thread = std::thread([&keepalive_run]() {
+            while (keepalive_run.load()) {
+                NativeVideoWriter_KeepaliveTick();
+                usleep(150000);  /* 150ms — well under the 500ms timeout */
+            }
+        });
+    }
+
     // ── Init audio ─────────────────────────────────────────────────────
     // In native video mode, audio goes through DDR3 ring buffer to FPGA.
     // No ALSA init needed — the ring buffer is part of the DDR3 writer.
@@ -801,6 +825,8 @@ int main(int argc, char **argv)
         SDL_JoystickClose(g_sdl_joystick);
         g_sdl_joystick = NULL;
     }
+    keepalive_run.store(false);
+    if (keepalive_thread.joinable()) keepalive_thread.join();
     NativeVideoWriter_Shutdown();
 
     SDL_CloseAudio();
