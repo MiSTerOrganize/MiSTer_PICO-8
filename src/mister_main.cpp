@@ -722,40 +722,6 @@ int main(int argc, char **argv)
         // CONF_STR: "J1,O,X,Pause;" / "jn,B,Y,Start;" (SNES: B=Xbox A, Y=Xbox X)
         // joystick_N bits: 0=R 1=L 2=D 3=U 4=Xbox A(O) 5=Xbox X(X) 6=Start(Pause)
         if (have_native_video) {
-            // DIAGNOSTIC: log player-0 joystick byte for first 120 frames
-            // after cart load to investigate why MGL load shows the
-            // first-input freeze. Theory: hps_io feeds garbage to DDR3
-            // for first few frames before MiSTer Main syncs, FPGA writes
-            // that garbage to DDR3, our cart sees phantom button bits.
-            // Will be removed after diagnosis. Safe — one fprintf per
-            // frame for 120 frames = 2 seconds of logs, then quiet.
-            // DIAG v3: log joy0 changes + heartbeat every second + slow-step
-            // detection. Auto-stops after frame 600 (10 sec) to avoid spamming
-            // gameplay logs. Fires once per cart load — rare event, safe.
-            static int frames_since_cart_load = 0;
-            static uint32_t last_logged_joy = 0;
-            uint32_t joy0_diag = NativeVideoWriter_ReadJoystick(0);
-            if (frames_since_cart_load < 600) {
-                if (frames_since_cart_load < 5) {
-                    fprintf(stderr, "[joy-diag] frame=%d joy0=0x%02x\n",
-                            frames_since_cart_load, joy0_diag & 0xFF);
-                    fflush(stderr);
-                    last_logged_joy = joy0_diag;
-                }
-                else if (joy0_diag != last_logged_joy) {
-                    fprintf(stderr, "[joy-diag] frame=%d joy0=0x%02x (delta from 0x%02x)\n",
-                            frames_since_cart_load, joy0_diag & 0xFF, last_logged_joy & 0xFF);
-                    fflush(stderr);
-                    last_logged_joy = joy0_diag;
-                }
-                else if (frames_since_cart_load % 60 == 0) {
-                    fprintf(stderr, "[joy-diag] heartbeat frame=%d\n",
-                            frames_since_cart_load);
-                    fflush(stderr);
-                }
-                frames_since_cart_load++;
-            }
-
             for (int p = 0; p < 4; p++) {
                 uint32_t joy = NativeVideoWriter_ReadJoystick(p);
                 g_vm->button(p, 0, (joy >> 1) & 1);  // Left
@@ -814,19 +780,7 @@ int main(int argc, char **argv)
             }
         }
 
-        // Step the VM (DIAG v3: log slow steps for first 600 frames)
-        {
-            uint64_t step_start = get_time_ns();
-            g_vm->step(1.0f / target_fps);
-            uint64_t step_dur = get_time_ns() - step_start;
-            static int step_diag_frames = 0;
-            if (step_diag_frames < 600 && step_dur > 50'000'000ULL) {
-                fprintf(stderr, "[step-diag] frame=%d step=%.0fms\n",
-                        step_diag_frames, step_dur / 1e6);
-                fflush(stderr);
-            }
-            if (step_diag_frames < 600) step_diag_frames++;
-        }
+        g_vm->step(1.0f / target_fps);
 
         // Render video
         g_vm->render(rgba_buf);
