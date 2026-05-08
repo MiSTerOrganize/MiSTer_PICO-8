@@ -531,7 +531,13 @@ int main(int argc, char **argv)
                         fclose(f);
                         if (strlen(s0_path) > 0) {
                             char full[1024];
-                            snprintf(full, sizeof(full), "/media/fat/%s", s0_path);
+                            // OSD picks write relative paths (games/PICO-8/...);
+                            // MGL writes absolute paths (/media/fat/...).
+                            // Detect and don't double-prefix.
+                            if (s0_path[0] == '/')
+                                snprintf(full, sizeof(full), "%s", s0_path);
+                            else
+                                snprintf(full, sizeof(full), "/media/fat/%s", s0_path);
                             cart_path = std::string(full);
                             fprintf(stderr, "OSD selected: %s\n", cart_path.c_str());
                             break;
@@ -723,7 +729,12 @@ int main(int argc, char **argv)
                     fclose(f);
                     if (strlen(s0_path) > 0) {
                         char full[1024];
-                        snprintf(full, sizeof(full), "/media/fat/%s", s0_path);
+                        // Same absolute-path detection as the startup poll —
+                        // MGL hot-swaps would otherwise double-prefix /media/fat/.
+                        if (s0_path[0] == '/')
+                            snprintf(full, sizeof(full), "%s", s0_path);
+                        else
+                            snprintf(full, sizeof(full), "/media/fat/%s", s0_path);
                         if (cart_path != full) {
                             fprintf(stderr, "Hot-swap: new OSD cart %s\n", full);
                             cart_path = std::string(full);
