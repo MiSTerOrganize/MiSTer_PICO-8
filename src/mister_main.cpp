@@ -729,29 +729,32 @@ int main(int argc, char **argv)
             // that garbage to DDR3, our cart sees phantom button bits.
             // Will be removed after diagnosis. Safe — one fprintf per
             // frame for 120 frames = 2 seconds of logs, then quiet.
+            // DIAG v3: log joy0 changes + heartbeat every second + slow-step
+            // detection. Auto-stops after frame 600 (10 sec) to avoid spamming
+            // gameplay logs. Fires once per cart load — rare event, safe.
             static int frames_since_cart_load = 0;
             static uint32_t last_logged_joy = 0;
-            static int frames_after_first_press = -1;
             uint32_t joy0_diag = NativeVideoWriter_ReadJoystick(0);
-            if (frames_since_cart_load < 5) {
-                // Initial baseline (first 5 frames unconditionally)
-                fprintf(stderr, "[joy-diag] frame=%d joy0=0x%02x\n",
-                        frames_since_cart_load, joy0_diag & 0xFF);
-                fflush(stderr);
-                last_logged_joy = joy0_diag;
+            if (frames_since_cart_load < 600) {
+                if (frames_since_cart_load < 5) {
+                    fprintf(stderr, "[joy-diag] frame=%d joy0=0x%02x\n",
+                            frames_since_cart_load, joy0_diag & 0xFF);
+                    fflush(stderr);
+                    last_logged_joy = joy0_diag;
+                }
+                else if (joy0_diag != last_logged_joy) {
+                    fprintf(stderr, "[joy-diag] frame=%d joy0=0x%02x (delta from 0x%02x)\n",
+                            frames_since_cart_load, joy0_diag & 0xFF, last_logged_joy & 0xFF);
+                    fflush(stderr);
+                    last_logged_joy = joy0_diag;
+                }
+                else if (frames_since_cart_load % 60 == 0) {
+                    fprintf(stderr, "[joy-diag] heartbeat frame=%d\n",
+                            frames_since_cart_load);
+                    fflush(stderr);
+                }
+                frames_since_cart_load++;
             }
-            else if (joy0_diag != last_logged_joy && frames_after_first_press < 60) {
-                // Log every change until 1 second past first press
-                fprintf(stderr, "[joy-diag] frame=%d joy0=0x%02x (delta from 0x%02x)\n",
-                        frames_since_cart_load, joy0_diag & 0xFF, last_logged_joy & 0xFF);
-                fflush(stderr);
-                last_logged_joy = joy0_diag;
-                if (joy0_diag != 0 && frames_after_first_press < 0)
-                    frames_after_first_press = 0;
-            }
-            if (frames_after_first_press >= 0 && frames_after_first_press < 60)
-                frames_after_first_press++;
-            frames_since_cart_load++;
 
             for (int p = 0; p < 4; p++) {
                 uint32_t joy = NativeVideoWriter_ReadJoystick(p);
@@ -811,8 +814,19 @@ int main(int argc, char **argv)
             }
         }
 
-        // Step the VM
-        g_vm->step(1.0f / target_fps);
+        // Step the VM (DIAG v3: log slow steps for first 600 frames)
+        {
+            uint64_t step_start = get_time_ns();
+            g_vm->step(1.0f / target_fps);
+            uint64_t step_dur = get_time_ns() - step_start;
+            static int step_diag_frames = 0;
+            if (step_diag_frames < 600 && step_dur > 50'000'000ULL) {
+                fprintf(stderr, "[step-diag] frame=%d step=%.0fms\n",
+                        step_diag_frames, step_dur / 1e6);
+                fflush(stderr);
+            }
+            if (step_diag_frames < 600) step_diag_frames++;
+        }
 
         // Render video
         g_vm->render(rgba_buf);
