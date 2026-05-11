@@ -372,7 +372,35 @@ static int pico8_split(lua_State *l) {
     return 1;
 }
 
+/*
+** inext: PICO-8's faster ipairs iterator. Returns (i, t[i]) for the next
+** sequential index, or nil to terminate. Used as:
+**     for i, v in inext, t do ... end
+** Equivalent semantically to ipairs's iterator function in standard Lua.
+*/
+static int pico8_inext(lua_State *l) {
+    int i = luaL_optint(l, 2, 0) + 1;
+    lua_settop(l, 1);
+    lua_pushinteger(l, i);
+    lua_rawgeti(l, 1, i);
+    if (lua_isnil(l, -1))
+        return 1;  /* terminate: only push i, value is nil */
+    return 2;
+}
+
+/*
+** sub: PICO-8 exposes string substring as a global `sub(s, i, j)`. Standard
+** Lua keeps it as `string.sub`. Mirror PICO-8 by registering an alias in the
+** global table that calls the same str_sub backend.
+*/
+extern int str_sub(lua_State *l);
+static int pico8_sub(lua_State *l) {
+    return str_sub(l);
+}
+
 static const luaL_Reg pico8lib[] = {
+  {"inext", pico8_inext},
+  {"sub",   pico8_sub},
   {"max",   pico8_max},
   {"min",   pico8_min},
   {"mid",   pico8_mid},

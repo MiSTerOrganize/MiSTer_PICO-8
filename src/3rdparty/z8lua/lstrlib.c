@@ -50,7 +50,9 @@ static size_t posrelat (ptrdiff_t pos, size_t len) {
 }
 
 
-static int str_sub (lua_State *L) {
+/* MiSTer Frontier: exported (was static) so lpico8lib can register it as
+   the PICO-8 global `sub`, matching reference PICO-8's API. */
+int str_sub (lua_State *L) {
   size_t l;
   const char *s = luaL_checklstring(L, 1, &l);
   size_t start = posrelat(luaL_checkinteger(L, 2), l);
