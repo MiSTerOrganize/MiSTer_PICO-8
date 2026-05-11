@@ -998,15 +998,54 @@ static const luaL_Reg strlib[] = {
 };
 
 
+/*
+** Modern PICO-8 supports s[i] indexing on strings: returns the byte value at
+** position i (1-indexed, equivalent to ord(s, i)). z8lua's stock behavior
+** was to delegate __index to the string library, so s[1] returned nil for
+** numeric keys, breaking carts that pack arrays-of-numbers into strings
+** and iterate them by byte position.
+*/
+static int string_index (lua_State *L) {
+  /* Arg 1: the string, Arg 2: the key. The string library table is in
+     upvalue 1 (captured at createmetatable() time) so we don't depend on
+     _ENV.string being visible — e.g., zepto8 sandboxes don't propagate
+     the string global to cart code, but `s:sub()` style method calls
+     must still resolve. */
+  if (lua_isnumber(L, 2)) {
+    size_t len;
+    const char *s = lua_tolstring(L, 1, &len);
+    int idx = (int)lua_tointeger(L, 2);
+    if (idx >= 1 && (size_t)idx <= len) {
+      lua_pushnumber(L, (lua_Number)(unsigned char)s[idx - 1]);
+      return 1;
+    }
+    lua_pushnil(L);
+    return 1;
+  }
+  /* Non-numeric key: look up in the string library (preserved as upvalue
+     so methods like s:sub(), s:upper() continue to work). */
+  lua_pushvalue(L, lua_upvalueindex(1));
+  if (lua_istable(L, -1)) {
+    lua_pushvalue(L, 2);
+    lua_rawget(L, -2);
+    lua_remove(L, -2);  /* drop the string library table */
+    return 1;
+  }
+  lua_pushnil(L);
+  return 1;
+}
+
 static void createmetatable (lua_State *L) {
   lua_createtable(L, 0, 1);  /* table to be metatable for strings */
   lua_pushliteral(L, "");  /* dummy string */
   lua_pushvalue(L, -2);  /* copy table */
   lua_setmetatable(L, -2);  /* set table as metatable for strings */
   lua_pop(L, 1);  /* pop dummy string */
-  lua_pushvalue(L, -2);  /* get string library */
-  lua_setfield(L, -2, "__index");  /* metatable.__index = string */
-  lua_pop(L, 1);  /* pop metatable */
+  /* __index = closure(string_index, upvalue=string library) */
+  lua_pushvalue(L, -2);  /* push string library as the upvalue */
+  lua_pushcclosure(L, string_index, 1);
+  lua_setfield(L, -2, "__index");
+  lua_pop(L, 1);  /* pop metatable (string library stays on stack for caller) */
 }
 
 
