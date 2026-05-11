@@ -436,14 +436,29 @@ function __z8_run_cart(cart_code)
         end
     ]]
 
+    -- Distinguish "first cart launched from BIOS / OSD picker" (entry
+    -- cart) from "sub-cart loaded via load() from within a running cart".
+    -- Reference PICO-8 keeps Lua state + memory pokes alive across
+    -- load(): the new cart can see globals defined by the previous cart,
+    -- and can read whatever the previous cart poked into the user-data
+    -- memory region (commonly 0xF6D7+ for breadcrumb/state passing in
+    -- BBS multicart games). The entry cart gets full init; sub-carts
+    -- skip the memory wipe and reuse the existing sandbox.
+    local is_subcart = __z8_sandbox ~= nil
+    local sandbox = __z8_sandbox or create_sandbox()
+
     __z8_loop = cocreate(function()
 
-        __init_ram()
-        -- reload cart into memory
+        if not is_subcart then
+            __init_ram()
+        end
+        -- reload cart into memory (always — new cart's ROM at 0x0..0x4300)
         reload()
 
         __z8_reset_state()
-        __z8_reset_cartdata()
+        if not is_subcart then
+            __z8_reset_cartdata()
+        end
 
         -- Load cart and run the user-provided functions. Note that if the
         -- cart code returns before the end, our added code will not be
@@ -451,7 +466,7 @@ function __z8_run_cart(cart_code)
         -- The code has to be appended as a string because the functions
         -- may be stored in local variables.
         local code, ex = __z8_load_code(cart_code..glue_code, nil, nil,
-                                        create_sandbox())
+                                        sandbox)
         if not code then
             color(14) print('syntax error')
             poke(0x5f36, 0x80) -- activate word wrap
