@@ -59,6 +59,15 @@ template<typename... T> int lua_push(lua_State *l, std::tuple<T...> const &t)
 // Boxing an std::vector pushes each value
 template<typename... T> int lua_push(lua_State *l, std::vector<T...> const &v)
 {
+    // Default per-C-function stack reservation in Lua is LUA_MINSTACK = 20.
+    // Pushing more values than that without growing the stack writes past
+    // Lua's reserved stack array into adjacent heap memory, corrupting the
+    // allocator. Carts that call peek(addr, N) or memcpy/cstore with large
+    // N produce vectors of thousands of elements; without this call they
+    // would trip glibc's heap-corruption checks (realloc: invalid next
+    // size / munmap_chunk: invalid pointer) and abort the process.
+    if (!v.empty())
+        lua_checkstack(l, (int)v.size());
     for (auto &x : v)
         lua_push(l, x);
     return (int)v.size();

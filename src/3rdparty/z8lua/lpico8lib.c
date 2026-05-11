@@ -267,14 +267,28 @@ static int pico8_tonum(lua_State *l) {
 }
 
 static int pico8_chr(lua_State *l) {
-    // PICO-8 seems to top out at allowing 248 arguments
-    char s[248];
+    // Modern PICO-8 (v0.2.4+) accepts thousands of args to chr() — carts
+    // commonly do `chr(peek(addr, N))` to read N bytes into a Lua string in
+    // one call. The old 248-byte stack buffer truncated large reads. Switch
+    // to a small-buffer-with-heap-fallback pattern to stay zero-alloc for
+    // typical (<=512 arg) calls while handling the large case correctly.
     size_t numargs = lua_gettop(l);
-    if (numargs > sizeof(s)) numargs = sizeof(s);
+    char stack_buf[512];
+    char *s = stack_buf;
+    char *heap_buf = NULL;
+    if (numargs > sizeof(stack_buf)) {
+        heap_buf = (char *)malloc(numargs);
+        if (heap_buf == NULL) {
+            numargs = sizeof(stack_buf);
+        } else {
+            s = heap_buf;
+        }
+    }
     for (size_t i = 0; i < numargs; i++) {
         s[i] = (char)(uint8_t)lua_tonumber(l, i + 1);
     }
     lua_pushlstring(l, s, numargs);
+    if (heap_buf) free(heap_buf);
     return 1;
 }
 

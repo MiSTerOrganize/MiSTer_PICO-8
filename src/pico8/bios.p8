@@ -300,6 +300,14 @@ function load(arg, breadcrumb, params)
     else
         color(14)
         success, msg = __load(arg, breadcrumb, params), ""
+        -- Mirror reference PICO-8: if cart asked for `foo.p8` (or any name
+        -- without `.png`) and that file doesn't exist, transparently try
+        -- the `.p8.png` steganography variant. Common for BBS-distributed
+        -- multicart games where sub-carts ship only as `.p8.png` but the
+        -- cart's hardcoded load() calls reference the `.p8` source name.
+        if not success and not string.match(arg, '%.png$') then
+            success = __load(arg .. ".png", breadcrumb, params)
+        end
     end
     if success then
         print('ok')
