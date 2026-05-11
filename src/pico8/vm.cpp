@@ -1952,6 +1952,14 @@ void vm::api_extcmd(std::string cmdline)
         // Command is unimplemented
         private_stub(std::format("extcmd({})\n", cmdline));
     }
+    else if (cmd == "set_title" || cmd == "audio_rec" || cmd == "audio_end"
+          || cmd == "shutdown" || cmd == "go_back")
+    {
+        // Cosmetic / no-effect-on-MiSTer extcmds — silent no-op so carts
+        // that call extcmd("set_title", "MY GAME") don't trip the
+        // "unknown extcmd" error path. set_title sets the desktop-PICO-8
+        // window title; meaningless on MiSTer's FPGA video output.
+    }
     else
     {
         // Command is unknown

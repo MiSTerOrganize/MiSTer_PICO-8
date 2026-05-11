@@ -293,10 +293,18 @@ static int pico8_chr(lua_State *l) {
 }
 
 static int pico8_ord(lua_State *l) {
-    size_t len;
+    size_t len = 0;
     int n = 0;
     int count = 1;
-    char const *s = luaL_checklstring(l, 1, &len);
+    char const *s = NULL;
+    // Reference PICO-8 tolerates ord(nil, ...): it returns `count` zeros.
+    // Carts use ord(nil, 1, N) as an idiom for "produce N zero bytes",
+    // typically piped into poke(addr, ord(nil, 1, N)) to clear N bytes of
+    // memory (cartdata workspace, sprite scratch, etc.). Without this the
+    // first cart-init call errors with "bad argument #1 to 'ord'".
+    if (!lua_isnil(l, 1)) {
+        s = luaL_checklstring(l, 1, &len);
+    }
     if (!lua_isnone(l, 3)) {
         if (!lua_isnumber(l, 3)) return 0;
         count = int(lua_tonumber(l, 3));
@@ -305,12 +313,20 @@ static int pico8_ord(lua_State *l) {
         if (!lua_isnumber(l, 2)) return 0;
         n = int(lua_tonumber(l, 2)) - 1;
     }
-    if (n < 0 || size_t(n) >= len || count < 1)
+    if (count < 1)
+        return 0;
+    // min stack is only 20. This could be a much longer string
+    lua_checkstack(l, count);
+    if (s == NULL) {
+        // ord(nil, ...) -> count zeros
+        for (int i = 0; i < count; ++i)
+            lua_pushnumber(l, 0);
+        return count;
+    }
+    if (n < 0 || size_t(n) >= len)
         return 0;
     if (size_t(n + count) > len)
         count = len - n;
-    // min stack is only 20. This could be a much longer string
-    lua_checkstack(l, count);
     for (int i = 0; i < count; ++i)
         lua_pushnumber(l, uint8_t(s[n + i]));
     return count;
