@@ -1399,14 +1399,15 @@ opt<uint8_t> vm::api_private_pal(opt<int16_t> c0, opt<int16_t> c1, uint8_t p)
 
         if (p == 1 || p == 2)
         {
-            // Negative c1 (e.g., cart calls pal(c0, -15, 1)) is a cart-author
-            // idiom — the intent appears to be "make color c0 invisible in
-            // the screen output". Some carts use this as a HUD-hiding trick.
-            // Treat negative as a screen-palette entry of 0 (black) so the
-            // mapped pixel disappears against a black background. Inferred
-            // from cart behavior (oblivion_eve series); not verified against
-            // a specific PICO-8 doc page.
-            data = (*c1 < 0) ? 0 : (uint8_t)(*c1 & 0xff);
+            // Negative c1 (e.g., cart calls pal(c0, -15, 1)) is a cart-
+            // author idiom — modular wrap is the only sensible interpretation
+            // since negative palette indices don't exist. Mask to 4 bits so
+            // -15 → 1 (no-remap of color 1). Previously the uint8_t cast
+            // produced 0xF1, which after &0x8f routed through the extended-
+            // palette LUT as a visible color #17 — definitely not what the
+            // cart author meant. Inferred from cart-author behavior; not
+            // verified against a specific PICO-8 doc page.
+            data = (uint8_t)(*c1 & 0xf);
         }
         else
         {
