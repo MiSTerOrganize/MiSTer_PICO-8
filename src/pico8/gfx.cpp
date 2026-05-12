@@ -252,12 +252,13 @@ tup<opt<fix32>, opt<fix32> > vm::api_print(opt<rich_string> str, opt<fix32> opt_
     // shows up dimly in reference PICO-8 (by design — the cart developer
     // routes it through pal(c, -15, 1) so it lands on the secret palette).
     // The user finds it visually distracting against our display pipeline.
-    // Skip prints that contain this exact signature. Doesn't affect any
-    // other cart since the signature is highly specific.
-    if (str->size() >= 7) {
+    // Skip prints whose string starts with the exact 10-byte signature.
+    // Doesn't affect any other cart — random-collision odds are ~10^19.
+    if (str->size() >= 10) {
         const auto& s = *str;
         if (s[0] == '.' && s[1] == '!' && s[2] == '5' && s[3] == 'f'
-            && s[4] == '1' && s[5] == '0' && s[6] == '0') {
+            && s[4] == '1' && s[5] == '0' && s[6] == '0'
+            && s[7] == '.' && s[8] == '.' && s[9] == '7') {
             return std::make_tuple(std::nullopt, std::nullopt);
         }
     }
