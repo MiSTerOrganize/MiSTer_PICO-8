@@ -187,9 +187,6 @@ void vm::instruction_hook(lua_State *l, lua_Debug *)
     lua_remove(l, -1);
 #endif
 
-    // FIXME: we should verify if we are in a coroutine or not before yielding
-    // if cart is slow to render, this function can sometimes be triggered from bios
-
     // The value 135000 was found using trial and error, but it causes
     // side effects in lots of cases. Use 300000 instead.
     // FIXME: this is because we do not consider system costs, see
@@ -197,10 +194,24 @@ void vm::instruction_hook(lua_State *l, lua_Debug *)
     that->m_instructions += 1000;
     if (that->m_instructions >= that->m_max_instructions)
     {
+        // Heavy-bytecode carts (e.g. Another World, which interprets its
+        // own VM inside Lua) trip this hook from the main thread while
+        // BIOS code is running between coresume calls. lua_yield on the
+        // main thread throws "attempt to yield from outside a coroutine"
+        // and kills the cart. Check before yielding — addresses the
+        // pre-existing zepto8 FIXME on this hook.
+        // lua_pushthread returns 1 if the current thread IS the main
+        // thread (can't yield from it). We pop the pushed thread reference
+        // to avoid leaking it on every hook fire (every 1000 instructions).
+        int is_main_thread = lua_pushthread(l);
+        lua_pop(l, 1);
+
         lua_getglobal(l, "__z8_is_inside_main_loop");
         bool is_inside_loop = lua_toboolean(l, -1);
+        lua_pop(l, 1);
 
-        lua_yield(l, 0);
+        if (!is_main_thread)
+            lua_yield(l, 0);
         if (!is_inside_loop)
         {
             // should only handle buttons if we are outside _draw or _update
