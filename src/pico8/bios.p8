@@ -81,9 +81,20 @@ end
 -- We also try to mimic the PICO-8 error messages:
 --  count(nil) → attempt to get length of local 'c' (a nil value)
 --  count("x") → attempt to index local 'c' (a string value)
-function count(c)
-    local cnt,max = 0,#c
-    for i=1,max do if (c[i] != nil) cnt+=1 end
+function count(c, v)
+    -- Two PICO-8-documented forms:
+    --   count(tbl)        -- number of non-nil entries in array part
+    --   count(tbl, v)     -- number of occurrences of v in array part
+    -- We previously only implemented the first form; carts using
+    -- the second (e.g., count(D, tile_value) > 0 for collision)
+    -- always got the array length back and treated everything as a
+    -- match. oblivion_eve training was completely broken by this.
+    local cnt, max = 0, #c
+    if v == nil then
+        for i = 1, max do if (c[i] != nil) cnt += 1 end
+    else
+        for i = 1, max do if (c[i] == v) cnt += 1 end
+    end
     return cnt
 end
 
@@ -300,11 +311,14 @@ function load(arg, breadcrumb, params)
     else
         color(14)
         success, msg = __load(arg, breadcrumb, params), ""
-        -- Mirror reference PICO-8: if cart asked for `foo.p8` (or any name
-        -- without `.png`) and that file doesn't exist, transparently try
-        -- the `.p8.png` steganography variant. Common for BBS-distributed
-        -- multicart games where sub-carts ship only as `.p8.png` but the
-        -- cart's hardcoded load() calls reference the `.p8` source name.
+        -- Cart-compat fallback: if the cart asked for `foo.p8` (or any
+        -- name without `.png`) and that file doesn't exist, transparently
+        -- try the `.p8.png` steganography variant. Many BBS-distributed
+        -- multicart games ship sub-carts only as `.p8.png` but the cart's
+        -- hardcoded load() calls reference the `.p8` source name. Cart
+        -- authors seem to assume the loader will try both — we haven't
+        -- verified this against any explicit PICO-8 doc, but it's how
+        -- carts in the wild are written.
         if not success and not string.match(arg, '%.png$') then
             success = __load(arg .. ".png", breadcrumb, params)
         end
@@ -438,12 +452,14 @@ function __z8_run_cart(cart_code)
 
     -- Distinguish "first cart launched from BIOS / OSD picker" (entry
     -- cart) from "sub-cart loaded via load() from within a running cart".
-    -- Reference PICO-8 keeps user-data memory pokes alive across load()
-    -- (commonly 0xF6D7+ for breadcrumb/state passing in BBS multicart
-    -- games), so the entry cart's memory wipe is skipped for sub-carts.
-    -- The sandbox itself is recreated every load, so the new cart's own
-    -- top-level definitions (function l, function s, etc.) start from a
-    -- clean global slate and don't have to fight previous-cart values.
+    -- BBS multicart games (oblivion_eve, freezing_knights, etc.) write
+    -- breadcrumb / state into user-data memory (commonly 0xF6D7+) and
+    -- expect the next cart's peek() to see it — so on sub-cart load we
+    -- skip the memory wipe. The sandbox itself is recreated every load
+    -- so each cart's own top-level definitions (function l, function s,
+    -- etc.) start from a clean global slate and don't have to fight
+    -- previous-cart values. Inferred from observed cart-author patterns;
+    -- haven't verified against any specific PICO-8 doc.
     local is_subcart = __z8_sandbox ~= nil
     local sandbox = create_sandbox()
 
@@ -464,50 +480,14 @@ function __z8_run_cart(cart_code)
         -- here so each sub-cart can re-register its own menuitem()s.
         __z8_reset_cartdata()
 
-        -- TEMP DIAGNOSTIC: prepend a load() wrapper that logs every
-        -- load call from the cart, and append a state dump after the
-        -- cart's top-level. Used to trace why oblivion_eve sub-carts
-        -- bounce back to title. Remove once cart is working.
-        local diag_prefix = [[
-local _diag_orig_load = load
-load = function(arg, breadcrumb, params)
-    printh("[diag-load] arg='" .. tostr(arg) .. "'", "stderr")
-    return _diag_orig_load(arg, breadcrumb, params)
-end
-]]
-        -- We'd like to gsub-patch the cart source to inject diag inside
-        -- e2/ed, but that runs into a string-metatable bug in BIOS. Skip
-        -- it — diag_prefix/suffix below give us enough signal.
-        -- Note: leading `--` so this glues cleanly onto cart_code even
-        -- when cart_code lacks a trailing newline (same trick glue_code
-        -- uses). Without it, `endprinth` would be parsed as one token.
-        local diag_suffix = [[--
-printh("[diag] cart top-level finished", "stderr")
-if x ~= nil then
-    printh("[diag] x type=" .. type(x), "stderr")
-    if type(x) == "table" then
-        for k=1,5 do
-            local v = x[k]
-            printh("[diag]  x[" .. k .. "]=" .. type(v) .. ":" .. tostr(v), "stderr")
-        end
-    end
-end
-if p ~= nil then
-    printh("[diag] p type=" .. type(p), "stderr")
-    if type(p) == "table" then
-        printh("[diag]  p.hp=" .. tostr(p.hp) .. " p.damage=" .. tostr(p.damage), "stderr")
-    end
-end
-]]
         -- Load cart and run the user-provided functions. Note that if the
         -- cart code returns before the end, our added code will not be
         -- executed, and nothing will work. This is also PICO-8’s behaviour.
         -- The code has to be appended as a string because the functions
         -- may be stored in local variables.
-        local code, ex = __z8_load_code(diag_prefix..cart_code..diag_suffix..glue_code, nil, nil,
+        local code, ex = __z8_load_code(cart_code..glue_code, nil, nil,
                                         sandbox)
         if not code then
-            __stub("[diag] CART COMPILE FAILED: " .. tostr(ex))
             color(14) print('syntax error')
             poke(0x5f36, 0x80) -- activate word wrap
             color(6) print(ex)
