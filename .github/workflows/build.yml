@@ -79,23 +79,35 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         continue-on-error: true   # don't lose the artifact upload if push races
         run: |
-          cp build-arm/PICO-8 games/PICO-8/PICO-8
-          chmod +x games/PICO-8/PICO-8
+          # Save the freshly-built binary outside the worktree so we can
+          # always restore it after any rebase/conflict, no matter what
+          # state main is in.
+          mkdir -p /tmp/ci-binary
+          cp build-arm/PICO-8 /tmp/ci-binary/PICO-8
           git config user.email "ci@misterorganize"
           git config user.name "MiSTer Organize CI"
-          if ! git diff --quiet games/PICO-8/PICO-8; then
+          # Try up to 5 times — if main moved (sibling CI raced ahead),
+          # reset to origin/main, overwrite the binary with OUR fresh one,
+          # commit, push. Avoid `git pull --rebase` because the binary
+          # merge conflict cannot be auto-resolved.
+          for i in 1 2 3 4 5; do
+            git fetch origin main
+            git reset --hard origin/main
+            cp /tmp/ci-binary/PICO-8 games/PICO-8/PICO-8
+            chmod +x games/PICO-8/PICO-8
+            if git diff --quiet games/PICO-8/PICO-8; then
+              echo "ARM binary unchanged after sync — nothing to commit."
+              break
+            fi
             git add games/PICO-8/PICO-8
             git commit -m "CI: rebuild ARM binary for ${{ github.sha }}"
-            # Push with retry — if main moved during build, fast-forward and try again
-            for i in 1 2 3; do
-              git push && break
-              echo "Push failed (attempt $i), pulling and retrying..."
-              git pull --rebase origin main || break
-              sleep 2
-            done
-          else
-            echo "ARM binary unchanged."
-          fi
+            if git push; then
+              echo "Push succeeded on attempt $i."
+              break
+            fi
+            echo "Push failed (attempt $i), resyncing and retrying..."
+            sleep 2
+          done
 
       - name: Package release zip
         run: |
