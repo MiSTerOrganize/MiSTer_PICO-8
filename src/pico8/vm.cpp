@@ -626,10 +626,21 @@ void vm::api_reload(int16_t in_dst, int16_t in_src, opt<int16_t> in_size, opt<st
         // Load cart from a file
         auto reload_cart = std::make_shared<cart>();
         bool ok = load_cart(*reload_cart, name);
-        if (!ok) {
+        // Log both success and failure — rare-event (per bank swap, not per
+        // frame). Tells us the exact sequence of bank loads, which maps to
+        // AW's game-part transitions: bank_11 = game_part2, bank_16 = part3,
+        // etc. If we see part3's bank then part2's bank reload, the cart is
+        // forcing the loop-back via bytecode (vs cart silently stuck).
+        size_t slash = name.find_last_of("/\\");
+        const char *base = (slash != std::string::npos) ? name.c_str() + slash + 1 : name.c_str();
+        if (ok) {
+            fprintf(stderr, "[reload] OK '%s' (dst=0x%x src=0x%x size=0x%x)\n",
+                    base, dst, src, amount);
+        } else {
             fprintf(stderr, "[reload] FAILED to load '%s' (dst=0x%x src=0x%x size=0x%x) -- destination will be zero-filled\n",
                     name.c_str(), dst, src, amount);
         }
+        fflush(stderr);
         // copy rom from loaded cart
         ::memcpy(&m_ram[dst], &reload_cart->get_rom()[src], amount);
     }
