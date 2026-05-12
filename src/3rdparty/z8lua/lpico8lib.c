@@ -297,11 +297,12 @@ static int pico8_ord(lua_State *l) {
     int n = 0;
     int count = 1;
     char const *s = NULL;
-    // Reference PICO-8 tolerates ord(nil, ...): it returns `count` zeros.
-    // Carts use ord(nil, 1, N) as an idiom for "produce N zero bytes",
-    // typically piped into poke(addr, ord(nil, 1, N)) to clear N bytes of
-    // memory (cartdata workspace, sprite scratch, etc.). Without this the
-    // first cart-init call errors with "bad argument #1 to 'ord'".
+    // Cart-compat: carts in the wild use ord(nil, 1, N) as an idiom for
+    // "produce N zero bytes", typically piped into poke(addr, ord(nil, 1, N))
+    // to clear N bytes of memory (cartdata workspace, sprite scratch, etc.).
+    // Without nil-tolerance the first cart-init call errors with "bad
+    // argument #1 to 'ord'". Inferred from cart-author usage patterns —
+    // not verified against a specific PICO-8 doc.
     if (!lua_isnil(l, 1)) {
         s = luaL_checklstring(l, 1, &len);
     }

@@ -51,7 +51,8 @@ static size_t posrelat (ptrdiff_t pos, size_t len) {
 
 
 /* MiSTer Frontier: exported (was static) so lpico8lib can register it as
-   the PICO-8 global `sub`, matching reference PICO-8's API. */
+   the PICO-8 global `sub`. Carts written for lexaloffle's PICO-8 use a
+   bare `sub(s, i, j)` call rather than `string.sub`, so we expose it. */
 int str_sub (lua_State *L) {
   size_t l;
   const char *s = luaL_checklstring(L, 1, &l);
@@ -1021,11 +1022,13 @@ static int string_index (lua_State *L) {
     const char *s = lua_tolstring(L, 1, &len);
     int idx = (int)lua_tointeger(L, 2);
     if (idx >= 1 && (size_t)idx <= len) {
-      /* Return a 1-char SUBSTRING at position idx (PICO-8 semantics:
-         s[i] is equivalent to sub(s, i, i)). Carts pack ASCII-digit
-         tile maps and rely on "9" + 0 → 9 via tonumber coercion.
-         Returning a byte value would give 57, which doesn't match
-         cart's solid-tile set {1,2,3,4,9}. */
+      /* Return a 1-char SUBSTRING at position idx — equivalent to
+         sub(s, i, i). Carts pack ASCII-digit tile maps and rely on
+         "9" + 0 → 9 via tonumber coercion; returning a byte value
+         would give 57 (the ASCII code), which doesn't match the
+         cart's solid-tile set {1,2,3,4,9}. Inferred from cart
+         behavior (oblivion_eve series); we have not verified this
+         against a specific PICO-8 doc, but it's what carts need. */
       lua_pushlstring(L, s + idx - 1, 1);
       return 1;
     }
