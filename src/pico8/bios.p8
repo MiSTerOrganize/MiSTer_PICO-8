@@ -438,14 +438,14 @@ function __z8_run_cart(cart_code)
 
     -- Distinguish "first cart launched from BIOS / OSD picker" (entry
     -- cart) from "sub-cart loaded via load() from within a running cart".
-    -- Reference PICO-8 keeps Lua state + memory pokes alive across
-    -- load(): the new cart can see globals defined by the previous cart,
-    -- and can read whatever the previous cart poked into the user-data
-    -- memory region (commonly 0xF6D7+ for breadcrumb/state passing in
-    -- BBS multicart games). The entry cart gets full init; sub-carts
-    -- skip the memory wipe and reuse the existing sandbox.
+    -- Reference PICO-8 keeps user-data memory pokes alive across load()
+    -- (commonly 0xF6D7+ for breadcrumb/state passing in BBS multicart
+    -- games), so the entry cart's memory wipe is skipped for sub-carts.
+    -- The sandbox itself is recreated every load, so the new cart's own
+    -- top-level definitions (function l, function s, etc.) start from a
+    -- clean global slate and don't have to fight previous-cart values.
     local is_subcart = __z8_sandbox ~= nil
-    local sandbox = __z8_sandbox or create_sandbox()
+    local sandbox = create_sandbox()
 
     __z8_loop = cocreate(function()
 
