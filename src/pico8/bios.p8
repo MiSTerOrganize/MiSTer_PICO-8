@@ -456,9 +456,13 @@ function __z8_run_cart(cart_code)
         reload()
 
         __z8_reset_state()
-        if not is_subcart then
-            __z8_reset_cartdata()
-        end
+        -- Always reset cartdata: cartdata() is per-cart-session in PICO-8
+        -- (each cart can claim its own id once). Without this reset on
+        -- sub-cart load, the new cart's cartdata() call hits our BIOS
+        -- "can only be called once" guard, abort()s the cart, and the
+        -- multicart bounces back to title. Menu items are also cleared
+        -- here so each sub-cart can re-register its own menuitem()s.
+        __z8_reset_cartdata()
 
         -- Load cart and run the user-provided functions. Note that if the
         -- cart code returns before the end, our added code will not be
