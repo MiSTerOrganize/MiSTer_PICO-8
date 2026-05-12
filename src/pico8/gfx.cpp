@@ -1367,7 +1367,7 @@ void vm::api_ovalfill(int16_t x0, int16_t y0, int16_t x1, int16_t y1,
     }
 }
 
-opt<uint8_t> vm::api_private_pal(opt<uint8_t> c0, opt<uint8_t> c1, uint8_t p)
+opt<uint8_t> vm::api_private_pal(opt<int16_t> c0, opt<int16_t> c1, uint8_t p)
 {
     auto &ds = m_ram.draw_state;
     auto &hw = m_ram.hw_state;
@@ -1377,8 +1377,8 @@ opt<uint8_t> vm::api_private_pal(opt<uint8_t> c0, opt<uint8_t> c1, uint8_t p)
         // calling with one non-0 parameter don't do anything
         if (c0 && (*c0)!=0 && !c1) return std::nullopt;
 
-        // PICO-8 documentation: “pal() to reset to system defaults (including
-        // transparency values and fill pattern)”
+        // PICO-8 manual: pal() resets to system defaults (including
+        // transparency values and fill pattern).
         for (int i = 0; i < 16; ++i)
         {
             ds.draw_palette[i] = i | (i ? 0x00 : 0x10);
@@ -1398,9 +1398,20 @@ opt<uint8_t> vm::api_private_pal(opt<uint8_t> c0, opt<uint8_t> c1, uint8_t p)
         uint8_t prev = data;
 
         if (p == 1 || p == 2)
-            data = *c1 & 0xff;
+        {
+            // Negative c1 (e.g., cart calls pal(c0, -15, 1)) is a cart-author
+            // idiom — the intent appears to be "make color c0 invisible in
+            // the screen output". Some carts use this as a HUD-hiding trick.
+            // Treat negative as a screen-palette entry of 0 (black) so the
+            // mapped pixel disappears against a black background. Inferred
+            // from cart behavior (oblivion_eve series); not verified against
+            // a specific PICO-8 doc page.
+            data = (*c1 < 0) ? 0 : (uint8_t)(*c1 & 0xff);
+        }
         else
-            data = (data & 0x10) | (*c1 & 0xf); // Transparency bit is preserved
+        {
+            data = (data & 0x10) | (*c1 & 0xf); // Transparency bit preserved
+        }
 
         return prev%16;
     }
