@@ -1399,15 +1399,14 @@ opt<uint8_t> vm::api_private_pal(opt<int16_t> c0, opt<int16_t> c1, uint8_t p)
 
         if (p == 1 || p == 2)
         {
-            // Negative c1 (e.g., cart calls pal(c0, -15, 1)) is a cart-
-            // author idiom — modular wrap is the only sensible interpretation
-            // since negative palette indices don't exist. Mask to 4 bits so
-            // -15 → 1 (no-remap of color 1). Previously the uint8_t cast
-            // produced 0xF1, which after &0x8f routed through the extended-
-            // palette LUT as a visible color #17 — definitely not what the
-            // cart author meant. Inferred from cart-author behavior; not
-            // verified against a specific PICO-8 doc page.
-            data = (uint8_t)(*c1 & 0xf);
+            // PICO-8 documented behavior: only the bottom 8 bits of c1 are
+            // used as the palette index. Bit 7 routes to the "secret"
+            // palette (colors 16..31). Negative c1 values are a valid
+            // idiom — e.g., -15 == 0xFFFFFFF1, bottom 8 bits = 0xF1, bit 7
+            // set => secret color 1. Carts use this for dim/watermark
+            // effects. See PICO-8 wiki "Palette" page and Lexaloffle BBS
+            // tid=29028 ("Secret Pico 8 Colors").
+            data = (uint8_t)(*c1 & 0xff);
         }
         else
         {
