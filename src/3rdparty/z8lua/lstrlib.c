@@ -1010,8 +1010,13 @@ static int string_index (lua_State *L) {
      upvalue 1 (captured at createmetatable() time) so we don't depend on
      _ENV.string being visible — e.g., zepto8 sandboxes don't propagate
      the string global to cart code, but `s:sub()` style method calls
-     must still resolve. */
-  if (lua_isnumber(L, 2)) {
+     must still resolve.
+
+     IMPORTANT: use strict type check (LUA_TNUMBER), NOT lua_isnumber,
+     which also returns true for numeric-looking strings. We only want
+     real numeric keys to hit the byte-value branch — method names like
+     "gsub", "find", etc. MUST fall through to the string library. */
+  if (lua_type(L, 2) == LUA_TNUMBER) {
     size_t len;
     const char *s = lua_tolstring(L, 1, &len);
     int idx = (int)lua_tointeger(L, 2);

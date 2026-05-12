@@ -464,14 +464,50 @@ function __z8_run_cart(cart_code)
         -- here so each sub-cart can re-register its own menuitem()s.
         __z8_reset_cartdata()
 
+        -- TEMP DIAGNOSTIC: prepend a load() wrapper that logs every
+        -- load call from the cart, and append a state dump after the
+        -- cart's top-level. Used to trace why oblivion_eve sub-carts
+        -- bounce back to title. Remove once cart is working.
+        local diag_prefix = [[
+local _diag_orig_load = load
+load = function(arg, breadcrumb, params)
+    printh("[diag-load] arg='" .. tostr(arg) .. "'", "stderr")
+    return _diag_orig_load(arg, breadcrumb, params)
+end
+]]
+        -- We'd like to gsub-patch the cart source to inject diag inside
+        -- e2/ed, but that runs into a string-metatable bug in BIOS. Skip
+        -- it — diag_prefix/suffix below give us enough signal.
+        -- Note: leading `--` so this glues cleanly onto cart_code even
+        -- when cart_code lacks a trailing newline (same trick glue_code
+        -- uses). Without it, `endprinth` would be parsed as one token.
+        local diag_suffix = [[--
+printh("[diag] cart top-level finished", "stderr")
+if x ~= nil then
+    printh("[diag] x type=" .. type(x), "stderr")
+    if type(x) == "table" then
+        for k=1,5 do
+            local v = x[k]
+            printh("[diag]  x[" .. k .. "]=" .. type(v) .. ":" .. tostr(v), "stderr")
+        end
+    end
+end
+if p ~= nil then
+    printh("[diag] p type=" .. type(p), "stderr")
+    if type(p) == "table" then
+        printh("[diag]  p.hp=" .. tostr(p.hp) .. " p.damage=" .. tostr(p.damage), "stderr")
+    end
+end
+]]
         -- Load cart and run the user-provided functions. Note that if the
         -- cart code returns before the end, our added code will not be
         -- executed, and nothing will work. This is also PICO-8’s behaviour.
         -- The code has to be appended as a string because the functions
         -- may be stored in local variables.
-        local code, ex = __z8_load_code(cart_code..glue_code, nil, nil,
+        local code, ex = __z8_load_code(diag_prefix..cart_code..diag_suffix..glue_code, nil, nil,
                                         sandbox)
         if not code then
+            __stub("[diag] CART COMPILE FAILED: " .. tostr(ex))
             color(14) print('syntax error')
             poke(0x5f36, 0x80) -- activate word wrap
             color(6) print(ex)
