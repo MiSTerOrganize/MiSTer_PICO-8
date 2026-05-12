@@ -497,6 +497,15 @@ bool vm::step(float /* seconds */)
 
 void vm::button(int player, int index, int state)
 {
+    // Edge-trigger diagnostic for press-X loop investigation.
+    // Logs only on state transitions, not per-frame holds.
+    static int last_state[4][8] = {{0}};
+    if (player < 4 && index < 8 && state != last_state[player][index]) {
+        fprintf(stderr, "[input] p%d btn%d -> %d (was %d)\n",
+                player, index, state, last_state[player][index]);
+        fflush(stderr);
+        last_state[player][index] = state;
+    }
     m_state.buttons[1][player * 8 + index] += state;
 }
 
@@ -803,6 +812,26 @@ void vm::api_poke4(int16_t addr, std::vector<fix32> args)
     // Note: poke4() is the same as poke4(0, 0)
     if (args.empty())
         args.push_back(fix32(0));
+
+    // 1Hz summary of poke4 traffic for AW diagnostic — counts calls hitting
+    // screen memory (0x6000-0x8000) vs extended memory (0x8000+). Rare-event
+    // logging: fires at most once per second.
+    static int screen_pokes_this_sec = 0;
+    static int ext_pokes_this_sec = 0;
+    static int big_writes_this_sec = 0;
+    static auto last_log = std::chrono::steady_clock::now();
+    uint16_t uaddr = (uint16_t)addr;
+    if (uaddr >= 0x6000 && uaddr < 0x8000) screen_pokes_this_sec++;
+    else if (uaddr >= 0x8000) ext_pokes_this_sec++;
+    if (args.size() > 100) big_writes_this_sec++;
+    auto now = std::chrono::steady_clock::now();
+    if (std::chrono::duration_cast<std::chrono::milliseconds>(now - last_log).count() >= 1000) {
+        fprintf(stderr, "[poke4-1s] screen=%d ext=%d big(>100)=%d\n",
+                screen_pokes_this_sec, ext_pokes_this_sec, big_writes_this_sec);
+        fflush(stderr);
+        screen_pokes_this_sec = ext_pokes_this_sec = big_writes_this_sec = 0;
+        last_log = now;
+    }
 
     for (auto val : args)
     {
