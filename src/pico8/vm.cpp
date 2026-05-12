@@ -680,11 +680,21 @@ uint8_t vm::raw_peek(int16_t addr)
     return m_ram[addr];
 }
 
+// Modern PICO-8 (v0.2.4+) supports peek(addr, n) for large n — carts pack
+// data tables (map state, packed sprites, audio buffers) into the 64K RAM
+// and read them out as long byte strings via chr(peek(addr, N)). Old cap
+// of 8192 truncated reads silently; carts saw nil for indices > 8192.
+// PICO-8's documented maximum is the full 64K RAM. Bump cap to 32768 for
+// peek/peek2 and 8192 for peek4 (peek4 returns 4 bytes per entry, so 8192
+// entries = 32K bytes — same effective byte cap).
+static constexpr size_t PEEK_BYTE_MAX = 32768;
+static constexpr size_t PEEK4_ENTRY_MAX = 8192;
+
 std::vector<int16_t> vm::api_peek(int16_t addr, opt<int16_t> count)
 {
     std::vector<int16_t> ret;
     // Note: peek() is the same as peek(0)
-    size_t n = count ? std::max(0, std::min(int(*count), 8192)) : 1;
+    size_t n = count ? std::max(0, std::min(int(*count), int(PEEK_BYTE_MAX))) : 1;
 
     for ( ; ret.size() < n; ++addr)
     {
@@ -699,7 +709,7 @@ std::vector<int16_t> vm::api_peek(int16_t addr, opt<int16_t> count)
 std::vector<int16_t> vm::api_peek2(int16_t addr, opt<int16_t> count)
 {
     std::vector<int16_t> ret;
-    size_t n = count ? std::max(0, std::min(int(*count), 8192)) : 1;
+    size_t n = count ? std::max(0, std::min(int(*count), int(PEEK_BYTE_MAX / 2))) : 1;
 
     for ( ; ret.size() < n; addr += 2)
     {
@@ -717,7 +727,7 @@ std::vector<int16_t> vm::api_peek2(int16_t addr, opt<int16_t> count)
 std::vector<fix32> vm::api_peek4(int16_t addr, opt<int16_t> count)
 {
     std::vector<fix32> ret;
-    size_t n = count ? std::max(0, std::min(int(*count), 8192)) : 1;
+    size_t n = count ? std::max(0, std::min(int(*count), int(PEEK4_ENTRY_MAX))) : 1;
 
     for ( ; ret.size() < n; addr += 4)
     {
