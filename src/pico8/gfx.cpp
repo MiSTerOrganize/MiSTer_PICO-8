@@ -248,17 +248,18 @@ tup<opt<fix32>, opt<fix32> > vm::api_print(opt<rich_string> str, opt<fix32> opt_
         return std::make_tuple(std::nullopt, std::nullopt); // return 0 arguments
 
     // Cart-specific watermark filter (oblivion_eve series, 2026-05-12):
-    // The carts include a hidden-palette watermark string ".!5f100..7" that
-    // shows up dimly in reference PICO-8 (by design — the cart developer
-    // routes it through pal(c, -15, 1) so it lands on the secret palette).
-    // The user finds it visually distracting against our display pipeline.
-    // Skip prints whose string starts with the exact 10-byte signature.
-    // Doesn't affect any other cart — random-collision odds are ~10^19.
-    if (str->size() >= 10) {
+    // The carts include a hidden-palette watermark string that starts with
+    // the bytes <P8SCII 0x06> ! 5 f 1 0 0. The cart routes it through the
+    // secret palette via pal(c, -15, 1) so it shows as dim glyphs ("5F100"
+    // followed by PICO-8 button icons) in reference PICO-8. On our display
+    // pipeline the contrast is high enough to be visually distracting.
+    // Skip prints whose string starts with this exact 7-byte signature.
+    // Random-collision odds are ~10^14, and the leading 0x06 is a P8SCII
+    // control char that no normal cart text would start with.
+    if (str->size() >= 7) {
         const auto& s = *str;
-        if (s[0] == '.' && s[1] == '!' && s[2] == '5' && s[3] == 'f'
-            && s[4] == '1' && s[5] == '0' && s[6] == '0'
-            && s[7] == '.' && s[8] == '.' && s[9] == '7') {
+        if ((uint8_t)s[0] == 0x06 && s[1] == '!' && s[2] == '5'
+            && s[3] == 'f' && s[4] == '1' && s[5] == '0' && s[6] == '0') {
             return std::make_tuple(std::nullopt, std::nullopt);
         }
     }
