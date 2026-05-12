@@ -605,7 +605,11 @@ void vm::api_reload(int16_t in_dst, int16_t in_src, opt<int16_t> in_size, opt<st
             name += ".p8";
         // Load cart from a file
         auto reload_cart = std::make_shared<cart>();
-        load_cart(*reload_cart, name);
+        bool ok = load_cart(*reload_cart, name);
+        if (!ok) {
+            fprintf(stderr, "[reload] FAILED to load '%s' (dst=0x%x src=0x%x size=0x%x) -- destination will be zero-filled\n",
+                    name.c_str(), dst, src, amount);
+        }
         // copy rom from loaded cart
         ::memcpy(&m_ram[dst], &reload_cart->get_rom()[src], amount);
     }
