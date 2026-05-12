@@ -1021,7 +1021,12 @@ static int string_index (lua_State *L) {
     const char *s = lua_tolstring(L, 1, &len);
     int idx = (int)lua_tointeger(L, 2);
     if (idx >= 1 && (size_t)idx <= len) {
-      lua_pushnumber(L, (lua_Number)(unsigned char)s[idx - 1]);
+      /* Return a 1-char SUBSTRING at position idx (PICO-8 semantics:
+         s[i] is equivalent to sub(s, i, i)). Carts pack ASCII-digit
+         tile maps and rely on "9" + 0 → 9 via tonumber coercion.
+         Returning a byte value would give 57, which doesn't match
+         cart's solid-tile set {1,2,3,4,9}. */
+      lua_pushlstring(L, s + idx - 1, 1);
       return 1;
     }
     lua_pushnil(L);
