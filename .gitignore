@@ -4,6 +4,9 @@ fpga/output_files/*.sof
 fpga/output_files/*.rpt
 fpga/output_files/*.smsg
 fpga/output_files/*.summary
+# Keep timing summaries — referenced by CLAUDE.md audit; committed
+# alongside every Quartus recompile so timing closure history survives.
+!fpga/output_files/*.sta.summary
 fpga/output_files/*.done
 fpga/output_files/*.pin
 fpga/output_files/*.jdi
