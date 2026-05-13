@@ -511,6 +511,15 @@ function __z8_tick()
         _update_buttons()
         if not __z8_pause_menu() then
             __mask_buttons()
+            -- Restore palette state captured at pause entry — see
+            -- __z8_enter_pause for rationale (AW pink-sky-on-unpause bug).
+            local sp = __z8_menu.saved_pal
+            if sp then
+                poke4(0x5f00, sp[1]) poke4(0x5f04, sp[2]) poke4(0x5f08, sp[3]) poke4(0x5f0c, sp[4])
+                poke4(0x5f10, sp[5]) poke4(0x5f14, sp[6]) poke4(0x5f18, sp[7]) poke4(0x5f1c, sp[8])
+                poke4(0x5f60, sp[9]) poke4(0x5f64, sp[10]) poke4(0x5f68, sp[11]) poke4(0x5f6c, sp[12])
+                __z8_menu.saved_pal = nil
+            end
             __z8_paused = false
         end
         __z8_frame_hold = false
@@ -593,6 +602,18 @@ end
 
 function __z8_enter_pause()
     __mask_buttons()
+    -- Snapshot palette state so the pause menu's pal() reset on line 656
+    -- doesn't permanently clobber the cart's palette mapping. AW (Another
+    -- World) sets screen_palette[N] = sky_blue at scene transitions only;
+    -- without this save/restore, after unpause the sky reverts to default
+    -- (pink for N=14) and stays wrong until the next scene change.
+    -- Captures: 0x5f00-0x5f1f (draw + screen palette) and 0x5f60-0x5f6f
+    -- (raster palette). 48 bytes = 12 fix32 slots.
+    __z8_menu.saved_pal = {
+        peek4(0x5f00), peek4(0x5f04), peek4(0x5f08), peek4(0x5f0c),
+        peek4(0x5f10), peek4(0x5f14), peek4(0x5f18), peek4(0x5f1c),
+        peek4(0x5f60), peek4(0x5f64), peek4(0x5f68), peek4(0x5f6c),
+    }
     __z8_paused = true
     __z8_menu.cursor = 0
 end
