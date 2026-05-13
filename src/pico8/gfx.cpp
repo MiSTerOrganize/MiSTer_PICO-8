@@ -275,7 +275,37 @@ tup<opt<fix32>, opt<fix32> > vm::api_print(opt<rich_string> str, opt<fix32> opt_
 
     // FIXME: we ignore fillp here, but should we set it in to_color_bits()?
     uint32_t color_bits = to_color_bits(has_coords ? c : opt_x) & 0xf'0000;
-    
+
+    // AW corruption diagnostic: AW's drawstring relies on print(s,x,y,1)
+    // writing literal nibble 1 to a temp buffer, then peeking it back and
+    // multiplying by the target color via fix32 to produce colored pixels.
+    // The formula breaks if draw_palette[1] != 1 because set_pixel routes
+    // the requested color through draw_palette. Log draw_palette[0..15] +
+    // the resolved color_bits (post-palette) so we can see exactly what
+    // pen value is hitting screen memory. Cap at 8 fires per cart load.
+    {
+        static int print_log_count = 0;
+        if (print_log_count < 8) {
+            print_log_count++;
+            uint8_t requested = (uint8_t)(ds.pen & 0xf);
+            uint8_t resolved  = (uint8_t)((color_bits >> 16) & 0xf);
+            fprintf(stderr,
+                "[print-diag] pen=0x%02x resolved_nibble=0x%01x "
+                "dp[0..7]=%x %x %x %x %x %x %x %x "
+                "dp[8..15]=%x %x %x %x %x %x %x %x\n",
+                requested, resolved,
+                ds.draw_palette[0]  & 0xf, ds.draw_palette[1]  & 0xf,
+                ds.draw_palette[2]  & 0xf, ds.draw_palette[3]  & 0xf,
+                ds.draw_palette[4]  & 0xf, ds.draw_palette[5]  & 0xf,
+                ds.draw_palette[6]  & 0xf, ds.draw_palette[7]  & 0xf,
+                ds.draw_palette[8]  & 0xf, ds.draw_palette[9]  & 0xf,
+                ds.draw_palette[10] & 0xf, ds.draw_palette[11] & 0xf,
+                ds.draw_palette[12] & 0xf, ds.draw_palette[13] & 0xf,
+                ds.draw_palette[14] & 0xf, ds.draw_palette[15] & 0xf);
+            fflush(stderr);
+        }
+    }
+
     fix32 initial_x = has_coords ? *opt_x : fix32(ds.print_start_x);
     fix32 initial_y = y;
 
