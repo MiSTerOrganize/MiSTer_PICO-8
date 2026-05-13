@@ -428,7 +428,41 @@ void vm::get_audio(void *inbuffer, size_t in_bytes)
         }
         channel_mix += sample;
     }
-        
+
+    // Mix PCM streaming channel (serial(0x808)). Carts that do their own
+    // audio mixing (e.g., AW's pure-Lua 4-channel PCM mixer in aw.p8:900-1110)
+    // push 8-bit unsigned mono PCM at 5512 Hz into m_pcm_ring; we upsample to
+    // 22050 Hz via linear interpolation between adjacent ring samples.
+    // Phase tracks the fractional read position in 16.16 fixed-point; we
+    // step by PCM_PHASE_STEP per output sample.
+    if (m_pcm_consumed + 1 < m_pcm_written) {
+        uint32_t idx0 = m_pcm_consumed & PCM_RING_MASK;
+        uint32_t idx1 = (m_pcm_consumed + 1) & PCM_RING_MASK;
+        // Convert unsigned 8-bit (silence = 128) to centered signed 16-bit:
+        // (byte - 128) * 256 => range -32768..+32512.
+        int s0 = (int(m_pcm_ring[idx0]) - 128) << 8;
+        int s1 = (int(m_pcm_ring[idx1]) - 128) << 8;
+        float frac = float(m_pcm_phase & 0xffff) * (1.0f / 65536.0f);
+        float pcm_sample = float(s0) + (float(s1) - float(s0)) * frac;
+        channel_mix += pcm_sample;
+        m_pcm_phase += PCM_PHASE_STEP;
+        // Each time the integer part of phase increments, advance the
+        // consumed pointer by one ring sample.
+        while (m_pcm_phase >= 0x10000u && m_pcm_consumed + 1 < m_pcm_written) {
+            m_pcm_phase -= 0x10000u;
+            m_pcm_consumed++;
+        }
+        // Safety: if we've caught up (cart isn't keeping pace), keep phase
+        // bounded so we don't accumulate fractional debt that snaps when
+        // the cart resumes writing.
+        if (m_pcm_phase >= 0x10000u && m_pcm_consumed + 1 >= m_pcm_written) {
+            m_pcm_phase = 0;
+        }
+    }
+    // Note: when the ring is dry (cart hasn't shipped enough yet), we mix
+    // zero PCM — silence, no advance of m_pcm_consumed. stat(109) - stat(108)
+    // grows until the cart catches up, which it will on the next frame.
+
         buffer[i] = (int16_t)(std::clamp(channel_mix, -32767.9f, 32767.9f));
     }
 

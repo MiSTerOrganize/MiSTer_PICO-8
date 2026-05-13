@@ -438,6 +438,26 @@ private:
     std::vector<std::shared_ptr<u4mat2<128, 128>>> m_multiscreens;
 
     bool m_in_pause = false;
+
+    // PCM streaming channel (serial(0x808)). Carts doing custom audio mixing
+    // (Another World's pure-Lua 4-channel mixer is the only one in our test
+    // set) write 8-bit unsigned mono PCM at 5512 Hz into the stream; get_audio
+    // upsamples to 22050 Hz via linear interpolation and mixes into the
+    // regular SFX/music output. See feedback_pcm_streaming_serial_0x808.md.
+    static constexpr size_t PCM_RING_SIZE = 4096; // power of 2
+    static constexpr uint32_t PCM_RING_MASK = PCM_RING_SIZE - 1;
+    static constexpr uint32_t PCM_LOOKAHEAD = 512; // bytes the engine asks
+                                                   // the cart to stay ahead;
+                                                   // ~93ms at 5512 Hz
+    uint8_t m_pcm_ring[PCM_RING_SIZE] = {0};
+    uint32_t m_pcm_written = 0;   // bytes cart has shipped via serial(0x808)
+    uint32_t m_pcm_consumed = 0;  // bytes get_audio has consumed
+    // Fixed-point fractional phase for 5512 Hz -> 22050 Hz upsample.
+    // Step per output sample = round(5512 * 65536 / 22050) = 16385.
+    // Drift vs ideal ~3 ppm, well below audible.
+    uint32_t m_pcm_phase = 0;
+    static constexpr uint32_t PCM_PHASE_STEP = 16385;
+
 public:
     bool is_paused() const { return m_in_pause; }
     void close_pause() { private_set_pause(false); }
