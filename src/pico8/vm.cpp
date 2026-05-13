@@ -1726,6 +1726,15 @@ var<bool, int16_t, fix32, std::string, std::nullptr_t> vm::api_stat(int16_t id)
     if (id == 101)
         return nullptr;
 
+    // PCM streaming channel (serial(0x808)) bookkeeping.
+    // stat(108) = bytes the cart has shipped via serial(0x808).
+    // stat(109) = bytes the audio engine wants by now = consumed + LOOKAHEAD.
+    // Cart computes len = stat(109) - stat(108) and writes that many bytes
+    // to catch up. On first call this pre-fills LOOKAHEAD bytes; subsequent
+    // calls write the consumption rate.
+    if (id == 108) return int16_t(m_pcm_written & 0xffff);
+    if (id == 109) return int16_t((m_pcm_consumed + PCM_LOOKAHEAD) & 0xffff);
+
     if (id == 120) return false; // TODO: implement serial
     if (id == 121) return false; // TODO: implement serial
     if (id == 120) return false; // TODO: implement serial
@@ -2137,6 +2146,20 @@ var<bool, int16_t> vm::api_btnp(opt<int16_t> n, int16_t p)
 
 void vm::api_serial(int16_t chan, int16_t address, int16_t len)
 {
+    // PCM streaming channel: capture bytes from PICO-8 RAM at `address` into
+    // the PCM ring buffer for playback by get_audio. AW (Another World) does
+    // pure-Lua mixing into a temp buffer and ships it via this channel.
+    // PICO-8 PCM format: 8-bit unsigned mono at 5512 Hz, silence = 128.
+    if ((uint16_t)chan == 0x808) {
+        uint16_t addr = (uint16_t)address;
+        uint16_t n = (uint16_t)len;
+        for (uint16_t i = 0; i < n; ++i) {
+            uint8_t b = raw_peek((int16_t)(addr + i));
+            m_pcm_ring[m_pcm_written & PCM_RING_MASK] = b;
+            m_pcm_written++;
+        }
+        return;
+    }
     private_stub(std::format("serial(0x{:4x}, 0x{:4x}, 0x{:4x})", chan, address, len));
 }
 
