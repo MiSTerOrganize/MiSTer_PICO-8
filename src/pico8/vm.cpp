@@ -764,6 +764,20 @@ std::vector<fix32> vm::api_peek4(int16_t addr, opt<int16_t> count)
     std::vector<fix32> ret;
     size_t n = count ? std::max(0, std::min(int(*count), int(PEEK4_ENTRY_MAX))) : 1;
 
+    // AW corruption diagnostic: log the FIRST 16 peek4 calls hitting
+    // extended memory (>= 0x8000). AW writes pixel data to its page
+    // buffers at 0x8000+ then peek4s the page back during updatedisplay.
+    // If we see written values readback corrupted, the bug is in the
+    // peek path. Cap at 16 logs so it stays rare-event.
+    static int ext_peek_log_count = 0;
+    uint16_t uaddr = (uint16_t)addr;
+    if (uaddr >= 0x8000 && ext_peek_log_count < 16) {
+        ext_peek_log_count++;
+        fprintf(stderr, "[ext-peek4] addr=0x%04x n=%zu first_byte=0x%02x\n",
+                uaddr, n, (unsigned)raw_peek(addr));
+        fflush(stderr);
+    }
+
     for ( ; ret.size() < n; addr += 4)
     {
         int32_t bits = 0;
@@ -823,6 +837,21 @@ void vm::api_poke4(int16_t addr, std::vector<fix32> args)
     // Note: poke4() is the same as poke4(0, 0)
     if (args.empty())
         args.push_back(fix32(0));
+
+    // AW corruption diagnostic: log the FIRST 16 poke4 calls hitting
+    // extended memory (>= 0x8000). Cap at 16 logs (rare-event budget).
+    // If write-then-read round-trip via [ext-peek4] returns different
+    // bytes than what [ext-poke4] wrote, we have direct evidence of
+    // ext-memory corruption.
+    static int ext_poke_log_count = 0;
+    uint16_t uaddr = (uint16_t)addr;
+    if (uaddr >= 0x8000 && ext_poke_log_count < 16) {
+        ext_poke_log_count++;
+        uint32_t first_val = args.empty() ? 0 : (uint32_t)args[0].bits();
+        fprintf(stderr, "[ext-poke4] addr=0x%04x count=%zu first_val=0x%08x\n",
+                uaddr, args.size(), first_val);
+        fflush(stderr);
+    }
 
     for (auto val : args)
     {
