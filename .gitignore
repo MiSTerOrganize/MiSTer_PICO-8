@@ -1,21 +1,20 @@
 fpga/db/
 fpga/incremental_db/
+# Large Quartus intermediates — regenerate on every compile, 1-10MB each.
 fpga/output_files/*.sof
 fpga/output_files/*.rpt
-fpga/output_files/*.smsg
-fpga/output_files/*.summary
-# Keep timing summaries — referenced by CLAUDE.md audit; committed
-# alongside every Quartus recompile so timing closure history survives.
-!fpga/output_files/*.sta.summary
 fpga/output_files/*.done
-fpga/output_files/*.pin
-fpga/output_files/*.jdi
-fpga/output_files/*.sld
 fpga/output_files/*.flow.rpt
 fpga/output_files/*.fit.rpt
 fpga/output_files/*.map.rpt
 fpga/output_files/*.sta.rpt
 fpga/output_files/*.asm.rpt
+# KEEP all .summary files (sta = timing closure, fit = resource
+# utilization including ALM/DSP/M10K/PLL counts, map = synthesis stats).
+# Tiny (~5 KB total) and load-bearing for audits + capacity planning.
+# KEEP .smsg too (compile-time warnings, small).
+# Anything else explicitly kept (pins/jdi/sld/etc.) is already tracked
+# via direct git add; this gitignore doesn't re-shadow them.
 fpga/build_id.v
 fpga/*.qws
 fpga/c5_pin_model_dump.txt
