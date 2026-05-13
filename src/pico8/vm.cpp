@@ -764,26 +764,6 @@ std::vector<fix32> vm::api_peek4(int16_t addr, opt<int16_t> count)
     std::vector<fix32> ret;
     size_t n = count ? std::max(0, std::min(int(*count), int(PEEK4_ENTRY_MAX))) : 1;
 
-    // AW corruption diagnostic: log bulk peek4 reads (n >= 256). AW's blit
-    // is `poke4(0x6600, peek4(_curpageptr2[0], 1280))` — peek4 returns 1280
-    // fix32s, then immediately becomes the args of a poke4 to screen mem.
-    // If z8lua's varargs round-trip truncates that vector, we'd see scattered
-    // stale-pixel noise — matching the AW corruption pattern. Log first/last
-    // bits so the matching [bulk-poke4] entry can be cross-checked.
-    static int bulk_peek_log_count = 0;
-    if (n >= 256 && bulk_peek_log_count < 16) {
-        bulk_peek_log_count++;
-        // Read first and last fix32 bits directly (without disturbing addr).
-        int32_t first_bits = 0, last_bits = 0;
-        for (int i = 0; i < 4; ++i) {
-            first_bits |= raw_peek(addr + i) << (8 * i);
-            last_bits  |= raw_peek(addr + (int)(n-1)*4 + i) << (8 * i);
-        }
-        fprintf(stderr, "[bulk-peek4] addr=0x%04x n=%zu first=0x%08x last=0x%08x\n",
-                (uint16_t)addr, n, (uint32_t)first_bits, (uint32_t)last_bits);
-        fflush(stderr);
-    }
-
     for ( ; ret.size() < n; addr += 4)
     {
         int32_t bits = 0;
@@ -843,24 +823,6 @@ void vm::api_poke4(int16_t addr, std::vector<fix32> args)
     // Note: poke4() is the same as poke4(0, 0)
     if (args.empty())
         args.push_back(fix32(0));
-
-    // AW corruption diagnostic: log bulk poke4 writes (args.size() >= 256).
-    // The expected pattern from AW is `poke4(0x6600, peek4(...,1280))` — if
-    // we see args.size() < 1280 here while [bulk-peek4] reported n=1280, then
-    // z8lua's varargs handling is truncating the vector mid-blit and the
-    // scattered-noise corruption is fully explained. Log first AND last arg
-    // bits so we can verify the vector content end-to-end (truncation would
-    // show a "last" value that doesn't correspond to the matching peek's
-    // tail value).
-    static int bulk_poke_log_count = 0;
-    if (args.size() >= 256 && bulk_poke_log_count < 16) {
-        bulk_poke_log_count++;
-        uint32_t first_val = (uint32_t)args.front().bits();
-        uint32_t last_val  = (uint32_t)args.back().bits();
-        fprintf(stderr, "[bulk-poke4] addr=0x%04x count=%zu first=0x%08x last=0x%08x\n",
-                (uint16_t)addr, args.size(), first_val, last_val);
-        fflush(stderr);
-    }
 
     for (auto val : args)
     {

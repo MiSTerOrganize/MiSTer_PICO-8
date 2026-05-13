@@ -218,12 +218,22 @@ static int call_orderTM (lua_State *L, const TValue *p1, const TValue *p2,
 }
 
 
-#define PEEK(ram, address) (ram && (address < 0x8000) ? ram[address] : 0)
+/* PICO-8 RAM is the full 64K (0x0000-0xFFFF); extended memory at 0x8000-0xFFFF
+   is general-purpose RAM available to carts since PICO-8 0.2.4. The original
+   mask `& 0x7fff` + the `address < 0x8000` PEEK guard were vestigial from the
+   pre-0.2.4 32K layout — they silently aliased every $/%/@ shorthand read of
+   0x8000+ down to 0x0000+ (gfx/spritesheet area), which broke any cart that
+   peeked extended-memory page buffers via shorthand operators (Another World
+   does this in drawstring via `$q` for blend background, producing the
+   text-band multicolor noise corruption seen 2026-05-13). The regular peek()
+   API call already handled extended memory correctly via api_peek; this fix
+   brings the shorthand path in line. */
+#define PEEK(ram, address) (ram && (address) < 0x10000 ? ram[address] : 0)
 
 lua_Number luaV_peek(struct lua_State *L, lua_Number a, int count)
 {
   unsigned char const *p = G(L)->pico8memory;
-  int address = int(a) & 0x7fff;
+  int address = int(a) & 0xffff;
   uint32_t ret = 0;
   switch (count) {
     case 4:
