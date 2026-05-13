@@ -104,6 +104,16 @@ uint8_t vm::pixel(int x, int y, u4mat2<128, 128> const& screen) const
 
     int c = screen.get(x, y);
 
+    // AW DIAGNOSTIC EXPERIMENT (2026-05-12): temporarily disable raster mode
+    // lookup to isolate whether the per-pixel multicolor noise corruption in
+    // AW's gameplay/text screens comes from the raster-mode pixel-lookup path
+    // (AW activates poke(0x5f5f, 0x30)) or from elsewhere in the pipeline.
+    // If corruption disappears with this disabled but background fills
+    // become wrong (black instead of sky-blue), raster mode is the bug.
+    // If corruption persists with this disabled, raster mode is NOT the
+    // bug and we look elsewhere (peek4/poke4 on extended memory,
+    // memset value-narrowing, etc.).
+#if 0
     // Apply raster mode
     if (hw_state.raster.mode == 0x10)
     {
@@ -120,6 +130,7 @@ uint8_t vm::pixel(int x, int y, u4mat2<128, 128> const& screen) const
             return normalize_palette_color(hw_state.raster.palette[c2]);
         }
     }
+#endif
 
     return normalize_palette_color(draw_state.screen_palette[c]);
 }
