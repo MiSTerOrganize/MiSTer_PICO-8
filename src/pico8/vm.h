@@ -349,6 +349,7 @@ public:
 
             { "music", bind<&vm::api_music>() },
             { "sfx",   bind<&vm::api_sfx>() },
+            { "serial", bind<&vm::api_serial>() },
 
             { "time", bind<&vm::api_time>() },
 
