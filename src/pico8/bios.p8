@@ -243,7 +243,10 @@ abort = stub("abort")
 folder = stub("folder")
 resume = stub("resume")
 reboot = stub("reboot")
-serial = stub("serial")
+-- serial: bound directly to vm::api_serial in the C++ exported_api table
+-- (vm.h). Do NOT shadow with a Lua stub here — that would intercept every
+-- cart's serial() call before it reaches our PCM streaming implementation
+-- (serial(0x808) for AW's pure-Lua mixer; commit ccd76f6 + this fix).
 
 function _update_buttons()
     if(not __z8_button_updated) __buttons()
