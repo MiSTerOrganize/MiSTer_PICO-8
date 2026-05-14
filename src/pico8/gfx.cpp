@@ -1557,6 +1557,29 @@ void vm::api_rectfill(int16_t x0, int16_t y0, int16_t x1, int16_t y1,
 {
     auto &ds = m_ram.draw_state;
 
+    // TEMP DIAGNOSTIC: log rectfill calls matching the oblivion_eve gear
+    // clear (0, 64, 40, 104) so we can see if it's correctly clearing
+    // sprite memory when mapping_screen=0. Limited to first 10 events.
+    static int rf_diag = 0;
+    bool is_target = (x0 == 0 && y0 == 64 && x1 == 40 && y1 == 104);
+    if (is_target && rf_diag < 10)
+    {
+        // Sample sprite memory BEFORE rectfill at pixel (0..40, 64..71)
+        // — one row of sprite data, color histogram.
+        auto &gfx_before = m_ram.gfx;
+        int h_before[16] = {0};
+        for (int sy = 64; sy < 104; ++sy)
+            for (int sx = 0; sx < 40; ++sx)
+                h_before[gfx_before.get(sx, sy) & 0xf]++;
+        fprintf(stderr, "[rectfill #%d] cam=(%d,%d) mapping_screen=0x%02x "
+                "BEFORE color hist (0..40, 64..104):",
+                rf_diag, (int)ds.camera.x, (int)ds.camera.y,
+                m_ram.hw_state.mapping_screen);
+        for (int c = 0; c < 16; ++c)
+            if (h_before[c]) fprintf(stderr, " c%d=%d", c, h_before[c]);
+        fprintf(stderr, "\n");
+    }
+
     x0 -= ds.camera.x;
     y0 -= ds.camera.y;
     x1 -= ds.camera.x;
@@ -1583,6 +1606,23 @@ void vm::api_rectfill(int16_t x0, int16_t y0, int16_t x1, int16_t y1,
 
     for (int16_t y = y0; y <= y1; ++y)
         hline(x0, x1, y, color_bits);
+
+    // TEMP DIAGNOSTIC continuation: log AFTER state for the oblivion_eve
+    // gear rectfill (0, 64, 40, 104). We logged BEFORE above; now AFTER.
+    if (is_target && rf_diag < 10)
+    {
+        auto &gfx_after = m_ram.gfx;
+        int h_after[16] = {0};
+        for (int sy = 64; sy < 104; ++sy)
+            for (int sx = 0; sx < 40; ++sx)
+                h_after[gfx_after.get(sx, sy) & 0xf]++;
+        fprintf(stderr, "[rectfill #%d]   AFTER color hist (0..40, 64..104):",
+                rf_diag);
+        for (int c = 0; c < 16; ++c)
+            if (h_after[c]) fprintf(stderr, " c%d=%d", c, h_after[c]);
+        fprintf(stderr, "\n");
+        rf_diag++;
+    }
 }
 
 int16_t vm::api_sget(int16_t x, int16_t y)
