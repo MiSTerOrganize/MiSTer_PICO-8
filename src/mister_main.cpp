@@ -97,8 +97,21 @@ static volatile int g_savestate_load_request = -1;
 static pthread_t g_audio_thread;
 static volatile bool g_audio_running = false;
 
-// Upsample 22050Hz mono → 48000Hz stereo using nearest-neighbor
-// Returns number of stereo output samples written
+// Upsample 22050Hz mono → 48000Hz stereo using LINEAR INTERPOLATION
+// between adjacent input samples. The previous nearest-neighbor / sample-
+// and-hold approach (replicating each input sample for ~2.18 output
+// samples) introduced audible aliasing — especially on percussive content
+// like POOM gunshots/explosions which sounded "rough/grainy" vs PC.
+// Linear interp is per the build guide's documented sweet spot for
+// game-cart audio (1 mul + 1 add per sample, negligible CPU cost).
+//
+// 22050→48000 is a non-integer ratio (factor 2.176...), so nearest-
+// neighbor copies samples N=2,2,3,2,2,3,... times in an irregular pattern,
+// creating a quantization-step waveform that aliases high frequencies.
+// Linear interp smooths between samples using the fractional part of the
+// fixed-point accumulator.
+//
+// Returns number of stereo output samples written.
 static int upsample_mono_to_stereo(const int16_t *mono_in, int in_samples,
                                     int16_t *stereo_out, int max_out)
 {
@@ -110,9 +123,20 @@ static int upsample_mono_to_stereo(const int16_t *mono_in, int in_samples,
     while (out_count < max_out) {
         uint32_t src_idx = accum >> 16;
         if (src_idx >= (uint32_t)in_samples) break;
-        int16_t s = mono_in[src_idx];
-        stereo_out[out_count * 2 + 0] = s;  // Left
-        stereo_out[out_count * 2 + 1] = s;  // Right (mono duplicate)
+        int32_t s0 = mono_in[src_idx];
+        // Use next sample if available; clamp to last sample at buffer end
+        // (the next buffer's first sample will continue the interpolation
+        //  on the next call — minor boundary effect is inaudible).
+        int32_t s1 = (src_idx + 1 < (uint32_t)in_samples)
+                     ? mono_in[src_idx + 1] : s0;
+        // Fractional position between samples (0 = s0, 65536 = s1)
+        int32_t frac = (int32_t)(accum & 0xFFFF);
+        // Linear interp: out = s0 + (s1 - s0) * frac / 65536
+        // Done as (s0*(65536-frac) + s1*frac) >> 16 to avoid signed shift issues
+        int32_t s = (s0 * (int32_t)(65536 - frac) + s1 * frac) >> 16;
+        int16_t s16 = (int16_t)s;  // safe — interpolation of int16s stays in int16 range
+        stereo_out[out_count * 2 + 0] = s16;  // Left
+        stereo_out[out_count * 2 + 1] = s16;  // Right (mono duplicate)
         out_count++;
         accum += step;
     }
