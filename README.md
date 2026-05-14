@@ -60,7 +60,7 @@ Extract the release zip to the root of your MiSTer SD card (`/media/fat/`):
 ├── savestates/
 │   └── PICO-8/                            Save state files (created automatically — <cart>_<slot>.ss)
 └── Scripts/
-    └── Install_PICO-8.sh                  Install script
+    └── Install_MiSTer_Frontier.sh         Install script (shipped by MiSTer_Frontier — unified across all Frontier cores)
 ```
 
 ## Usage
