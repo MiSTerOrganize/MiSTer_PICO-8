@@ -39,6 +39,24 @@ void vm::private_end_render()
 
 void vm::render(lol::u8vec4 *screen) const
 {
+    // TEMP DIAGNOSTIC (oblivion_eve gear-pixel investigation 2026-05-14,
+    //   remove after fix): snapshot the FRONT draw_state.screen_palette
+    //   that render() will actually use, plus the raw m_ram one for cross
+    //   check, on the first 60 frames. Cheap (60 fprintf, 32 bytes each).
+    static int diag_rcount = 0;
+    if (diag_rcount < 60)
+    {
+        fprintf(stderr, "[render #%d] front_sp[0..15]=",
+                diag_rcount);
+        for (int i = 0; i < 16; ++i)
+            fprintf(stderr, "%02x ", m_front_draw_state.screen_palette[i]);
+        fprintf(stderr, "| live_sp[0..15]=");
+        for (int i = 0; i < 16; ++i)
+            fprintf(stderr, "%02x ", m_ram.draw_state.screen_palette[i]);
+        fprintf(stderr, "\n");
+        diag_rcount++;
+    }
+
     // Cannot use a 256-value LUT because data access will be
     // very random due to rotation, flip, stretch etc.
     lol::u8vec4 lut[128 + 16];
