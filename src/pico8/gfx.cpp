@@ -694,7 +694,7 @@ tup<opt<fix32>, opt<fix32> > vm::api_print(opt<rich_string> str, opt<fix32> opt_
                     }
                     update_registers();
                 }
-                if (diag_count < 10)
+                if (diag_count < 60)
                 {
                     fprintf(stderr, "[p8scii-poke #%d] addr=0x%04x n=%d bytes=",
                             diag_count, diag_addr, diag_n);
