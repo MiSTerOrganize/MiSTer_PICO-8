@@ -247,23 +247,6 @@ tup<opt<fix32>, opt<fix32> > vm::api_print(opt<rich_string> str, opt<fix32> opt_
     if (!str)
         return std::make_tuple(std::nullopt, std::nullopt); // return 0 arguments
 
-    // Cart-specific watermark filter (oblivion_eve series, 2026-05-12):
-    // The carts include a hidden-palette watermark string that starts with
-    // the bytes <P8SCII 0x06> ! 5 f 1 0 0. The cart routes it through the
-    // secret palette via pal(c, -15, 1) so it shows as dim glyphs ("5F100"
-    // followed by PICO-8 button icons) in reference PICO-8. On our display
-    // pipeline the contrast is high enough to be visually distracting.
-    // Skip prints whose string starts with this exact 7-byte signature.
-    // Random-collision odds are ~10^14, and the leading 0x06 is a P8SCII
-    // control char that no normal cart text would start with.
-    if (str->size() >= 7) {
-        const auto& s = *str;
-        if ((uint8_t)s[0] == 0x06 && s[1] == '!' && s[2] == '5'
-            && s[3] == 'f' && s[4] == '1' && s[5] == '0' && s[6] == '0') {
-            return std::make_tuple(std::nullopt, std::nullopt);
-        }
-    }
-
     // The presence of y indicates whether mode is print(s,c) or print(s,x,y,c)
     bool has_coords = !!opt_y;
     // FIXME: make x and y int16_t instead?
@@ -666,6 +649,41 @@ tup<opt<fix32>, opt<fix32> > vm::api_print(opt<rich_string> str, opt<fix32> opt_
                     draw_one_off = true;
                     chi = chicp;
                 }
+                break;
+            }
+            case '!':
+            {
+                // P8SCII POKE escape: \^!XXXXdata...
+                //   XXXX = 4 hex chars (16-bit address)
+                //   data = remaining bytes of the string, written sequentially
+                //          to addr, addr+1, addr+2... Each char is one byte.
+                //
+                // Carts use this to bulk-write the screen palette (0x5F10-)
+                // including secret-palette entries with bit 7 set. Without
+                // this handler, prints like print"\^!5F100\x80\x86..." (which
+                // oblivion_eve uses for its dim/atmospheric color scheme)
+                // silently no-op, and the cart renders with default colors.
+                int addr = 0;
+                bool ok = true;
+                for (int i = 0; i < 4; ++i)
+                {
+                    if (++chi == str.value().end()) { ok = false; break; }
+                    char c = (char)*chi;
+                    int d;
+                    if (c >= '0' && c <= '9') d = c - '0';
+                    else if (c >= 'a' && c <= 'f') d = c - 'a' + 10;
+                    else if (c >= 'A' && c <= 'F') d = c - 'A' + 10;
+                    else { ok = false; break; }
+                    addr = addr * 16 + d;
+                }
+                if (ok)
+                {
+                    while (++chi != str.value().end())
+                        raw_poke((int16_t)(addr++), (uint8_t)*chi);
+                    update_registers();
+                }
+                // Consume the rest of the string — no more visible chars.
+                chi = str.value().end();
                 break;
             }
             }
