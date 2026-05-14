@@ -112,23 +112,6 @@ void vm::set_pixel(int16_t x, int16_t y, uint32_t color_bits)
 
     get_current_screen().set(x, y, color);
 
-    // TEMP DIAGNOSTIC: log every color-7 OR color-14 pixel write that
-    // lands in the visible screen (mapping_screen == 0x60). Both 7 and
-    // 14 render as grass green via screen_palette[7]=0x8B and
-    // screen_palette[14]=0x8B (SECRET 11) in oblivion_eve. First 100
-    // events combined. We're hunting the smartalloc splash green-dots.
-    static int pgrn = 0;
-    if (pgrn < 100 && (color == 7 || color == 14) && hw.mapping_screen == 0x60
-        && !m_in_pause)  // skip pause menu writes — irrelevant here
-    {
-        fprintf(stderr, "[grn-pset #%d c=%d] (%d,%d) cb=0x%08x dp[0..15]=",
-                pgrn, (int)color, (int)x, (int)y, (unsigned)color_bits);
-        for (int i = 0; i < 16; ++i)
-            fprintf(stderr, "%02x ", ds.draw_palette[i]);
-        fprintf(stderr, "pen=%d cam=(%d,%d)\n",
-                ds.pen, (int)ds.camera.x, (int)ds.camera.y);
-        pgrn++;
-    }
 }
 
 void vm::hline(int16_t x1, int16_t x2, int16_t y, uint32_t color_bits)

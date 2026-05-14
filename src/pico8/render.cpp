@@ -44,31 +44,33 @@ void vm::render(lol::u8vec4 *screen) const
     //   that render() will actually use, plus the raw m_ram one for cross
     //   check, on the first 60 frames. Cheap (60 fprintf, 32 bytes each).
     static int diag_rcount = 0;
-    if (diag_rcount < 180)  // 3 seconds @ 60fps — captures full splash
+    if (diag_rcount < 360)  // 6 seconds @ 60fps — covers full ~5s splash + buffer
     {
-        // Count framebuffer pixels of suspicious-green colors. In
-        // oblivion_eve, screen_palette[7]=0x8B AND screen_palette[14]=0x8B
-        // both render as SECRET 11 grass green. So pixels with fb-value 7
-        // OR 14 show as grass green on display.
-        int c7_count = 0, c11_count = 0, c14_count = 0;
+        // FULL per-frame histogram of all 16 framebuffer color values.
+        int hist[16] = {0};
         for (int yy = 0; yy < 128; ++yy)
             for (int xx = 0; xx < 128; ++xx)
+                hist[m_front_buffer.get(xx, yy) & 0xf]++;
+        fprintf(stderr, "[fb #%d] hist:", diag_rcount);
+        for (int c = 0; c < 16; ++c)
+            if (hist[c]) fprintf(stderr, " c%d=%d", c, hist[c]);
+        fprintf(stderr, "\n");
+
+        // For ALL captured frames: log positions of pixels with
+        // green-mapped colors specifically (7, 11, 14) so we catch the
+        // splash green pixels whenever they appear. Limit 30 positions
+        // per frame.
+        int logged = 0;
+        for (int yy = 0; yy < 128 && logged < 30; ++yy)
+            for (int xx = 0; xx < 128 && logged < 30; ++xx)
             {
-                uint8_t v = m_front_buffer.get(xx, yy);
-                if (v == 7) c7_count++;
-                else if (v == 11) c11_count++;
-                else if (v == 14) c14_count++;
+                uint8_t v = m_front_buffer.get(xx, yy) & 0xf;
+                if (v == 7 || v == 11 || v == 14)
+                {
+                    fprintf(stderr, "  fb[%d,%d]=%d\n", xx, yy, (int)v);
+                    logged++;
+                }
             }
-        // Only log frames where any green-mapped pixels are present (or
-        // every 30 frames so we still get a baseline).
-        if (c7_count > 0 || c11_count > 0 || c14_count > 0 || diag_rcount % 30 == 0)
-        {
-            fprintf(stderr, "[render #%d] c7=%d c11=%d c14=%d front_sp[0..15]=",
-                    diag_rcount, c7_count, c11_count, c14_count);
-            for (int i = 0; i < 16; ++i)
-                fprintf(stderr, "%02x ", m_front_draw_state.screen_palette[i]);
-            fprintf(stderr, "\n");
-        }
         diag_rcount++;
     }
 
