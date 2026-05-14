@@ -113,13 +113,20 @@ void vm::set_pixel(int16_t x, int16_t y, uint32_t color_bits)
     get_current_screen().set(x, y, color);
 
     // TEMP DIAGNOSTIC: log every color-7 pixel write that lands in the
-    // visible screen (mapping_screen == 0x60). First 50 events. Tells us
-    // EXACTLY where on the framebuffer the green pixels come from.
+    // visible screen (mapping_screen == 0x60). First 30 events. Tells us
+    // EXACTLY where on the framebuffer the green pixels come from + the
+    // current draw_palette state (to find any pal() that's remapping a
+    // color to 7).
     static int p7 = 0;
-    if (p7 < 50 && color == 7 && hw.mapping_screen == 0x60)
+    if (p7 < 30 && color == 7 && hw.mapping_screen == 0x60)
     {
-        fprintf(stderr, "[c7-pset #%d] (%d,%d) color_bits=0x%08x\n",
+        fprintf(stderr, "[c7-pset #%d] (%d,%d) color_bits=0x%08x dp[0..15]=",
                 p7, (int)x, (int)y, (unsigned)color_bits);
+        for (int i = 0; i < 16; ++i)
+            fprintf(stderr, "%02x ", ds.draw_palette[i]);
+        fprintf(stderr, "pen=%d cam=(%d,%d) clip=(%d,%d,%d,%d)\n",
+                ds.pen, (int)ds.camera.x, (int)ds.camera.y,
+                ds.clip.x1, ds.clip.y1, ds.clip.x2, ds.clip.y2);
         p7++;
     }
 }
