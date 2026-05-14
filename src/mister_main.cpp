@@ -599,7 +599,7 @@ int main(int argc, char **argv)
                 }
                 if (cart_path.empty()) break; // quit was requested
             } else {
-                // SDL cart browser (normal fbcon mode)
+                // SDL cart browser (dummy driver — no fbcon)
                 if (g_sdl_joystick) {
                     SDL_JoystickClose(g_sdl_joystick);
                     g_sdl_joystick = NULL;
