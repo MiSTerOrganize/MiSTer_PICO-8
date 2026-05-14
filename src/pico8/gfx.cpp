@@ -112,22 +112,22 @@ void vm::set_pixel(int16_t x, int16_t y, uint32_t color_bits)
 
     get_current_screen().set(x, y, color);
 
-    // TEMP DIAGNOSTIC: log every color-7 pixel write that lands in the
-    // visible screen (mapping_screen == 0x60). First 30 events. Tells us
-    // EXACTLY where on the framebuffer the green pixels come from + the
-    // current draw_palette state (to find any pal() that's remapping a
-    // color to 7).
-    static int p7 = 0;
-    if (p7 < 30 && color == 7 && hw.mapping_screen == 0x60)
+    // TEMP DIAGNOSTIC: log every color-7 OR color-14 pixel write that
+    // lands in the visible screen (mapping_screen == 0x60). Both 7 and
+    // 14 render as grass green via screen_palette[7]=0x8B and
+    // screen_palette[14]=0x8B (SECRET 11) in oblivion_eve. First 100
+    // events combined. We're hunting the smartalloc splash green-dots.
+    static int pgrn = 0;
+    if (pgrn < 100 && (color == 7 || color == 14) && hw.mapping_screen == 0x60
+        && !m_in_pause)  // skip pause menu writes — irrelevant here
     {
-        fprintf(stderr, "[c7-pset #%d] (%d,%d) color_bits=0x%08x dp[0..15]=",
-                p7, (int)x, (int)y, (unsigned)color_bits);
+        fprintf(stderr, "[grn-pset #%d c=%d] (%d,%d) cb=0x%08x dp[0..15]=",
+                pgrn, (int)color, (int)x, (int)y, (unsigned)color_bits);
         for (int i = 0; i < 16; ++i)
             fprintf(stderr, "%02x ", ds.draw_palette[i]);
-        fprintf(stderr, "pen=%d cam=(%d,%d) clip=(%d,%d,%d,%d)\n",
-                ds.pen, (int)ds.camera.x, (int)ds.camera.y,
-                ds.clip.x1, ds.clip.y1, ds.clip.x2, ds.clip.y2);
-        p7++;
+        fprintf(stderr, "pen=%d cam=(%d,%d)\n",
+                ds.pen, (int)ds.camera.x, (int)ds.camera.y);
+        pgrn++;
     }
 }
 
