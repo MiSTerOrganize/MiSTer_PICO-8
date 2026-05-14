@@ -677,35 +677,11 @@ tup<opt<fix32>, opt<fix32> > vm::api_print(opt<rich_string> str, opt<fix32> opt_
                     else { ok = false; break; }
                     addr = addr * 16 + d;
                 }
-                // TEMP DIAGNOSTIC (oblivion_eve gear-pixel investigation
-                //   2026-05-14, remove after fix lands): log the first 10
-                //   P8SCII POKE events to stderr with the actual byte payload
-                //   so we can verify what's landing in memory.
-                static int diag_count = 0;
-                uint8_t diag_bytes[32];
-                int diag_n = 0;
-                int diag_addr = addr;
                 if (ok)
                 {
                     while (++chi != str.value().end())
-                    {
-                        uint8_t b = (uint8_t)*chi;
-                        raw_poke((int16_t)(addr++), b);
-                        if (diag_n < 32) diag_bytes[diag_n++] = b;
-                    }
+                        raw_poke((int16_t)(addr++), (uint8_t)*chi);
                     update_registers();
-                }
-                if (diag_count < 60)
-                {
-                    fprintf(stderr, "[p8scii-poke #%d] addr=0x%04x n=%d bytes=",
-                            diag_count, diag_addr, diag_n);
-                    for (int i = 0; i < diag_n && i < 32; ++i)
-                        fprintf(stderr, "%02x ", diag_bytes[i]);
-                    fprintf(stderr, "| post-poke screen_palette[0..15]=");
-                    for (int i = 0; i < 16; ++i)
-                        fprintf(stderr, "%02x ", m_ram.draw_state.screen_palette[i]);
-                    fprintf(stderr, "\n");
-                    diag_count++;
                 }
                 // Consume the rest of the string — no more visible chars.
                 chi = str.value().end();
@@ -1597,29 +1573,6 @@ void vm::api_rectfill(int16_t x0, int16_t y0, int16_t x1, int16_t y1,
 {
     auto &ds = m_ram.draw_state;
 
-    // TEMP DIAGNOSTIC: log rectfill calls matching the oblivion_eve gear
-    // clear (0, 64, 40, 104) so we can see if it's correctly clearing
-    // sprite memory when mapping_screen=0. Limited to first 10 events.
-    static int rf_diag = 0;
-    bool is_target = (x0 == 0 && y0 == 64 && x1 == 40 && y1 == 104);
-    if (is_target && rf_diag < 10)
-    {
-        // Sample sprite memory BEFORE rectfill at pixel (0..40, 64..71)
-        // — one row of sprite data, color histogram.
-        auto &gfx_before = m_ram.gfx;
-        int h_before[16] = {0};
-        for (int sy = 64; sy < 104; ++sy)
-            for (int sx = 0; sx < 40; ++sx)
-                h_before[gfx_before.get(sx, sy) & 0xf]++;
-        fprintf(stderr, "[rectfill #%d] cam=(%d,%d) mapping_screen=0x%02x "
-                "BEFORE color hist (0..40, 64..104):",
-                rf_diag, (int)ds.camera.x, (int)ds.camera.y,
-                m_ram.hw_state.mapping_screen);
-        for (int c = 0; c < 16; ++c)
-            if (h_before[c]) fprintf(stderr, " c%d=%d", c, h_before[c]);
-        fprintf(stderr, "\n");
-    }
-
     x0 -= ds.camera.x;
     y0 -= ds.camera.y;
     x1 -= ds.camera.x;
@@ -1646,23 +1599,6 @@ void vm::api_rectfill(int16_t x0, int16_t y0, int16_t x1, int16_t y1,
 
     for (int16_t y = y0; y <= y1; ++y)
         hline(x0, x1, y, color_bits);
-
-    // TEMP DIAGNOSTIC continuation: log AFTER state for the oblivion_eve
-    // gear rectfill (0, 64, 40, 104). We logged BEFORE above; now AFTER.
-    if (is_target && rf_diag < 10)
-    {
-        auto &gfx_after = m_ram.gfx;
-        int h_after[16] = {0};
-        for (int sy = 64; sy < 104; ++sy)
-            for (int sx = 0; sx < 40; ++sx)
-                h_after[gfx_after.get(sx, sy) & 0xf]++;
-        fprintf(stderr, "[rectfill #%d]   AFTER color hist (0..40, 64..104):",
-                rf_diag);
-        for (int c = 0; c < 16; ++c)
-            if (h_after[c]) fprintf(stderr, " c%d=%d", c, h_after[c]);
-        fprintf(stderr, "\n");
-        rf_diag++;
-    }
 }
 
 int16_t vm::api_sget(int16_t x, int16_t y)

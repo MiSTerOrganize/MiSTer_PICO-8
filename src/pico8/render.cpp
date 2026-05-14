@@ -39,41 +39,6 @@ void vm::private_end_render()
 
 void vm::render(lol::u8vec4 *screen) const
 {
-    // TEMP DIAGNOSTIC (oblivion_eve gear-pixel investigation 2026-05-14,
-    //   remove after fix): snapshot the FRONT draw_state.screen_palette
-    //   that render() will actually use, plus the raw m_ram one for cross
-    //   check, on the first 60 frames. Cheap (60 fprintf, 32 bytes each).
-    static int diag_rcount = 0;
-    if (diag_rcount < 360)  // 6 seconds @ 60fps — covers full ~5s splash + buffer
-    {
-        // FULL per-frame histogram of all 16 framebuffer color values.
-        int hist[16] = {0};
-        for (int yy = 0; yy < 128; ++yy)
-            for (int xx = 0; xx < 128; ++xx)
-                hist[m_front_buffer.get(xx, yy) & 0xf]++;
-        fprintf(stderr, "[fb #%d] hist:", diag_rcount);
-        for (int c = 0; c < 16; ++c)
-            if (hist[c]) fprintf(stderr, " c%d=%d", c, hist[c]);
-        fprintf(stderr, "\n");
-
-        // For ALL captured frames: log positions of pixels with
-        // green-mapped colors specifically (7, 11, 14) so we catch the
-        // splash green pixels whenever they appear. Limit 30 positions
-        // per frame.
-        int logged = 0;
-        for (int yy = 0; yy < 128 && logged < 30; ++yy)
-            for (int xx = 0; xx < 128 && logged < 30; ++xx)
-            {
-                uint8_t v = m_front_buffer.get(xx, yy) & 0xf;
-                if (v == 7 || v == 11 || v == 14)
-                {
-                    fprintf(stderr, "  fb[%d,%d]=%d\n", xx, yy, (int)v);
-                    logged++;
-                }
-            }
-        diag_rcount++;
-    }
-
     // Cannot use a 256-value LUT because data access will be
     // very random due to rotation, flip, stretch etc.
     lol::u8vec4 lut[128 + 16];
