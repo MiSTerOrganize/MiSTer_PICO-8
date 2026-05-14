@@ -1204,27 +1204,42 @@ void vm::api_tline(int16_t x0, int16_t y0, int16_t x1, int16_t y1,
     u4mat2<128, 128>& gfx = m_ram.get_gfx();
     for (;;)
     {
-        // Find sprite in map memory. Use C++ integer division (truncation
-        // toward zero) for fix32 -> int instead of int(mx) which uses
-        // arithmetic shift right (floor). For negative values: floor(-0.05)
-        // = -1 (zepto8 default), but truncation(-0.05) = 0 (PC PICO-8
-        // behavior for tline coords). Then ensure positive modulo.
+        // Use C++ integer division (truncation toward zero) for fix32 ->
+        // int, instead of int(mx) which uses arithmetic shift right (floor).
+        // floor(-0.05) = -1 wraps via mod to cell 127 (stale cart data,
+        // produces wrong-color pixels on the gear). truncation(-0.05) = 0
+        // also doesn't read stale data, but FORCES sx=0 which distorts the
+        // gear shape (column-0 sprites repeat). Best: SKIP the pixel
+        // entirely when coords would be out of range — matches PC PICO-8
+        // behavior of "out-of-bounds tline reads draw nothing", letting
+        // the underlying framebuffer show through naturally.
         int mx_int = (int32_t)mx.bits() / 65536;
         int my_int = (int32_t)my.bits() / 65536;
-        int sx = ((ds.tline.offset.x + mx_int) % map_size_x + map_size_x) % map_size_x;
-        int sy = ((ds.tline.offset.y + my_int) % map_size_y + map_size_y) % map_size_y;
-        uint8_t sprite = m_ram.map[map_size_x * sy + sx];
-        uint8_t bits = m_ram.gfx_flags[sprite];
+        int raw_sx = ds.tline.offset.x + mx_int;
+        int raw_sy = ds.tline.offset.y + my_int;
+        // Check fix32 sign too: even mx=-0.05 (which truncates to 0) is
+        // technically negative and should be treated as out-of-bounds.
+        bool out_of_bounds =
+            (ds.tline.mask.x == 0 && ((int32_t)mx.bits() < 0 || raw_sx < 0 || raw_sx >= map_size_x)) ||
+            (ds.tline.mask.y == 0 && ((int32_t)my.bits() < 0 || raw_sy < 0 || raw_sy >= map_size_y));
 
-        // If found, draw pixel
-        if ((sprite || ds.misc_features.sprite_zero) && (!layer || (bits & layer)))
+        if (!out_of_bounds)
         {
-            int col = gfx.get(sprite % 16 * 8 + (int(mx << 3) & 0x7),
-                              sprite / 16 * 8 + (int(my << 3) & 0x7));
-            if ((ds.draw_palette[col] & 0xf0) == 0)
+            int sx = ((raw_sx % map_size_x) + map_size_x) % map_size_x;
+            int sy = ((raw_sy % map_size_y) + map_size_y) % map_size_y;
+            uint8_t sprite = m_ram.map[map_size_x * sy + sx];
+            uint8_t bits = m_ram.gfx_flags[sprite];
+
+            // If found, draw pixel
+            if ((sprite || ds.misc_features.sprite_zero) && (!layer || (bits & layer)))
             {
-                uint32_t color_bits = (ds.draw_palette[col] & 0xf) << 16;
-                set_pixel(x, y, color_bits);
+                int col = gfx.get(sprite % 16 * 8 + (int(mx << 3) & 0x7),
+                                  sprite / 16 * 8 + (int(my << 3) & 0x7));
+                if ((ds.draw_palette[col] & 0xf0) == 0)
+                {
+                    uint32_t color_bits = (ds.draw_palette[col] & 0xf) << 16;
+                    set_pixel(x, y, color_bits);
+                }
             }
         }
 
