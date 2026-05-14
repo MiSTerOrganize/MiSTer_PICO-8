@@ -46,13 +46,21 @@ void vm::render(lol::u8vec4 *screen) const
     static int diag_rcount = 0;
     if (diag_rcount < 60)
     {
-        fprintf(stderr, "[render #%d] front_sp[0..15]=",
-                diag_rcount);
+        // Count color-7 (and other suspicious) pixels in the front
+        // framebuffer. Tells us how many bright-grass-green pixels are
+        // actually about to be displayed.
+        int c7_count = 0, c11_count = 0;
+        for (int yy = 0; yy < 128; ++yy)
+            for (int xx = 0; xx < 128; ++xx)
+            {
+                uint8_t v = m_front_buffer.get(xx, yy);
+                if (v == 7) c7_count++;
+                else if (v == 11) c11_count++;
+            }
+        fprintf(stderr, "[render #%d] c7_count=%d c11_count=%d front_sp[0..15]=",
+                diag_rcount, c7_count, c11_count);
         for (int i = 0; i < 16; ++i)
             fprintf(stderr, "%02x ", m_front_draw_state.screen_palette[i]);
-        fprintf(stderr, "| live_sp[0..15]=");
-        for (int i = 0; i < 16; ++i)
-            fprintf(stderr, "%02x ", m_ram.draw_state.screen_palette[i]);
         fprintf(stderr, "\n");
         diag_rcount++;
     }

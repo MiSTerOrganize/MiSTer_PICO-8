@@ -111,6 +111,17 @@ void vm::set_pixel(int16_t x, int16_t y, uint32_t color_bits)
     }
 
     get_current_screen().set(x, y, color);
+
+    // TEMP DIAGNOSTIC: log every color-7 pixel write that lands in the
+    // visible screen (mapping_screen == 0x60). First 50 events. Tells us
+    // EXACTLY where on the framebuffer the green pixels come from.
+    static int p7 = 0;
+    if (p7 < 50 && color == 7 && hw.mapping_screen == 0x60)
+    {
+        fprintf(stderr, "[c7-pset #%d] (%d,%d) color_bits=0x%08x\n",
+                p7, (int)x, (int)y, (unsigned)color_bits);
+        p7++;
+    }
 }
 
 void vm::hline(int16_t x1, int16_t x2, int16_t y, uint32_t color_bits)
