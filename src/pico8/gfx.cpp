@@ -676,11 +676,35 @@ tup<opt<fix32>, opt<fix32> > vm::api_print(opt<rich_string> str, opt<fix32> opt_
                     else { ok = false; break; }
                     addr = addr * 16 + d;
                 }
+                // TEMP DIAGNOSTIC (oblivion_eve gear-pixel investigation
+                //   2026-05-14, remove after fix lands): log the first 10
+                //   P8SCII POKE events to stderr with the actual byte payload
+                //   so we can verify what's landing in memory.
+                static int diag_count = 0;
+                uint8_t diag_bytes[32];
+                int diag_n = 0;
+                int diag_addr = addr;
                 if (ok)
                 {
                     while (++chi != str.value().end())
-                        raw_poke((int16_t)(addr++), (uint8_t)*chi);
+                    {
+                        uint8_t b = (uint8_t)*chi;
+                        raw_poke((int16_t)(addr++), b);
+                        if (diag_n < 32) diag_bytes[diag_n++] = b;
+                    }
                     update_registers();
+                }
+                if (diag_count < 10)
+                {
+                    fprintf(stderr, "[p8scii-poke #%d] addr=0x%04x n=%d bytes=",
+                            diag_count, diag_addr, diag_n);
+                    for (int i = 0; i < diag_n && i < 32; ++i)
+                        fprintf(stderr, "%02x ", diag_bytes[i]);
+                    fprintf(stderr, "| post-poke screen_palette[0..15]=");
+                    for (int i = 0; i < 16; ++i)
+                        fprintf(stderr, "%02x ", m_ram.draw_state.screen_palette[i]);
+                    fprintf(stderr, "\n");
+                    diag_count++;
                 }
                 // Consume the rest of the string — no more visible chars.
                 chi = str.value().end();
