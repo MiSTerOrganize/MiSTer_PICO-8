@@ -1157,8 +1157,20 @@ void vm::api_tline(int16_t x0, int16_t y0, int16_t x1, int16_t y1,
     fix32 loopx = ds.tline.mask.x != 0 ? fix32(ds.tline.mask.x) : fix32(128);
     fix32 loopy = ds.tline.mask.y != 0 ? fix32(ds.tline.mask.y) : fix32(128);
 
-    mx = mx % loopx;
-    my = my % loopy;
+    // FIX (2026-05-14, oblivion_eve gear-pixel investigation): when no
+    // tline mask is set explicitly (mask.x/y == 0), skip the positive-
+    // modulo wrap of mx/my. The wrap turns slightly-negative coords like
+    // mx=-0.05 into 127.95, which then becomes cell 127 (stale cart data).
+    // PC PICO-8 instead uses bitwise truncation that keeps -0.05 as a
+    // small-magnitude value, which after C++ integer-division-by-65536
+    // (truncation toward zero) becomes 0, reading cell 0 (cart's intended
+    // tile). The cart relies on this: e2()'s tline calls start with
+    // slightly-negative mx like 2 + cos(0)*0.208*(-9.84) = -0.05, expecting
+    // to read cell 0, not cell 127.
+    if (ds.tline.mask.x != 0)
+        mx = mx % loopx;
+    if (ds.tline.mask.y != 0)
+        my = my % loopy;
 
     x0 -= ds.camera.x; y0 -= ds.camera.y;
     x1 -= ds.camera.x; y1 -= ds.camera.y;
@@ -1173,13 +1185,16 @@ void vm::api_tline(int16_t x0, int16_t y0, int16_t x1, int16_t y1,
     int16_t xend = lol::clamp(int(x1), -1, 128);
     int16_t yend = lol::clamp(int(y1), -1, 128);
 
-    // Advance texture coordinates; do it in steps to avoid overflows
+    // Advance texture coordinates; do it in steps to avoid overflows.
+    // Only apply % wrap if mask is set (see FIX above).
     int16_t delta = abs(horiz ? x - x0 : y - y0);
     while (delta)
     {
         int16_t step = min(int16_t(8192), delta);
-        mx = (mx + mdx * fix32(step)) % loopx;
-        my = (my + mdy * fix32(step)) % loopy;
+        mx = mx + mdx * fix32(step);
+        my = my + mdy * fix32(step);
+        if (ds.tline.mask.x != 0) mx = mx % loopx;
+        if (ds.tline.mask.y != 0) my = my % loopy;
         delta -= step;
     }
 
@@ -1189,9 +1204,15 @@ void vm::api_tline(int16_t x0, int16_t y0, int16_t x1, int16_t y1,
     u4mat2<128, 128>& gfx = m_ram.get_gfx();
     for (;;)
     {
-        // Find sprite in map memory
-        int sx = (ds.tline.offset.x + int(mx)) % map_size_x;
-        int sy = (ds.tline.offset.y + int(my)) % map_size_y;
+        // Find sprite in map memory. Use C++ integer division (truncation
+        // toward zero) for fix32 -> int instead of int(mx) which uses
+        // arithmetic shift right (floor). For negative values: floor(-0.05)
+        // = -1 (zepto8 default), but truncation(-0.05) = 0 (PC PICO-8
+        // behavior for tline coords). Then ensure positive modulo.
+        int mx_int = (int32_t)mx.bits() / 65536;
+        int my_int = (int32_t)my.bits() / 65536;
+        int sx = ((ds.tline.offset.x + mx_int) % map_size_x + map_size_x) % map_size_x;
+        int sy = ((ds.tline.offset.y + my_int) % map_size_y + map_size_y) % map_size_y;
         uint8_t sprite = m_ram.map[map_size_x * sy + sx];
         uint8_t bits = m_ram.gfx_flags[sprite];
 
@@ -1207,9 +1228,12 @@ void vm::api_tline(int16_t x0, int16_t y0, int16_t x1, int16_t y1,
             }
         }
 
-        // Advance source coordinates
-        mx = (mx + mdx) % loopx;
-        my = (my + mdy) % loopy;
+        // Advance source coordinates. Only apply wrap if mask is set
+        // (see FIX comment above re: tline.mask.x/y).
+        mx = mx + mdx;
+        my = my + mdy;
+        if (ds.tline.mask.x != 0) mx = mx % loopx;
+        if (ds.tline.mask.y != 0) my = my % loopy;
 
         // Advance destination coordinates
         if (horiz)
