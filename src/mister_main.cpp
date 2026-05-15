@@ -97,41 +97,39 @@ static volatile int g_savestate_load_request = -1;
 static pthread_t g_audio_thread;
 static volatile bool g_audio_running = false;
 
-// Upsample 22050Hz mono → 48000Hz stereo using CUBIC HERMITE (4-tap
-// Catmull-Rom) interpolation. The source is signed 16-bit; per the
-// audio quality ladder, 16-bit content with treble or sharp transients
-// calls for cubic (not linear). The previous linear-interp version
-// (b4925b9) replaced the original nearest-neighbor (sample-and-hold)
-// which had aliased percussive content like POOM gunshots/explosions;
-// cubic upgrades the resampler one more rung up the ladder for
-// uniformly correct treatment of 16-bit sources across all hybrid cores.
+// Upsample 22050Hz mono → 48000Hz stereo using NEAREST-NEIGHBOR
+// (zero-order hold). This matches PICO-8's documented native upsampling
+// behavior — the QPA (Questionable PICO-8 Audio) reference decoder
+// uses nearest-neighbor: <https://github.com/luchak/qpa-format>
+// "audio is upsampled to 22050 Hz using nearest-neighbor interpolation
+//  in order to approximate PICO-8's audio output."
 //
-// Catmull-Rom Hermite uses 4 sample points (sm1, s0, s1, s2) around
-// the fractional position t (where t=0 sits at s0, t=1 at s1). Output:
-//   out(t) = a0*t^3 + a1*t^2 + a2*t + a3
-// with the standard Catmull-Rom coefficients:
-//   a0 = -0.5*sm1 + 1.5*s0 - 1.5*s1 + 0.5*s2
-//   a1 =      sm1 - 2.5*s0 + 2.0*s1 - 0.5*s2
-//   a2 = -0.5*sm1            + 0.5*s1
-//   a3 =                s0
-// We work in coefficients × 2 to keep integer arithmetic, and use
-// 16.16 fixed-point for t. Cost is ~3 mul + ~6 add per output sample
-// on Cortex-A9 NEON — negligible.
+// HISTORY:
+//   - Original: nearest-neighbor (sample-and-hold).
+//   - 2026-05-14 commit b4925b9: upgraded to linear interpolation after
+//     POOM sounded "rough/grainy" — turned out POOM's roughness was
+//     actually the Stage 1 PCM streaming bug (AW path); the Stage 2
+//     upgrade was misdirected.
+//   - 2026-05-14 commit 07729dc: further "upgraded" to cubic Hermite
+//     per generic audio-quality-ladder reasoning ("16-bit content with
+//     treble calls for cubic").
+//   - 2026-05-15: REVERTED to nearest-neighbor after research showed
+//     PICO-8's authentic platform behavior is nearest-neighbor at this
+//     stage (per QPA reference + eev.ee analysis). Cubic was smoothing
+//     AWAY the characteristic crunchy/aliased PICO-8 timbre that's part
+//     of the platform aesthetic — sounded "nicer" in a hi-fi sense but
+//     diverged from real PICO-8 desktop output.
 //
-// Boundary handling: at buffer start (src_idx == 0), sm1 clamps to s0;
-// at buffer end, missing s1/s2 clamp to the last available sample. At
-// most ~2 samples per call use boundary-clamped Hermite vs full 4-tap;
-// well below audible threshold for the ~256-sample chunks per call.
-//
-// Hermite can overshoot the int16 range slightly on sharp transients
-// (worst-case ~50% of adjacent-sample delta) — clamp the output before
-// the final int16 cast.
+// Platform-native authentic behavior supersedes generic audio quality
+// ladder reasoning. See feedback_platform_native_audio_supersedes_ladder.md.
 //
 // Returns number of stereo output samples written.
 static int upsample_mono_to_stereo(const int16_t *mono_in, int in_samples,
                                     int16_t *stereo_out, int max_out)
 {
-    // Fixed-point step: (22050 << 16) / 48000 = 30146
+    // Fixed-point step: (22050 << 16) / 48000 = 30106 (uses uint64
+    // intermediate to avoid the int32 overflow trap — see
+    // feedback_step_int64_intermediate.md).
     const uint32_t step = (uint32_t)(((uint64_t)SRC_RATE << 16) / DST_RATE);
     uint32_t accum = 0;
     int out_count = 0;
@@ -140,38 +138,12 @@ static int upsample_mono_to_stereo(const int16_t *mono_in, int in_samples,
         uint32_t src_idx = accum >> 16;
         if (src_idx >= (uint32_t)in_samples) break;
 
-        // 4 sample points for cubic Hermite; boundary-clamp missing neighbors.
-        int32_t sm1 = (src_idx >= 1) ? mono_in[src_idx - 1] : mono_in[src_idx];
-        int32_t s0  = mono_in[src_idx];
-        int32_t s1  = (src_idx + 1 < (uint32_t)in_samples) ? mono_in[src_idx + 1] : s0;
-        int32_t s2  = (src_idx + 2 < (uint32_t)in_samples) ? mono_in[src_idx + 2] : s1;
+        // Nearest-neighbor / zero-order hold: pick the source sample at
+        // src_idx, ignore the fractional part. Matches PICO-8 / QPA.
+        int16_t s = mono_in[src_idx];
 
-        // Catmull-Rom Hermite coefficients × 2 (integer math friendly).
-        int32_t a0_2 = -sm1 + 3*s0 - 3*s1 + s2;
-        int32_t a1_2 = 2*sm1 - 5*s0 + 4*s1 - s2;
-        int32_t a2_2 = -sm1 + s1;
-        int32_t a3_2 = 2*s0;
-
-        // Fractional position in 16.16 fixed-point
-        uint32_t t  = accum & 0xFFFF;
-        uint32_t t2 = (t * t) >> 16;
-        uint32_t t3 = (t2 * t) >> 16;
-
-        // out × 2 = a0*t^3 + a1*t^2 + a2*t + a3 (all coefficients × 2).
-        // Use int64 multiplication; Cortex-A9 issues smull for these.
-        int32_t out_x2 = (int32_t)(((int64_t)a0_2 * (int64_t)t3) >> 16)
-                       + (int32_t)(((int64_t)a1_2 * (int64_t)t2) >> 16)
-                       + (int32_t)(((int64_t)a2_2 * (int64_t)t)  >> 16)
-                       +  a3_2;
-        int32_t out = out_x2 >> 1;
-
-        // Clamp Hermite overshoot to int16 range.
-        if (out > 32767)  out = 32767;
-        if (out < -32768) out = -32768;
-        int16_t s16 = (int16_t)out;
-
-        stereo_out[out_count * 2 + 0] = s16;  // Left
-        stereo_out[out_count * 2 + 1] = s16;  // Right (mono duplicate)
+        stereo_out[out_count * 2 + 0] = s;  // Left
+        stereo_out[out_count * 2 + 1] = s;  // Right (mono duplicate)
         out_count++;
         accum += step;
     }
