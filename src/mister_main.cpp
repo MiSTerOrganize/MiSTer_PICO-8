@@ -96,6 +96,9 @@ static volatile int g_savestate_load_request = -1;
 
 static pthread_t g_audio_thread;
 static volatile bool g_audio_running = false;
+// Set by cart-load path, read (un-synchronized — diagnostic only) by audio
+// thread for per-second log tagging. Torn read during cart switch is fine.
+static char g_current_cart_basename[64] = "(none)";
 
 // Upsample 22050 Hz mono → 48000 Hz stereo using POLYPHASE WINDOWED-SINC FIR.
 // Matches PC PICO-8's audio path: PICO-8 desktop uses SDL2 (per the manual),
@@ -295,7 +298,8 @@ static void *audio_thread_func(void *arg)
             unsigned in_mean  = mono_in_count   ? (unsigned)(mono_in_abs_sum / mono_in_count) : 0;
             unsigned out_mean = out_count_total ? (unsigned)(out_abs_sum     / out_count_total) : 0;
             fprintf(stderr,
-                "[ap-1s] submits=%lu wait_iters=%lu in_peak=%d in_mean=%u out_peak=%d out_mean=%u\n",
+                "[ap-1s] cart=%s submits=%lu wait_iters=%lu in_peak=%d in_mean=%u out_peak=%d out_mean=%u\n",
+                g_current_cart_basename,
                 submits, wait_iters, mono_in_peak, in_mean, out_peak, out_mean);
             last_emit = now;
             submits = wait_iters = 0;
@@ -760,6 +764,14 @@ int main(int argc, char **argv)
         g_vm->load(cart_path);
         g_vm->run();
         fprintf(stderr, "=== Game started: %s (PID=%d) ===\n", cart_path.c_str(), getpid());
+
+        // Snapshot cart basename for audio-thread log tagging.
+        {
+            const char *slash = strrchr(cart_path.c_str(), '/');
+            const char *base = slash ? slash + 1 : cart_path.c_str();
+            strncpy(g_current_cart_basename, base, sizeof(g_current_cart_basename) - 1);
+            g_current_cart_basename[sizeof(g_current_cart_basename) - 1] = '\0';
+        }
 
         // Start audio thread
         bool audio_started = false;
