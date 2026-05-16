@@ -97,39 +97,76 @@ static volatile int g_savestate_load_request = -1;
 static pthread_t g_audio_thread;
 static volatile bool g_audio_running = false;
 
-// Upsample 22050Hz mono → 48000Hz stereo using NEAREST-NEIGHBOR
-// (zero-order hold). This matches PICO-8's documented native upsampling
-// behavior — the QPA (Questionable PICO-8 Audio) reference decoder
-// uses nearest-neighbor: <https://github.com/luchak/qpa-format>
-// "audio is upsampled to 22050 Hz using nearest-neighbor interpolation
-//  in order to approximate PICO-8's audio output."
+// Upsample 22050 Hz mono → 48000 Hz stereo using POLYPHASE WINDOWED-SINC FIR.
+// Matches PC PICO-8's audio path: PICO-8 desktop uses SDL2 (per the manual),
+// SDL2's default resampler is bandlimited interpolation (= polyphase windowed
+// sinc, per src/audio/SDL_audiocvt.c in libsdl-org/SDL). For PC reference
+// parity on MiSTer, we mirror SDL2's polyphase quality here.
 //
-// HISTORY:
-//   - Original: nearest-neighbor (sample-and-hold).
-//   - 2026-05-14 commit b4925b9: upgraded to linear interpolation after
-//     POOM sounded "rough/grainy" — turned out POOM's roughness was
-//     actually the Stage 1 PCM streaming bug (AW path); the Stage 2
-//     upgrade was misdirected.
-//   - 2026-05-14 commit 07729dc: further "upgraded" to cubic Hermite
-//     per generic audio-quality-ladder reasoning ("16-bit content with
-//     treble calls for cubic").
-//   - 2026-05-15: REVERTED to nearest-neighbor after research showed
-//     PICO-8's authentic platform behavior is nearest-neighbor at this
-//     stage (per QPA reference + eev.ee analysis). Cubic was smoothing
-//     AWAY the characteristic crunchy/aliased PICO-8 timbre that's part
-//     of the platform aesthetic — sounded "nicer" in a hi-fi sense but
-//     diverged from real PICO-8 desktop output.
+// Filter: 16-tap × 32-phase, Hann-windowed sinc, cutoff at source Nyquist.
+// Coefficient table generated once at first call; int16 q15 storage.
+// Per output sample: 16 multiply-adds (mono input, duplicated to stereo).
 //
-// Platform-native authentic behavior supersedes generic audio quality
-// ladder reasoning. See feedback_platform_native_audio_supersedes_ladder.md.
+// HISTORY (2026-05-15):
+//   - This file's resampler was nearest-neighbor → linear (b4925b9) →
+//     cubic Hermite (07729dc) → nearest-neighbor (3597ad0) — all chosen on
+//     incorrect understanding of PICO-8's actual desktop behavior.
+//   - Research clarified: PC PICO-8 uses SDL2's bandlimited interpolation
+//     (polyphase). QPA decoder's nearest-neighbor is an approximation for
+//     minimal-decoder size, NOT what PICO-8 itself outputs.
+//   - Polyphase windowed-sinc here matches PC PICO-8 reference quality.
 //
 // Returns number of stereo output samples written.
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
+#define POLY_N        16   // taps per phase
+#define POLY_P        32   // phase quantization levels
+#define POLY_CENTER   7    // index of "current" tap (k in [0, N))
+#define POLY_SCALE    15   // q15 fixed-point for coefficients
+
+static int16_t  poly_h[POLY_P][POLY_N];
+static bool     poly_initialized = false;
+
+static void poly_init()
+{
+    for (int p = 0; p < POLY_P; p++) {
+        double row[POLY_N];
+        double sum = 0.0;
+        for (int k = 0; k < POLY_N; k++) {
+            double x = (double)(k - POLY_CENTER) + (double)p / (double)POLY_P;
+            double sinc_val;
+            if (x == 0.0) {
+                sinc_val = 1.0;
+            } else {
+                double arg = M_PI * x;
+                sinc_val = std::sin(arg) / arg;
+            }
+            double win_t = (double)k / (double)(POLY_N - 1);
+            double win = 0.5 - 0.5 * std::cos(2.0 * M_PI * win_t);
+            row[k] = sinc_val * win;
+            sum += row[k];
+        }
+        for (int k = 0; k < POLY_N; k++) {
+            double v = row[k] / sum * (double)(1 << POLY_SCALE);
+            int iv = (int)(v < 0.0 ? v - 0.5 : v + 0.5);
+            if (iv > 32767)  iv = 32767;
+            if (iv < -32768) iv = -32768;
+            poly_h[p][k] = (int16_t)iv;
+        }
+    }
+    poly_initialized = true;
+}
+
 static int upsample_mono_to_stereo(const int16_t *mono_in, int in_samples,
                                     int16_t *stereo_out, int max_out)
 {
-    // Fixed-point step: (22050 << 16) / 48000 = 30106 (uses uint64
-    // intermediate to avoid the int32 overflow trap — see
-    // feedback_step_int64_intermediate.md).
+    if (!poly_initialized) poly_init();
+
+    // Fixed-point step: (22050 << 16) / 48000 = 30106. uint64 intermediate
+    // to avoid the int32 overflow trap.
     const uint32_t step = (uint32_t)(((uint64_t)SRC_RATE << 16) / DST_RATE);
     uint32_t accum = 0;
     int out_count = 0;
@@ -138,12 +175,25 @@ static int upsample_mono_to_stereo(const int16_t *mono_in, int in_samples,
         uint32_t src_idx = accum >> 16;
         if (src_idx >= (uint32_t)in_samples) break;
 
-        // Nearest-neighbor / zero-order hold: pick the source sample at
-        // src_idx, ignore the fractional part. Matches PICO-8 / QPA.
-        int16_t s = mono_in[src_idx];
+        uint32_t fr = accum & 0xFFFF;
+        int p = (int)((fr * (uint32_t)POLY_P) >> 16);
+        if (p >= POLY_P) p = POLY_P - 1;
 
-        stereo_out[out_count * 2 + 0] = s;  // Left
-        stereo_out[out_count * 2 + 1] = s;  // Right (mono duplicate)
+        // 16-tap polyphase convolution. Boundary-clamp missing neighbors.
+        int32_t sum = 0;
+        for (int k = 0; k < POLY_N; k++) {
+            int idx = (int)src_idx + k - POLY_CENTER;
+            if (idx < 0) idx = 0;
+            if (idx >= in_samples) idx = in_samples - 1;
+            sum += (int32_t)mono_in[idx] * (int32_t)poly_h[p][k];
+        }
+        sum >>= POLY_SCALE;
+        if (sum > 32767)  sum = 32767;
+        if (sum < -32768) sum = -32768;
+        int16_t s16 = (int16_t)sum;
+
+        stereo_out[out_count * 2 + 0] = s16;  // Left
+        stereo_out[out_count * 2 + 1] = s16;  // Right (mono duplicate)
         out_count++;
         accum += step;
     }
