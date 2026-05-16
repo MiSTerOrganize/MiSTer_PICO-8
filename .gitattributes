@@ -1,5 +1,53 @@
-# Prevent git from modifying binary files
+# Normalize all text to LF on disk and in working tree (cross-platform).
+# Prevents CRLF↔LF hash mismatches between CI-generated db.json.zip and
+# raw.githubusercontent.com when update_all downloads to users.
+# theypsilon (update_all dev) diagnosed this 2026-05-15 evening for
+# the OpenBOR cores; applying the same fix here for consistency.
+* text=auto eol=lf
+
+# Binary artifacts — never normalize.
 *.rbf binary
-*.map binary
 *.rom binary
-games/*/PICO-8 binary
+*.bin binary
+*.map binary
+*.pin binary
+*.jdi binary
+*.sld binary
+
+# ARM binary (no file extension — explicit path rule).
+games/PICO-8/PICO-8 binary
+
+# Shell scripts — keep LF
+*.sh text eol=lf
+
+# Python — keep LF
+*.py text eol=lf
+
+# Markdown — keep LF explicit (db.json hash consistency vs raw.githubusercontent.com)
+*.md text eol=lf
+
+# C / C++ / headers — text LF
+*.c   text eol=lf
+*.h   text eol=lf
+*.cpp text eol=lf
+*.hpp text eol=lf
+
+# SystemVerilog / Verilog — text LF
+*.sv  text eol=lf
+*.v   text eol=lf
+
+# Quartus files — text LF
+*.qpf text eol=lf
+*.qsf text eol=lf
+*.qip text eol=lf
+*.sdc text eol=lf
+
+# Quartus output summaries — text LF
+*.summary text eol=lf
+*.smsg    text eol=lf
+
+# PICO-8 cart format — text LF (BIOS, carts, etc.)
+*.p8  text eol=lf
+
+# Lua — text LF
+*.lua text eol=lf
