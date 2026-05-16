@@ -218,8 +218,24 @@ static void *audio_thread_func(void *arg)
     fflush(stderr);
 
     int total_calls = 0;
-    int nonzero_calls = 0;
-    int16_t global_max = 0;
+
+    /* Per-second diagnostic counters. Once-per-second emission; no hotpath
+     * fprintf. Tracks pre-upsample input peak (mono_in_peak — direct from
+     * zepto8 get_audio), post-upsample output peak (out_peak — what reaches
+     * DDR3 after polyphase FIR), ring-wait loop iterations (a proxy for
+     * audio-thread starvation), submit count, and accumulated abs-sample
+     * sums for mean-amplitude tracking. Diagnostic for POOM-quieter
+     * hypothesis (2026-05-16) — compare cart-to-cart. Remove after isolated. */
+    struct timespec last_emit;
+    clock_gettime(CLOCK_MONOTONIC, &last_emit);
+    int      mono_in_peak = 0;
+    int      out_peak     = 0;
+    uint64_t mono_in_abs_sum = 0;
+    uint64_t out_abs_sum     = 0;
+    uint64_t mono_in_count   = 0;
+    uint64_t out_count_total = 0;
+    unsigned long submits    = 0;
+    unsigned long wait_iters = 0;
 
     while (g_audio_running)
     {
@@ -233,9 +249,10 @@ static void *audio_thread_func(void *arg)
         for (int i = 0; i < AUDIO_BUF_SAMPLES; i++) {
             int16_t av = mono_buf[i] < 0 ? -mono_buf[i] : mono_buf[i];
             if (av > max_val) max_val = av;
+            mono_in_abs_sum += (uint64_t)av;
         }
-        if (max_val > 0) nonzero_calls++;
-        if (max_val > global_max) global_max = max_val;
+        mono_in_count += AUDIO_BUF_SAMPLES;
+        if (max_val > mono_in_peak) mono_in_peak = max_val;
 
         // Log after each of the first 5 calls (before buffer can fill)
         if (total_calls <= 5) {
@@ -248,15 +265,44 @@ static void *audio_thread_func(void *arg)
         int out_samples = upsample_mono_to_stereo(mono_buf, AUDIO_BUF_SAMPLES,
                                                    stereo_buf, 1200);
 
+        // Per-second post-upsample stats (scan stereo_buf for peak + sum)
+        for (int i = 0; i < out_samples * 2; i++) {
+            int v = stereo_buf[i];
+            int av = v < 0 ? -v : v;
+            if (av > out_peak) out_peak = av;
+            out_abs_sum += (uint64_t)av;
+        }
+        out_count_total += (uint64_t)(out_samples * 2);
+
         // Wait for space in the DDR3 ring buffer, then write
         while (g_audio_running) {
             uint32_t space = NativeVideoWriter_AudioSpace();
             if (space >= (uint32_t)out_samples) break;
+            wait_iters++;
             usleep(500);  // ~0.5ms — ring buffer provides 85ms of slack
         }
         if (!g_audio_running) break;
 
         NativeVideoWriter_WriteAudio(stereo_buf, out_samples);
+        submits++;
+
+        // Per-second health line. Cheap: fires ~1×/sec.
+        struct timespec now;
+        clock_gettime(CLOCK_MONOTONIC, &now);
+        long elapsed_ms = (now.tv_sec - last_emit.tv_sec) * 1000L
+                        + (now.tv_nsec - last_emit.tv_nsec) / 1000000L;
+        if (elapsed_ms >= 1000) {
+            unsigned in_mean  = mono_in_count   ? (unsigned)(mono_in_abs_sum / mono_in_count) : 0;
+            unsigned out_mean = out_count_total ? (unsigned)(out_abs_sum     / out_count_total) : 0;
+            fprintf(stderr,
+                "[ap-1s] submits=%lu wait_iters=%lu in_peak=%d in_mean=%u out_peak=%d out_mean=%u\n",
+                submits, wait_iters, mono_in_peak, in_mean, out_peak, out_mean);
+            last_emit = now;
+            submits = wait_iters = 0;
+            mono_in_peak = 0; out_peak = 0;
+            mono_in_abs_sum = out_abs_sum = 0;
+            mono_in_count = out_count_total = 0;
+        }
     }
 
     return nullptr;
