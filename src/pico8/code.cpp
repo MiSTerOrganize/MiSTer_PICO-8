@@ -160,8 +160,14 @@ std::string code::decompress(uint8_t const *input)
     if (input[0] == ':' && input[1] == 'c' && input[2] == ':' && input[3] == '\0')
         return legacy_decompress(input);
 
-    auto end = (uint8_t const *)std::memchr(input, '\0', sizeof(pico8::memory::code));
-    auto len = end ? size_t(end - input) : sizeof(pico8::memory::code);
+    // BUG FIX 2026-05-17: pico8::memory::code is an anonymous struct holding
+    // only a functor, so sizeof() returns 1 (empty struct), not the actual
+    // 0x3d00 size of the code region. memchr was searching only 1 byte and
+    // truncating uncompressed cart source to that first byte (zokorimoro
+    // returned just ":" instead of "::_::\nif not stat(57)..."). PXA/legacy
+    // compressed carts hit other branches above so they were unaffected.
+    auto end = (uint8_t const *)std::memchr(input, '\0', sizeof(pico8::code_t));
+    auto len = end ? size_t(end - input) : sizeof(pico8::code_t);
     return std::string((char const *)input, len);
 }
 
