@@ -214,8 +214,25 @@ static void *audio_thread_func(void *arg)
     // Max output: 512 * 48000/22050 + 2 ≈ 1117 stereo samples
     int16_t stereo_buf[2400];
 
-    fprintf(stderr, "Audio: DDR3 ring buffer, %dHz mono → %dHz stereo\n", SRC_RATE, DST_RATE);
+    fprintf(stderr, "Audio: DDR3 ring buffer, %dHz mono → %dHz stereo (limiter on)\n", SRC_RATE, DST_RATE);
     fflush(stderr);
+
+    /* Soft-limiter state — envelope-following design, same architecture
+     * as the OpenBOR_7533 glue-layer limiter. Defends against edge-case
+     * carts that drive 4-channel sum past int16 (zepto8 hard-clips by
+     * default; zep's official PICO-8 has an admitted-imperfect limiter
+     * — BBS #54957). Our envelope limiter is more transparent than both.
+     *
+     *   - Threshold: 27852 ≈ -1.5 dBFS — below = unity gain pass-through
+     *   - Attack:  ~1 ms time constant
+     *   - Release: ~100 ms time constant
+     *   - Mono → stereo duplicate, so single-channel envelope is enough
+     *   - Final ±32767 hard-clip as belt-and-suspenders safety. */
+    const float LIM_ATTACK  = expf(-1.0f / (0.001f * (float)DST_RATE));
+    const float LIM_RELEASE = expf(-1.0f / (0.100f * (float)DST_RATE));
+    const float LIM_THRESH  = 27852.0f;
+    float lim_env  = 0.0f;
+    float lim_gain = 1.0f;
 
     int total_calls = 0;
 
@@ -243,6 +260,28 @@ static void *audio_thread_func(void *arg)
         // Upsample to 48KHz stereo
         int out_samples = upsample_mono_to_stereo(mono_buf, AUDIO_BUF_SAMPLES,
                                                    stereo_buf, 1200);
+
+        /* Soft-limiter pass over stereo output. Mono-duplicated stereo means
+         * L == R; we only need to update envelope once per frame.            */
+        for (int i = 0; i < out_samples; i++) {
+            float s = (float)stereo_buf[2 * i];
+            float a = s < 0.0f ? -s : s;
+
+            if (a > lim_env) lim_env = a;
+            else             lim_env = lim_env * LIM_RELEASE + a * (1.0f - LIM_RELEASE);
+
+            float target_gain = (lim_env > LIM_THRESH) ? (LIM_THRESH / lim_env) : 1.0f;
+            if (target_gain < lim_gain)
+                lim_gain = lim_gain * LIM_ATTACK  + target_gain * (1.0f - LIM_ATTACK);
+            else
+                lim_gain = lim_gain * LIM_RELEASE + target_gain * (1.0f - LIM_RELEASE);
+
+            int sg = (int)(s * lim_gain);
+            if (sg > 32767)  sg = 32767;
+            if (sg < -32768) sg = -32768;
+            stereo_buf[2 * i + 0] = (int16_t)sg;
+            stereo_buf[2 * i + 1] = (int16_t)sg;
+        }
 
         // Wait for space in the DDR3 ring buffer, then write
         while (g_audio_running) {
