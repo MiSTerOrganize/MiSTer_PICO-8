@@ -1879,6 +1879,13 @@ void vm::api_extcmd(std::string cmdline)
         // the entry cart's path (whatever MiSTer mounted via OSD or
         // MGL), so respawn lands on the entry cart even if the user
         // reset while a sub-cart was active.
+        // Write marker so _handler.sh skips its defensive .s0 cleanup on
+        // respawn — Reset needs .s0 preserved so binary re-mounts same
+        // cart fresh. Handler deletes marker after seeing it.
+        {
+            FILE *_m = fopen("/tmp/pico8_reset_marker", "w");
+            if (_m) fclose(_m);
+        }
         fprintf(stderr, "Reset: keeping .s0, _exit(0) — Master_Daemon will respawn same cart\n");
         fflush(stderr);
         _exit(0);

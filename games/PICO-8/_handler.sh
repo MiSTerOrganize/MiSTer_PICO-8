@@ -22,7 +22,17 @@ mv -f "$LOGDIR/PICO-8.log" "$LOGDIR/PICO-8.prev.log" 2>/dev/null
 # start (before binary launches, before MGL's 2-second timer) gives users
 # a clean "go to OSD picker" experience on every entry. Cross-applied from
 # the OpenBOR handler fix per `feedback_s0_reboot_survival_cleanup.md`.
-rm -f /media/fat/config/PICO-8.s0 2>/dev/null
+#
+# EXCEPTION: pause-menu Reset Cart writes /tmp/pico8_reset_marker before
+# _exit(0). Reset needs .s0 PRESERVED so binary re-mounts the same cart.
+# If marker exists: skip cleanup + delete marker. (Mirrors OpenBOR's
+# pattern; same regression family — without the exception, Reset would
+# break Quit/Reset asymmetry and produce black screen on Reset Cart.)
+if [ -f /tmp/pico8_reset_marker ]; then
+    rm -f /tmp/pico8_reset_marker 2>/dev/null
+else
+    rm -f /media/fat/config/PICO-8.s0 2>/dev/null
+fi
 
 # Free kernel page cache before launch — PICO-8 carts are small but
 # this keeps RAM state clean across multicart sub-loads.
