@@ -16,6 +16,14 @@ mkdir -p "$LOGDIR" "$GAMEDIR/Carts"
 # Rotate ARM-binary stdout/stderr log
 mv -f "$LOGDIR/PICO-8.log" "$LOGDIR/PICO-8.prev.log" 2>/dev/null
 
+# Belt-and-suspenders .s0 cleanup — Master_Daemon already clears .s0 on
+# core transitions, but MiSTer Main's auto-resume-last-file behavior can
+# leave PICO-8.s0 populated when handler spawns. Clearing here at handler
+# start (before binary launches, before MGL's 2-second timer) gives users
+# a clean "go to OSD picker" experience on every entry. Cross-applied from
+# the OpenBOR handler fix per `feedback_s0_reboot_survival_cleanup.md`.
+rm -f /media/fat/config/PICO-8.s0 2>/dev/null
+
 # Free kernel page cache before launch — PICO-8 carts are small but
 # this keeps RAM state clean across multicart sub-loads.
 echo 3 > /proc/sys/vm/drop_caches 2>/dev/null

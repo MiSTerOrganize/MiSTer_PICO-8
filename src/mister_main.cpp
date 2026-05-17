@@ -644,6 +644,17 @@ int main(int argc, char **argv)
                 // load("sibling.p8") for multicart games resolves to
                 // the right directory (vs the old /tmp/ copy approach
                 // which orphaned the cart from its siblings).
+                // Clear DDR3 framebuffer so screen goes black during the
+                // wait loop instead of showing the previous cart's last
+                // frame (FPGA keepalive keeps reading the last-written
+                // buffer). Cross-applied from OpenBOR's analogous fix per
+                // `feedback_clear_framebuffer_on_wait.md`. PICO-8 native
+                // is 128x128 RGBA8888 (4 bytes per pixel).
+                {
+                    static unsigned char _pico8_black[PICO8_W * PICO8_H * 4] = {0};
+                    NativeVideoWriter_WriteFrame(_pico8_black, PICO8_W, PICO8_H);
+                }
+
                 fprintf(stderr, "Waiting for OSD cart selection (.s0)...\n");
                 int poll_count = 0;
                 while (g_running) {
