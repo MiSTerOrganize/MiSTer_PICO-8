@@ -234,28 +234,12 @@ static void *audio_thread_func(void *arg)
     float lim_env  = 0.0f;
     float lim_gain = 1.0f;
 
-    int total_calls = 0;
-
     while (g_audio_running)
     {
         if (!g_vm) break;
 
         // Render mono audio from zepto8 at 22050Hz
         g_vm->get_audio(mono_buf, AUDIO_BUF_SAMPLES * sizeof(int16_t));
-        total_calls++;
-
-        int16_t max_val = 0;
-        for (int i = 0; i < AUDIO_BUF_SAMPLES; i++) {
-            int16_t av = mono_buf[i] < 0 ? -mono_buf[i] : mono_buf[i];
-            if (av > max_val) max_val = av;
-        }
-
-        // Log after each of the first 5 calls (before buffer can fill)
-        if (total_calls <= 5) {
-            fprintf(stderr, "Audio call %d: max=%d s[0]=%d s[1]=%d s[2]=%d s[3]=%d\n",
-                    total_calls, max_val, mono_buf[0], mono_buf[1], mono_buf[2], mono_buf[3]);
-            fflush(stderr);
-        }
 
         // Upsample to 48KHz stereo
         int out_samples = upsample_mono_to_stereo(mono_buf, AUDIO_BUF_SAMPLES,
