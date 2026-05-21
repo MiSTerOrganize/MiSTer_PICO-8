@@ -327,7 +327,17 @@ function load(arg, breadcrumb, params)
         end
     end
     if success then
-        print('ok')
+        -- NOTE: removed `print('ok')` (originally at this position).
+        -- The BBS-era visual feedback flashed pink "ok" text in the
+        -- framebuffer right before the yield. Previously (pre-yield-
+        -- forever, commit 5ae97fd) the parent cart's _draw ran after
+        -- load() returned and immediately covered the "ok" — invisible
+        -- to users. With yield-forever, the parent's _draw never runs,
+        -- so the "ok" stays in the framebuffer until the new cart's
+        -- first _draw. Carts that cls() early (oblivion_eve, POOM) hid
+        -- the flash; carts that don't (Virtua Racing track loads) show
+        -- it as a one-frame pink "ok" flash on cart switch. No cart
+        -- depends on this output, so removing is safe.
         -- Cart switched. PC PICO-8 doesn't return execution to the
         -- caller after a successful load() — the current cart's
         -- coroutine is abandoned and the new cart starts. Try to yield
