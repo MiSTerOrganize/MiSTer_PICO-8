@@ -349,19 +349,14 @@ bool vm::private_load(std::string name, opt<std::string> breadcrumb, opt<std::st
 
     std::string previous_cart = m_cart.get_filename();
 
-    std::string requested = name;
     name = get_path_active_dir() + "/" + name;
     // tmp fix: if extension is not .p8 or .png, set it to .p8
     if (!lol::ends_with(lol::tolower(name), ".p8") && !lol::ends_with(lol::tolower(name), ".png"))
         name += ".p8";
-    fprintf(stderr, "[multicart] load() requested='%s' resolved='%s' params='%s'\n",
-            requested.c_str(), name.c_str(),
-            params.has_value() ? (*params).c_str() : "(none)");
-    // Load cart from a file
-    if (!load_cart(m_cart, name)) {
-        fprintf(stderr, "[multicart] load() FAILED for %s\n", name.c_str());
-        return false;
-    }
+    // Load cart from a file. NOTE: BIOS load() retries with `.p8.png`
+    // suffix on failure, so a single failed load_cart here is normal
+    // (silent — no log noise) when carts ship only as .p8.png.
+    if (!load_cart(m_cart, name)) return false;
 
     // Stash params so stat(6) can return them even when no breadcrumb
     // was supplied (PICO-8 spec).
@@ -1980,36 +1975,16 @@ void vm::api_extcmd(std::string cmdline)
     }
     else if (cmd == "breadcrumb" || cmd == "go_back")
     {
-        // Diagnostic: rare event (user picks "Return to Menu" from
-        // pause menu), one log per event is fine. NOT a hotpath per
-        // feedback_logging_hotpath_perf.md.
-        if (breadcrumbs.size() == 0)
-        {
-            fprintf(stderr, "[breadcrumb] no breadcrumbs to return to (ignored)\n");
-            fflush(stderr);
-            return;
-        }
+        if (breadcrumbs.size() == 0) return;
         breadcrumb_path breadcrumb = breadcrumbs.back();
         breadcrumbs.pop_back();
-        fprintf(stderr, "[breadcrumb] returning to '%s' (title='%s', remaining=%d)\n",
-                breadcrumb.cart_path.c_str(),
-                breadcrumb.title.c_str(),
-                (int)breadcrumbs.size());
-        fflush(stderr);
         save(true);
-        bool loaded = m_cart.load(breadcrumb.cart_path);
-        fprintf(stderr, "[breadcrumb] m_cart.load() = %s (filename now='%s')\n",
-                loaded ? "OK" : "FAIL",
-                m_cart.get_filename().c_str());
-        fflush(stderr);
-        if (!loaded)
+        if (!m_cart.load(breadcrumb.cart_path))
         {
-            // Load failed - recover by reloading the entry cart so we
+            // Load failed — recover by reloading the entry cart so we
             // don't proceed with stale m_cart state and emit a black
             // screen. Worst case: user lands back on the title screen,
             // which is strictly better than black + frozen.
-            fprintf(stderr, "[breadcrumb] load FAILED; falling back to vm::reset() (entry cart)\n");
-            fflush(stderr);
             reset();
             return;
         }
