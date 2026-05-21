@@ -1726,6 +1726,17 @@ var<bool, int16_t, fix32, std::string, std::nullptr_t> vm::api_stat(int16_t id)
     if (id == 101)
         return nullptr;
 
+    // PICO-8 spec: stat(102) is the "website address" (BBS URL when the
+    // cart was loaded via load("#bbs_id"), nil otherwise). PC PICO-8
+    // returns nil for local-file loads. Returning the int16_t(0)
+    // fallthrough default caused carts using `if stat(102) == 0` as a
+    // fingerprint check to treat us as a standalone-no-environment
+    // platform and expose standalone-only menu items (e.g., oblivion_eve
+    // "Quit" appears on the title screen on MiSTer but not on PC).
+    // Returning nullptr matches PC PICO-8 behavior exactly.
+    if (id == 102)
+        return nullptr;
+
     // PCM streaming channel (serial(0x808)) bookkeeping.
     // stat(108) = bytes the cart has shipped via serial(0x808).
     // stat(109) = bytes the audio engine wants by now = consumed + LOOKAHEAD.
@@ -1969,11 +1980,39 @@ void vm::api_extcmd(std::string cmdline)
     }
     else if (cmd == "breadcrumb" || cmd == "go_back")
     {
-        if (breadcrumbs.size() == 0) return;
+        // Diagnostic: rare event (user picks "Return to Menu" from
+        // pause menu), one log per event is fine. NOT a hotpath per
+        // feedback_logging_hotpath_perf.md.
+        if (breadcrumbs.size() == 0)
+        {
+            fprintf(stderr, "[breadcrumb] no breadcrumbs to return to (ignored)\n");
+            fflush(stderr);
+            return;
+        }
         breadcrumb_path breadcrumb = breadcrumbs.back();
         breadcrumbs.pop_back();
+        fprintf(stderr, "[breadcrumb] returning to '%s' (title='%s', remaining=%d)\n",
+                breadcrumb.cart_path.c_str(),
+                breadcrumb.title.c_str(),
+                (int)breadcrumbs.size());
+        fflush(stderr);
         save(true);
-        m_cart.load(breadcrumb.cart_path);
+        bool loaded = m_cart.load(breadcrumb.cart_path);
+        fprintf(stderr, "[breadcrumb] m_cart.load() = %s (filename now='%s')\n",
+                loaded ? "OK" : "FAIL",
+                m_cart.get_filename().c_str());
+        fflush(stderr);
+        if (!loaded)
+        {
+            // Load failed - recover by reloading the entry cart so we
+            // don't proceed with stale m_cart state and emit a black
+            // screen. Worst case: user lands back on the title screen,
+            // which is strictly better than black + frozen.
+            fprintf(stderr, "[breadcrumb] load FAILED; falling back to vm::reset() (entry cart)\n");
+            fflush(stderr);
+            reset();
+            return;
+        }
         run();
     }
     else if (cmd == "z8_setuitext")

@@ -741,6 +741,27 @@ int main(int argc, char **argv)
             _exit(0);
         });
 
+        // PICO-8 spec: extcmd("shutdown") = quit the program. Same
+        // behavior as the system pause-menu Quit (z8_cart_browser above)
+        // — unlink .s0 so Master_Daemon respawns the handler into a
+        // fresh wait-for-OSD state (no auto-remount), then _exit(0).
+        //
+        // Without this handler, vm.cpp's built-in switch routes
+        // shutdown to a silent no-op. Carts using the
+        // `extcmd("shutdown"); extcmd("reset")` fallback pattern (e.g.,
+        // oblivion_eve title-screen Quit) then fall through to reset,
+        // which reloads the entry cart = back to title screen — user
+        // perceives "Quit just resets the game". Registering shutdown
+        // here as a user extcmd takes priority over vm.cpp's switch
+        // (m_extcmds checked first per api_extcmd:1837) and routes
+        // shutdown to the same exit path as the system menu Quit.
+        g_vm->add_extcmd("shutdown", [](std::string const &) {
+            unlink("/media/fat/config/PICO-8.s0");
+            fprintf(stderr, "Shutdown (cart-initiated): cleared .s0, _exit(0) — Master_Daemon will respawn\n");
+            fflush(stderr);
+            _exit(0);
+        });
+
         g_vm->load(cart_path);
         g_vm->run();
         fprintf(stderr, "=== Game started: %s (PID=%d) ===\n", cart_path.c_str(), getpid());
