@@ -328,7 +328,24 @@ function load(arg, breadcrumb, params)
     end
     if success then
         print('ok')
-        return true
+        -- Cart switched. PC PICO-8 doesn't return execution to the
+        -- caller after a successful load() — the current cart's
+        -- coroutine is abandoned and the new cart starts. Our private_load
+        -- already created a fresh __z8_loop for the loaded cart, but the
+        -- parent's coroutine is still on the stack here, about to return
+        -- to the parent's code after load(). Without this yield, the
+        -- parent's NEXT LINE runs (e.g., oblivion_eve's fallback
+        -- `load("#"..e, "return to menu")` immediately after a successful
+        -- `load(e..".p8", "return to menu")`), which pushes a SECOND
+        -- breadcrumb. Each Return-to-Menu pick pops only one — the stack
+        -- accumulates over multiple sub-cart visits and the "Return to
+        -- menu" entry lingers on the title screen even after the user
+        -- has already returned. (Verified in pico8.log diagnostic 2026-05-21.)
+        -- Yielding here suspends the orphan coroutine; the next main-loop
+        -- coresume picks up the NEW __z8_loop (sub-cart) and the parent's
+        -- post-load code never runs. Lua GC eventually collects the
+        -- orphan since __z8_loop no longer references it.
+        while true do yield() end
     else
         color(14)
         print('failed')
