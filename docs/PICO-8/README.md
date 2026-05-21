@@ -71,6 +71,22 @@ Extract the release zip to the root of your MiSTer SD card (`/media/fat/`):
 4. Select **Load Cart** to browse and load a cart
 5. Load a different cart from the OSD at any time during gameplay
 
+## Supported Features
+
+| Feature | PICO-8 |
+|---|---|
+| Saves (cartdata `.p8d.txt`) | ✅ |
+| Savestates (4 slots/cart, NES-style `.ss`) | ✅ |
+| Logs (`/media/fat/logs/PICO-8/pico8.log`) | ✅ |
+| Configs (`/media/fat/config/`) | ✅ |
+| MGLs (`_Other/*.mgl` one-click launchers) | ✅ |
+| Gameplay Recordings / TAS | ❌ no (zepto8 doesn't expose PICO-8 record/replay) |
+| Gamepad | ✅ |
+| Keyboard | ✅ (cart browser; blocked when gamepad connected) |
+| Mouse | ❌ no (PICO-8 spec exists but zepto8 hasn't wired `stat(32,33,34)`) |
+| Screen Positioning (CRT) H ±3 / V ±3 | ✅ |
+| Online Network Play | ❌ |
+
 ## Controls (Xbox wireless controller default mapping)
 
 | Xbox wireless    | PICO-8 action     | Notes |
