@@ -88,6 +88,7 @@ Extract the release zip to the root of your MiSTer SD card (`/media/fat/`):
 | Online Network Play | ❌ |
 | Multiplayer | ✅ up to **4 players** (FPGA `hps_io` `joystick_0..3` slots; cart determines actual usage) |
 | Light Gun | ❌ |
+| Aspect Ratio (Original / Full Screen / Custom1 / Custom2) | ❌ no OSD option (fixed at `VIDEO_ARX=4` / `VIDEO_ARY=3` in `fpga/PICO8.sv` lines 202-203; user can't override per-display via `aspect_ratio_1=` / `aspect_ratio_2=` in MiSTer.ini) |
 
 ## Controls (Xbox wireless controller default mapping)
 
