@@ -86,6 +86,8 @@ Extract the release zip to the root of your MiSTer SD card (`/media/fat/`):
 | Mouse | ❌ no (PICO-8 spec exists but zepto8 hasn't wired `stat(32,33,34)`) |
 | Screen Positioning (CRT) H ±3 / V ±3 | ✅ |
 | Online Network Play | ❌ |
+| Multiplayer | ✅ up to **4 players** (FPGA `hps_io` `joystick_0..3` slots; cart determines actual usage) |
+| Light Gun | ❌ |
 
 ## Controls (Xbox wireless controller default mapping)
 
