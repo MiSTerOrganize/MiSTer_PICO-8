@@ -79,7 +79,7 @@ Extract the release zip to the root of your MiSTer SD card (`/media/fat/`):
 | **A** button     | O (confirm / primary action) | |
 | **X** button     | X (cancel / secondary action) | |
 | **Menu / Start** | Pause / system menu | opens PICO-8's built-in pause menu |
-| **View / Back**  | MiSTer OSD | core's OSD overlay (Load Cart, Save State, etc.) |
+| **Xbox Guide (center)** | MiSTer OSD | core's OSD overlay (Load Cart, Save State, etc.) — framework-level, not per-core |
 
 CONF_STR: `J1,O,X,Pause;` / `jn,B,Y,Start;`. MiSTer's `jn` extension uses SNES naming (`jn A`=Xbox B, `jn B`=Xbox A, `jn X`=Xbox Y, `jn Y`=Xbox X), so the defaults above pair `jn B` (Xbox A) → PICO-8 O and `jn Y` (Xbox X) → PICO-8 X.
 
