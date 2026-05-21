@@ -71,15 +71,17 @@ Extract the release zip to the root of your MiSTer SD card (`/media/fat/`):
 4. Select **Load Cart** to browse and load a cart
 5. Load a different cart from the OSD at any time during gameplay
 
-## Controls
+## Controls (Xbox wireless controller default mapping)
 
-| Button              | PICO-8      |
-|---------------------|-------------|
-| D-pad / Analog stick | Movement   |
-| A                   | O (confirm) |
-| X                   | X (action)  |
-| Start               | Pause       |
-| Menu button         | MiSTer OSD  |
+| Xbox wireless    | PICO-8 action     | Notes |
+|------------------|-------------------|-------|
+| D-pad / Left stick | Movement (4-way) | analog stick has ARM-side dead zone for drift |
+| **A** button     | O (confirm / primary action) | |
+| **X** button     | X (cancel / secondary action) | |
+| **Menu / Start** | Pause / system menu | opens PICO-8's built-in pause menu |
+| **View / Back**  | MiSTer OSD | core's OSD overlay (Load Cart, Save State, etc.) |
+
+CONF_STR: `J1,O,X,Pause;` / `jn,B,Y,Start;`. MiSTer's `jn` extension uses SNES naming (`jn A`=Xbox B, `jn B`=Xbox A, `jn X`=Xbox Y, `jn Y`=Xbox X), so the defaults above pair `jn B` (Xbox A) → PICO-8 O and `jn Y` (Xbox X) → PICO-8 X.
 
 ## Save States
 
