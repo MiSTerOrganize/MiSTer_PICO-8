@@ -330,22 +330,38 @@ function load(arg, breadcrumb, params)
         print('ok')
         -- Cart switched. PC PICO-8 doesn't return execution to the
         -- caller after a successful load() — the current cart's
-        -- coroutine is abandoned and the new cart starts. Our private_load
-        -- already created a fresh __z8_loop for the loaded cart, but the
-        -- parent's coroutine is still on the stack here, about to return
-        -- to the parent's code after load(). Without this yield, the
-        -- parent's NEXT LINE runs (e.g., oblivion_eve's fallback
-        -- `load("#"..e, "return to menu")` immediately after a successful
-        -- `load(e..".p8", "return to menu")`), which pushes a SECOND
-        -- breadcrumb. Each Return-to-Menu pick pops only one — the stack
-        -- accumulates over multiple sub-cart visits and the "Return to
-        -- menu" entry lingers on the title screen even after the user
-        -- has already returned. (Verified in pico8.log diagnostic 2026-05-21.)
-        -- Yielding here suspends the orphan coroutine; the next main-loop
-        -- coresume picks up the NEW __z8_loop (sub-cart) and the parent's
-        -- post-load code never runs. Lua GC eventually collects the
-        -- orphan since __z8_loop no longer references it.
-        while true do yield() end
+        -- coroutine is abandoned and the new cart starts. Try to yield
+        -- forever to match.
+        --
+        -- TWO call-site contexts to handle correctly:
+        --
+        -- (a) Cart code path (parent cart's _update60 calls load()):
+        --     we're inside __z8_loop coroutine. yield() suspends the
+        --     orphan; next __z8_tick coresumes the NEW __z8_loop
+        --     (sub-cart). Without this, the parent's NEXT LINE runs —
+        --     e.g., oblivion_eve's fallback `load("#"..e, ...)` after
+        --     a successful `load(e..".p8", ...)` — pushing a SECOND
+        --     breadcrumb. Each Return-to-Menu pop only removes one,
+        --     so the stack accumulates and the entry lingers on the
+        --     title screen. (Diagnosed via pico8.log 2026-05-21.)
+        --
+        -- (b) Menuitem callback path (cart's pause-menu menuitem fn
+        --     calls load(), e.g., POOM's "main menu" → load(title_cart)):
+        --     the callback is invoked from __z8_pause_menu() which is
+        --     called directly from __z8_tick — NOT via coresume — so
+        --     we're on the main thread. yield() from main thread raises
+        --     "attempt to yield from outside a coroutine"; pcall catches
+        --     the error and we fall through to return true. This is
+        --     correct because in menuitem context the callback's
+        --     continuation is just menu-UI cleanup; the cart has
+        --     already switched (private_load created the new __z8_loop)
+        --     and the next __z8_tick will resume it as soon as the
+        --     menu is closed.
+        --
+        -- Lua GC eventually collects the suspended orphan since
+        -- __z8_loop no longer references it.
+        pcall(function() while true do yield() end end)
+        return true
     else
         color(14)
         print('failed')
