@@ -5,7 +5,7 @@ A PICO-8 fantasy console emulator for MiSTer FPGA with native video and audio ou
 ## Features
 
 - **Native FPGA video output** — 256×224 @ 60.10Hz, byte-for-byte identical to the MiSTer NES core's default timing. Exact NES pixel clock (5.369 MHz from NTSC colorburst crystal), 47.68 µs active time, 38 lines of vertical blanking. 128×128 source is 2× horizontal + 1.75× vertical (Bresenham 4/7) so all source pixels display at 8:7 pixel aspect — same proportions as NES games on a CRT TV
-- **Native FPGA audio output** — 48 kHz signed 16-bit stereo via DDR3 ring buffer and dual-clock DCFIFO (same audio path as NES/SNES/Genesis cores)
+- **Native FPGA audio output** — 48 kHz signed 16-bit stereo via DDR3 ring buffer and dual-clock DCFIFO (same audio path as NES/SNES/Genesis cores). Audio kernel: **linear interpolation** at engine + wrapper (matches zepto8's `src/pico8/sfx.cpp::get_audio` linear-interp PCM math; wrapper at `src/mister_main.cpp::upsample_mono_to_stereo` mirrors the engine character — both stages linear).
 - **CRT support** — scanlines, shadow masks, and analog video output for CRT displays
 - **MiSTer OSD integration** — load .p8 and .p8.png carts from the file browser
 - **Hot-swap carts** — load a new cart from the OSD while a game is playing
