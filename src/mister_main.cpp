@@ -163,7 +163,25 @@ static void poly_init()
 static int upsample_mono_to_stereo(const int16_t *mono_in, int in_samples,
                                     int16_t *stereo_out, int max_out)
 {
-    if (!poly_initialized) poly_init();
+    // Engine-source-driven choice (2026-05-21 correction): zepto8's
+    // `src/pico8/sfx.cpp::get_audio` produces 22050 Hz audio via LINEAR
+    // INTERPOLATION at the engine level (PCM streaming linear-interp at
+    // line 446: `s0 + (s1-s0)*frac`). Per the NON-NEGOTIABLE rule
+    // (feedback_audio_type_from_engine_source.md), the wrapper resampler
+    // MUST match the engine's kernel character — linear in this case.
+    //
+    // Previously this function used 16-tap × 32-phase polyphase
+    // windowed-sinc, justified by the (now-superseded) inference "SDL 2
+    // upstream → polyphase." That rule confused SDL2's transport-stage
+    // resampling with the engine's mixer. Engine = linear; wrapper now
+    // also = linear. Saves significant CPU (16× fewer mul-adds per output
+    // sample) for the same effective audible quality (linear matches
+    // engine character; polyphase smoothed already-linear data without
+    // recovering information).
+    //
+    // The dead POLY_* constants + poly_h[] table + poly_init() are kept
+    // in this file (unreferenced; compiler dead-code-eliminates) for now;
+    // a follow-up cleanup commit can remove them entirely.
 
     // Fixed-point step: (22050 << 16) / 48000 = 30106. uint64 intermediate
     // to avoid the int32 overflow trap.
@@ -176,18 +194,13 @@ static int upsample_mono_to_stereo(const int16_t *mono_in, int in_samples,
         if (src_idx >= (uint32_t)in_samples) break;
 
         uint32_t fr = accum & 0xFFFF;
-        int p = (int)((fr * (uint32_t)POLY_P) >> 16);
-        if (p >= POLY_P) p = POLY_P - 1;
 
-        // 16-tap polyphase convolution. Boundary-clamp missing neighbors.
-        int32_t sum = 0;
-        for (int k = 0; k < POLY_N; k++) {
-            int idx = (int)src_idx + k - POLY_CENTER;
-            if (idx < 0) idx = 0;
-            if (idx >= in_samples) idx = in_samples - 1;
-            sum += (int32_t)mono_in[idx] * (int32_t)poly_h[p][k];
-        }
-        sum >>= POLY_SCALE;
+        // Linear interpolation: s0 + (s1 - s0) * frac, with frac in 16.16.
+        int32_t s0 = (int32_t)mono_in[src_idx];
+        int32_t s1 = (src_idx + 1 < (uint32_t)in_samples)
+                     ? (int32_t)mono_in[src_idx + 1]
+                     : s0;  // Boundary: hold last sample
+        int32_t sum = s0 + (((s1 - s0) * (int32_t)fr) >> 16);
         if (sum > 32767)  sum = 32767;
         if (sum < -32768) sum = -32768;
         int16_t s16 = (int16_t)sum;
