@@ -97,94 +97,34 @@ static volatile int g_savestate_load_request = -1;
 static pthread_t g_audio_thread;
 static volatile bool g_audio_running = false;
 
-// Upsample 22050 Hz mono → 48000 Hz stereo using POLYPHASE WINDOWED-SINC FIR.
-// Matches PC PICO-8's audio path: PICO-8 desktop uses SDL2 (per the manual),
-// SDL2's default resampler is bandlimited interpolation (= polyphase windowed
-// sinc, per src/audio/SDL_audiocvt.c in libsdl-org/SDL). For PC reference
-// parity on MiSTer, we mirror SDL2's polyphase quality here.
+// Upsample 22050 Hz mono → 48000 Hz stereo using LINEAR INTERPOLATION.
 //
-// Filter: 16-tap × 32-phase, Hann-windowed sinc, cutoff at source Nyquist.
-// Coefficient table generated once at first call; int16 q15 storage.
-// Per output sample: 16 multiply-adds (mono input, duplicated to stereo).
+// Engine-source-driven choice (2026-05-21 correction): zepto8's
+// src/pico8/sfx.cpp::get_audio produces 22050 Hz output via linear
+// interpolation at the engine level (PCM streaming linear-interp at
+// line 446: s0 + (s1 - s0) * frac). Per the NON-NEGOTIABLE rule in
+// feedback_audio_type_from_engine_source.md, the wrapper resampler
+// MUST match the engine's kernel character — linear in this case.
 //
-// HISTORY (2026-05-15):
-//   - This file's resampler was nearest-neighbor → linear (b4925b9) →
-//     cubic Hermite (07729dc) → nearest-neighbor (3597ad0) — all chosen on
-//     incorrect understanding of PICO-8's actual desktop behavior.
-//   - Research clarified: PC PICO-8 uses SDL2's bandlimited interpolation
-//     (polyphase). QPA decoder's nearest-neighbor is an approximation for
-//     minimal-decoder size, NOT what PICO-8 itself outputs.
-//   - Polyphase windowed-sinc here matches PC PICO-8 reference quality.
+// Per output sample: 1 multiply + 1 add. Cheap, matches engine
+// character exactly. Mono input is duplicated to stereo on write.
+//
+// HISTORY: previous implementations chose nearest-neighbor → linear →
+// cubic Hermite → nearest-neighbor → polyphase windowed-sinc, each
+// chosen on a wrong inference about PICO-8's PC audio path. The
+// engine-source-driven rule (2026-05-21) reverses all that: read the
+// engine source, match the engine kernel. zepto8's engine is linear,
+// so wrapper is linear too. Earlier polyphase windowed-sinc was 16×
+// more expensive per output sample for zero audible gain (smoothing
+// data that was already linearly interpolated upstream).
 //
 // Returns number of stereo output samples written.
-
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
-
-#define POLY_N        16   // taps per phase
-#define POLY_P        32   // phase quantization levels
-#define POLY_CENTER   7    // index of "current" tap (k in [0, N))
-#define POLY_SCALE    15   // q15 fixed-point for coefficients
-
-static int16_t  poly_h[POLY_P][POLY_N];
-static bool     poly_initialized = false;
-
-static void poly_init()
-{
-    for (int p = 0; p < POLY_P; p++) {
-        double row[POLY_N];
-        double sum = 0.0;
-        for (int k = 0; k < POLY_N; k++) {
-            double x = (double)(k - POLY_CENTER) + (double)p / (double)POLY_P;
-            double sinc_val;
-            if (x == 0.0) {
-                sinc_val = 1.0;
-            } else {
-                double arg = M_PI * x;
-                sinc_val = std::sin(arg) / arg;
-            }
-            double win_t = (double)k / (double)(POLY_N - 1);
-            double win = 0.5 - 0.5 * std::cos(2.0 * M_PI * win_t);
-            row[k] = sinc_val * win;
-            sum += row[k];
-        }
-        for (int k = 0; k < POLY_N; k++) {
-            double v = row[k] / sum * (double)(1 << POLY_SCALE);
-            int iv = (int)(v < 0.0 ? v - 0.5 : v + 0.5);
-            if (iv > 32767)  iv = 32767;
-            if (iv < -32768) iv = -32768;
-            poly_h[p][k] = (int16_t)iv;
-        }
-    }
-    poly_initialized = true;
-}
 
 static int upsample_mono_to_stereo(const int16_t *mono_in, int in_samples,
                                     int16_t *stereo_out, int max_out)
 {
-    // Engine-source-driven choice (2026-05-21 correction): zepto8's
-    // `src/pico8/sfx.cpp::get_audio` produces 22050 Hz audio via LINEAR
-    // INTERPOLATION at the engine level (PCM streaming linear-interp at
-    // line 446: `s0 + (s1-s0)*frac`). Per the NON-NEGOTIABLE rule
-    // (feedback_audio_type_from_engine_source.md), the wrapper resampler
-    // MUST match the engine's kernel character — linear in this case.
-    //
-    // Previously this function used 16-tap × 32-phase polyphase
-    // windowed-sinc, justified by the (now-superseded) inference "SDL 2
-    // upstream → polyphase." That rule confused SDL2's transport-stage
-    // resampling with the engine's mixer. Engine = linear; wrapper now
-    // also = linear. Saves significant CPU (16× fewer mul-adds per output
-    // sample) for the same effective audible quality (linear matches
-    // engine character; polyphase smoothed already-linear data without
-    // recovering information).
-    //
-    // The dead POLY_* constants + poly_h[] table + poly_init() are kept
-    // in this file (unreferenced; compiler dead-code-eliminates) for now;
-    // a follow-up cleanup commit can remove them entirely.
-
     // Fixed-point step: (22050 << 16) / 48000 = 30106. uint64 intermediate
-    // to avoid the int32 overflow trap.
+    // to avoid the int32 overflow trap (signed-shift UB on >= 32768).
     const uint32_t step = (uint32_t)(((uint64_t)SRC_RATE << 16) / DST_RATE);
     uint32_t accum = 0;
     int out_count = 0;
