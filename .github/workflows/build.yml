@@ -86,6 +86,19 @@ jobs:
           cp build-arm/PICO-8 /tmp/ci-binary/PICO-8
           git config user.email "ci@misterorganize"
           git config user.name "MiSTer Organize CI"
+          # Diagnostic-marker gate (added 2026-05-25 per feedback_no_diagnostic_binaries_in_db.md):
+          # Universal hybrid-core rule. If any source path that contributes to the final
+          # binary carries TEMPORARY / SUB-PROFILE / DIAG instrumentation (in PICO-8's
+          # case: src/ C++ sources OR bios.p8 Lua sandbox-side), the rebuilt binary is
+          # for research only and MUST NOT land on main (where DB rebuild would pick up
+          # its hash and ship it via db.json to end users). Binary still uploads as
+          # workflow artifact below for manual deploy testing.
+          if grep -rqE "TEMPORARY PROFILE|TEMPORARY DIAG|TEMPORARY SUB-PROFILE|SUB-PROFILE v[0-9]+|REVERT AFTER MEASURED" src/ games/PICO-8/bios.p8 2>/dev/null; then
+            echo "[CI gate] Diagnostic markers detected in src/ or bios.p8 — SKIPPING binary commit-back."
+            echo "[CI gate] Binary built successfully and uploads as workflow artifact for manual deploy."
+            echo "[CI gate] Will commit binary back automatically once diagnostic markers are removed."
+            exit 0
+          fi
           # Try up to 5 times — if main moved (sibling CI raced ahead),
           # reset to origin/main, overwrite the binary with OUR fresh one,
           # commit, push. Avoid `git pull --rebase` because the binary
