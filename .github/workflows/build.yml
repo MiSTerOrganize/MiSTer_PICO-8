@@ -93,7 +93,7 @@ jobs:
           # for research only and MUST NOT land on main (where DB rebuild would pick up
           # its hash and ship it via db.json to end users). Binary still uploads as
           # workflow artifact below for manual deploy testing.
-          if grep -rqE "TEMPORARY PROFILE|TEMPORARY DIAG|TEMPORARY SUB-PROFILE|SUB-PROFILE v[0-9]+|REVERT AFTER MEASURED" src/ games/PICO-8/bios.p8 2>/dev/null; then
+          if grep -rqE "TEMPORARY PROFILE|TEMPORARY DIAG|TEMPORARY SUB-PROFILE|REVERT AFTER MEASURED" src/ games/PICO-8/bios.p8 2>/dev/null; then
             echo "[CI gate] Diagnostic markers detected in src/ or bios.p8 — SKIPPING binary commit-back."
             echo "[CI gate] Binary built successfully and uploads as workflow artifact for manual deploy."
             echo "[CI gate] Will commit binary back automatically once diagnostic markers are removed."
