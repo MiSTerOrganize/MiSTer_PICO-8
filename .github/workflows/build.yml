@@ -103,6 +103,7 @@ jobs:
           # reset to origin/main, overwrite the binary with OUR fresh one,
           # commit, push. Avoid `git pull --rebase` because the binary
           # merge conflict cannot be auto-resolved.
+          PUSH_OK=0
           for i in 1 2 3 4 5; do
             git fetch origin main
             git reset --hard origin/main
@@ -116,11 +117,28 @@ jobs:
             git commit -m "CI: rebuild ARM binary for ${{ github.sha }}"
             if git push; then
               echo "Push succeeded on attempt $i."
+              PUSH_OK=1
               break
             fi
             echo "Push failed (attempt $i), resyncing and retrying..."
             sleep 2
           done
+          # Trigger MiSTer_Frontier DB rebuild on successful binary push so
+          # db.json reflects the new hash promptly (prevents update_all hash-
+          # mismatch failures in the window between binary push and daily cron).
+          # Requires DISPATCH_TOKEN secret (fine-grained PAT with Actions write
+          # permission on MiSTer_Frontier). If unset, just warns.
+          if [ "$PUSH_OK" = "1" ]; then
+            if [ -n "${{ secrets.MISTER_FRONTIER_DISPATCH_TOKEN }}" ]; then
+              echo "Triggering MiSTer_Frontier DB rebuild..."
+              GH_TOKEN="${{ secrets.MISTER_FRONTIER_DISPATCH_TOKEN }}" \
+                gh workflow run "Build Custom Database" -R MiSTerOrganize/MiSTer_Frontier \
+                || echo "WARN: DB dispatch failed (token may be expired)"
+            else
+              echo "WARN: MISTER_FRONTIER_DISPATCH_TOKEN not set -- skipping DB auto-dispatch."
+              echo "      Add this PAT secret to close the db.json staleness window."
+            fi
+          fi
 
       - name: Package release zip
         run: |
