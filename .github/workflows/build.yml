@@ -126,8 +126,10 @@ jobs:
           # Trigger MiSTer_Frontier DB rebuild on successful binary push so
           # db.json reflects the new hash promptly (prevents update_all hash-
           # mismatch failures in the window between binary push and daily cron).
-          # Requires DISPATCH_TOKEN secret (fine-grained PAT with Actions write
-          # permission on MiSTer_Frontier). If unset, just warns.
+          # Requires MISTER_FRONTIER_DISPATCH_TOKEN secret (classic PAT,
+          # workflow scope, no expiration -- threat model justifies this:
+          # token only triggers workflow_dispatch on MiSTer_Frontier).
+          # If unset, just warns (daily cron handles propagation slower).
           if [ "$PUSH_OK" = "1" ]; then
             if [ -n "${{ secrets.MISTER_FRONTIER_DISPATCH_TOKEN }}" ]; then
               echo "Triggering MiSTer_Frontier DB rebuild..."
