@@ -148,10 +148,15 @@ static void *audio_thread_func(void *arg)
 {
     (void)arg;
 
-    // Pin audio thread to CPU core 1 (main thread runs on core 0)
+    // Pin audio thread to CPU core 0 (render/main thread runs on core 1).
+    // 2026-06-07: on MiSTer, /proc/interrupts shows ALL device IRQs (USB ~164M,
+    // MiSTer_fb, SD) land on core 0 and core 1 is interrupt-free — so the
+    // render loop gets the quiet core 1 and audio takes core 0. Matches
+    // OpenBOR_7533. (Light core, so no measurable fps change — done for
+    // correctness + cross-core consistency.)
     cpu_set_t cpuset;
     CPU_ZERO(&cpuset);
-    CPU_SET(1, &cpuset);
+    CPU_SET(0, &cpuset);
     pthread_setaffinity_np(pthread_self(), sizeof(cpuset), &cpuset);
 
     int16_t mono_buf[AUDIO_BUF_SAMPLES];
@@ -385,10 +390,13 @@ int main(int argc, char **argv)
         }
     }
 
-    // Pin main thread to CPU core 0 (audio thread will use core 1)
+    // Pin main/render thread to CPU core 1 (audio thread uses core 0).
+    // 2026-06-07: core 1 is the interrupt-free core on MiSTer (all device IRQs
+    // route to core 0 per /proc/interrupts), so the render loop runs there.
+    // Matches OpenBOR_7533's verified layout.
     cpu_set_t cpuset;
     CPU_ZERO(&cpuset);
-    CPU_SET(0, &cpuset);
+    CPU_SET(1, &cpuset);
     pthread_setaffinity_np(pthread_self(), sizeof(cpuset), &cpuset);
 
     signal(SIGINT, signal_handler);
