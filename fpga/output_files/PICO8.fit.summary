@@ -1,12 +1,12 @@
-Fitter Status : Successful - Wed May 13 15:07:48 2026
+Fitter Status : Successful - Mon Jun 08 10:17:08 2026
 Quartus Prime Version : 17.0.0 Build 595 04/25/2017 SJ Lite Edition
 Revision Name : PICO8
 Top-level Entity Name : sys_top
 Family : Cyclone V
 Device : 5CSEBA6U23I7
 Timing Models : Final
-Logic utilization (in ALMs) : 8,314 / 41,910 ( 20 % )
-Total registers : 13288
+Logic utilization (in ALMs) : 8,629 / 41,910 ( 21 % )
+Total registers : 13807
 Total pins : 145 / 314 ( 46 % )
 Total virtual pins : 0
 Total block memory bits : 511,544 / 5,662,720 ( 9 % )
