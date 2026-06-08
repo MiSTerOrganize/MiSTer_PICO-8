@@ -1,10 +1,10 @@
-Analysis & Synthesis Status : Successful - Wed May 13 15:02:37 2026
+Analysis & Synthesis Status : Successful - Mon Jun 08 10:00:22 2026
 Quartus Prime Version : 17.0.0 Build 595 04/25/2017 SJ Lite Edition
 Revision Name : PICO8
 Top-level Entity Name : sys_top
 Family : Cyclone V
 Logic utilization (in ALMs) : N/A
-Total registers : 13379
+Total registers : 13863
 Total pins : 145
 Total virtual pins : 0
 Total block memory bits : 511,544
