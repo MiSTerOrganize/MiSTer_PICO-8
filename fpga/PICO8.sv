@@ -199,8 +199,7 @@ assign CE_PIXEL = ce_pix_ntsc;
 assign VGA_SL = 0;
 assign VGA_F1 = 0;
 // PICO-8 128x128 content doubled to 256x256, exact NES timing, 4:3 aspect.
-assign VIDEO_ARX = 13'd4;
-assign VIDEO_ARY = 13'd3;
+// VIDEO_ARX/ARY are driven by video_freak below (Aspect Ratio + Scale Mode OSD, 2026-06-08).
 assign VGA_SCALER= 0;
 assign VGA_DISABLE = 0;
 
@@ -227,6 +226,9 @@ localparam CONF_STR = {
 	"-;",
 	"OCE,H Position (CRT),0,+1,+2,+3,-3,-2,-1;",
 	"OFH,V Position (CRT),0,+1,+2,+3,-3,-2,-1;",
+	"OMN,Aspect Ratio,Original,Full Screen,[ARC1],[ARC2];",
+	"OOP,Scale,Normal,V-Integer,Narrower HV-Integer,Wider HV-Integer;",
+	"OQ,Swap Joysticks,No,Yes;",
 	"-;",
 	"OKL,Save Slot,1,2,3,4;",
 	"TI,Save State;",
@@ -658,8 +660,8 @@ pico8_video_top native_video
 	.audio_r        (nv_audio_r),
 
 	// Joysticks (P1-P4 from hps_io, written to DDR3 for ARM)
-	.joystick_0     (joystick_0),
-	.joystick_1     (joystick_1),
+	.joystick_0     (status[26] ? joystick_1 : joystick_0),  // Swap Joysticks (status[26]=OQ): P1<->P2
+	.joystick_1     (status[26] ? joystick_0 : joystick_1),
 	.joystick_2     (joystick_2),
 	.joystick_3     (joystick_3),
 	.joystick_l_analog_0 (joystick_l_analog_0),
@@ -682,11 +684,37 @@ pico8_video_top native_video
 // When NATIVE_VID_ACTIVE, output native video timing (hs/vs/de) so the CRT
 // can lock onto valid sync immediately. Pixel data comes from nv_active
 // (frame_ready); until then, output black.
-assign VGA_DE  = NATIVE_VID_ACTIVE ? nv_de    : ~(HBlank | VBlank);
+wire vga_de_in = NATIVE_VID_ACTIVE ? nv_de    : ~(HBlank | VBlank);
 assign VGA_HS  = NATIVE_VID_ACTIVE ? nv_hs    : HSync;
 assign VGA_VS  = NATIVE_VID_ACTIVE ? nv_vs    : VSync;
 assign VGA_R   = nv_active ? nv_r     : (NATIVE_VID_ACTIVE ? 8'd0 : comp_v);
 assign VGA_G   = nv_active ? nv_g     : (NATIVE_VID_ACTIVE ? 8'd0 : comp_v);
 assign VGA_B   = nv_active ? nv_b     : (NATIVE_VID_ACTIVE ? 8'd0 : comp_v);
+
+// ── Feature bundle 2026-06-08: Aspect Ratio + Scale Mode via sys/ video_freak ──
+// video_freak takes the core's DE + base aspect + integer SCALE and drives
+// VIDEO_ARX/ARY + the final VGA_DE. CROP_SIZE=0 (Vertical Crop deliberately NOT
+// added — it clips edge HUD/health bars and is redundant with Scale Mode).
+// ar_sel = status[23:22]: 0=Original(4:3), 1=Full, 2=[ARC1], 3=[ARC2] (the (ar-1)
+// trick is how the framework reads aspect_ratio_1=/2= from MiSTer.ini).
+wire [1:0] ar_sel    = status[23:22];
+wire [1:0] scale_sel = status[25:24];
+video_freak video_freak
+(
+	.CLK_VIDEO   (CLK_VIDEO),
+	.CE_PIXEL    (CE_PIXEL),
+	.VGA_VS      (VGA_VS),
+	.HDMI_WIDTH  (HDMI_WIDTH),
+	.HDMI_HEIGHT (HDMI_HEIGHT),
+	.VGA_DE      (VGA_DE),
+	.VIDEO_ARX   (VIDEO_ARX),
+	.VIDEO_ARY   (VIDEO_ARY),
+	.VGA_DE_IN   (vga_de_in),
+	.ARX         ((!ar_sel) ? 12'd4 : (ar_sel - 1'd1)),
+	.ARY         ((!ar_sel) ? 12'd3 : 12'd0),
+	.CROP_SIZE   (12'd0),
+	.CROP_OFF    (5'd0),
+	.SCALE       ({1'b0, scale_sel})
+);
 
 endmodule
