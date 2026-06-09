@@ -91,15 +91,12 @@ Extract the release zip to the root of your MiSTer SD card (`/media/fat/`):
 | Online Network Play | ❌ |
 | Multiplayer | ✅ up to **4 players** (FPGA `hps_io` `joystick_0..3` slots; cart determines actual usage) |
 | Light Gun | ❌ |
-| Aspect Ratio (Original / Full Screen / Custom1 / Custom2) | ❌ planned (roadmap #1) — fixed at `VIDEO_ARX=4` / `VIDEO_ARY=3` in `fpga/PICO8.sv` lines 202-203 |
-| Vertical Crop (216p 5x for clean 1080p integer scale) | ❌ planned (roadmap #2) |
-| Crop Offset (±12, paired with V-Crop) | ❌ planned (roadmap #2 pair) |
-| Scale Mode (Normal / V-Int / HV-Int integer scaling) | ❌ planned (roadmap #3) |
-| Swap Joysticks (P1↔P2) | ❌ planned (roadmap #4) |
-| Pause when OSD open | ❌ planned (roadmap #5) |
+| Aspect Ratio (Original / Full Screen / Custom1 / Custom2) | ✅ |
+| Scale Mode (Normal / V-Int / HV-Int integer scaling) | ✅ |
+| Swap Joysticks (P1↔P2) | ✅ |
 | Stereo Mix (None / 25 / 50 / 100% channel cross-bleed) | ❌ n/a (mono source — zepto8 outputs L=R, cross-bleed is a no-op) |
 
-> **Roadmap note** — rows above marked "planned (roadmap #N)" are tracked in the mainstream-core parity roadmap: 6 LOW-difficulty OSD features common to ≥6 of 11 surveyed mainstream MiSTer cores (NES/Genesis/SNES/GB/GBA/SMS/NeoGeo/N64/PSX/Saturn/MegaCD). Ship order: Aspect Ratio → V-Crop+Offset → Scale → Swap Joysticks → Pause-when-OSD → Stereo Mix. Implementation is sys/-framework status-bit wiring only — no new RTL, no engine-side work.
+> **Note** -- Aspect Ratio, Scale Mode, Swap Joysticks, and (on OpenBOR) Stereo Mix shipped 2026-06-08, bringing these cores in line with mainstream MiSTer console-core OSD options.
 
 ## Controls (Xbox wireless controller default mapping)
 
