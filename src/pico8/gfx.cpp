@@ -1578,6 +1578,19 @@ void vm::api_rectfill(int16_t x0, int16_t y0, int16_t x1, int16_t y1,
     x1 -= ds.camera.x;
     y1 -= ds.camera.y;
 
+    /* TEMPORARY DIAG (VR road corruption): flag rectfill spans whose X coords
+     * are far off-screen (overflow/wrap signature from polyfill's fix32 slope).
+     * Bounded to the first 40 abnormal calls. REVERT AFTER MEASURED. */
+    {
+        static int _rf_diag = 0;
+        if (_rf_diag < 40 && (x0 < -200 || x0 > 320 || x1 < -200 || x1 > 320))
+        {
+            _rf_diag++;
+            fprintf(stderr, "[RFILL] x0=%d y0=%d x1=%d y1=%d\n",
+                    (int)x0, (int)y0, (int)x1, (int)y1);
+        }
+    }
+
     if (y0 > y1)
         std::swap(y0, y1);
 
