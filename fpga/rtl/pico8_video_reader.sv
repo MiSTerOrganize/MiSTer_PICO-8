@@ -85,6 +85,7 @@ module pico8_video_reader (
 
     // Control
     input  wire        enable,
+    input  wire        scale_1to1,   // 1 = Game Boy-style 1:1 centered 128x128 (black borders); 0 = fill (2x H + Bresenham V)
     output wire        frame_ready
 );
 
@@ -302,7 +303,16 @@ assign ioctl_wait = cart_write_pending & ioctl_download;
 reg [6:0] safe_src_line;   // 0..127, source row for current display_line
 reg [2:0] safe_accum;      // Bresenham accumulator, 0..6 (carries (eff*4) mod 7)
 
-wire [6:0] source_line = safe_src_line;
+// -- 1:1 centered vertical window -------------------------------------
+// In 1:1 mode the 128 source rows display on output lines [48,176) (centered
+// in the 224-line active area); lines [0,48) + [176,224) are black borders
+// (state machine skips the DDR read so the FIFO stays empty -> pixel output
+// blacks the line). In fill mode, every line is content (Bresenham 128->224).
+localparam [8:0] V_BORDER_1TO1 = 9'd48;   // (224-128)/2
+wire [8:0] dl_src_1to1   = display_line - V_BORDER_1TO1;     // valid when is_content_line
+wire       is_content_line = ~scale_1to1
+                           | ((display_line >= V_BORDER_1TO1) && (display_line < (V_BORDER_1TO1 + 9'd128)));
+wire [6:0] source_line = scale_1to1 ? dl_src_1to1[6:0] : safe_src_line;
 
 // -- FIFO write signals -----------------------------------------------
 reg         fifo_wr;
@@ -677,14 +687,21 @@ always @(posedge ddr_clk) begin
 
             ST_READ_LINE: begin
                 if (!ddr_busy && !fifo_aclr_ddr_active) begin
-                    // source_line is Bresenham-tracked safe_src_line (1.75x
-                    // vertical, 128->224 over the entire 224-line active area).
-                    ddr_addr     <= buf_base_addr + ({22'd0, source_line} * LINE_STRIDE);
-                    ddr_burstcnt <= LINE_BURST;
-                    ddr_rd       <= 1'b1;
-                    beat_count   <= 7'd0;
-                    timeout_cnt  <= 20'd0;
-                    state        <= ST_WAIT_LINE;
+                    if (is_content_line) begin
+                        // source_line: fill mode = Bresenham safe_src_line (1.75x
+                        // vertical, 128->224); 1:1 mode = display_line-48 (1:1, rows
+                        // 0..127 -> lines 48..175).
+                        ddr_addr     <= buf_base_addr + ({22'd0, source_line} * LINE_STRIDE);
+                        ddr_burstcnt <= LINE_BURST;
+                        ddr_rd       <= 1'b1;
+                        beat_count   <= 7'd0;
+                        timeout_cnt  <= 20'd0;
+                        state        <= ST_WAIT_LINE;
+                    end else begin
+                        // 1:1 border line — no DDR read; FIFO stays empty so the
+                        // pixel output blacks this scanline. Advance via ST_LINE_DONE.
+                        state        <= ST_LINE_DONE;
+                    end
                 end
             end
 
@@ -794,14 +811,20 @@ dcfifo #(
 //
 reg  [63:0] pixel_word;
 reg  [1:0]  pixel_sub;
-reg         pixel_phase;      // 0=first copy, 1=second copy
+reg         pixel_phase;      // 0=first copy, 1=second copy (fill/stretch mode)
 reg         pixel_word_valid;
+reg  [8:0]  hpos;             // output column within active line (0..255), for 1:1 centering
 
 // RGB565 decode from current sub-pixel
 wire [15:0] cur_pix = pixel_word[{pixel_sub, 4'b0000} +: 16];
 wire  [7:0] dec_r = {cur_pix[15:11], cur_pix[15:13]};
 wire  [7:0] dec_g = {cur_pix[10:5],  cur_pix[10:9]};
 wire  [7:0] dec_b = {cur_pix[4:0],   cur_pix[4:2]};
+
+// 1:1 centered horizontal window: content on output columns [64,192) of the
+// 256-px active line; columns [0,64) + [192,256) are black borders.
+localparam [8:0] H_BORDER_1TO1 = 9'd64;   // (256-128)/2
+wire in_content_col = (hpos >= H_BORDER_1TO1) && (hpos < (H_BORDER_1TO1 + 9'd128));
 
 always @(posedge clk_vid) begin
     if (reset_vid) begin
@@ -813,57 +836,89 @@ always @(posedge clk_vid) begin
         pixel_sub        <= 2'd0;
         pixel_phase      <= 1'b0;
         pixel_word_valid <= 1'b0;
+        hpos             <= 9'd0;
     end
     else begin
         fifo_rd <= 1'b0;
 
         if (ce_pix) begin
             if (de && frame_ready_vid) begin
-                if (pixel_word_valid) begin
-                    // Output current pixel
-                    r_out <= dec_r;
-                    g_out <= dec_g;
-                    b_out <= dec_b;
-
-                    if (pixel_phase == 1'b0) begin
-                        // First copy done -- output same pixel again next cycle
-                        pixel_phase <= 1'b1;
-                    end
-                    else begin
-                        // Second copy done -- advance to next source pixel
-                        pixel_phase <= 1'b0;
-
-                        if (pixel_sub == 2'd3) begin
-                            // Word exhausted -- load next from FIFO
-                            pixel_word_valid <= 1'b0;
-                            if (!fifo_empty) begin
-                                pixel_word       <= fifo_rd_data;
-                                pixel_word_valid <= 1'b1;
-                                pixel_sub        <= 2'd0;
-                                fifo_rd          <= 1'b1;
+                if (scale_1to1) begin
+                    // ── Game Boy-style 1:1 centered: one source pixel per output
+                    //    pixel in cols [64,192); black borders elsewhere. ──
+                    if (in_content_col) begin
+                        if (pixel_word_valid) begin
+                            r_out <= dec_r; g_out <= dec_g; b_out <= dec_b;
+                            if (pixel_sub == 2'd3) begin
+                                pixel_word_valid <= 1'b0;
+                                if (!fifo_empty) begin
+                                    pixel_word       <= fifo_rd_data;
+                                    pixel_word_valid <= 1'b1;
+                                    pixel_sub        <= 2'd0;
+                                    fifo_rd          <= 1'b1;
+                                end
+                            end
+                            else begin
+                                pixel_sub <= pixel_sub + 2'd1;
                             end
                         end
+                        else if (!fifo_empty) begin
+                            // Prime: load word, emit sub 0, advance to sub 1 (no doubling)
+                            pixel_word       <= fifo_rd_data;
+                            pixel_word_valid <= 1'b1;
+                            pixel_sub        <= 2'd1;
+                            fifo_rd          <= 1'b1;
+                            r_out <= {fifo_rd_data[15:11], fifo_rd_data[15:13]};
+                            g_out <= {fifo_rd_data[10:5],  fifo_rd_data[10:9]};
+                            b_out <= {fifo_rd_data[4:0],   fifo_rd_data[4:2]};
+                        end
                         else begin
-                            pixel_sub <= pixel_sub + 2'd1;
+                            r_out <= 8'd0; g_out <= 8'd0; b_out <= 8'd0;
                         end
                     end
-                end
-                else if (!fifo_empty) begin
-                    // Load first word from FIFO (show-ahead)
-                    pixel_word       <= fifo_rd_data;
-                    pixel_word_valid <= 1'b1;
-                    pixel_sub        <= 2'd0;
-                    pixel_phase      <= 1'b0;
-                    fifo_rd          <= 1'b1;
-                    // Output first pixel immediately
-                    r_out <= {fifo_rd_data[15:11], fifo_rd_data[15:13]};
-                    g_out <= {fifo_rd_data[10:5],  fifo_rd_data[10:9]};
-                    b_out <= {fifo_rd_data[4:0],   fifo_rd_data[4:2]};
+                    else begin
+                        // Border column — black, do NOT consume the FIFO.
+                        r_out <= 8'd0; g_out <= 8'd0; b_out <= 8'd0;
+                    end
+                    hpos <= hpos + 9'd1;
                 end
                 else begin
-                    r_out <= 8'd0;
-                    g_out <= 8'd0;
-                    b_out <= 8'd0;
+                    // ── Fill mode: 2x horizontal doubling (original behavior) ──
+                    if (pixel_word_valid) begin
+                        r_out <= dec_r; g_out <= dec_g; b_out <= dec_b;
+                        if (pixel_phase == 1'b0) begin
+                            pixel_phase <= 1'b1;
+                        end
+                        else begin
+                            pixel_phase <= 1'b0;
+                            if (pixel_sub == 2'd3) begin
+                                pixel_word_valid <= 1'b0;
+                                if (!fifo_empty) begin
+                                    pixel_word       <= fifo_rd_data;
+                                    pixel_word_valid <= 1'b1;
+                                    pixel_sub        <= 2'd0;
+                                    fifo_rd          <= 1'b1;
+                                end
+                            end
+                            else begin
+                                pixel_sub <= pixel_sub + 2'd1;
+                            end
+                        end
+                    end
+                    else if (!fifo_empty) begin
+                        pixel_word       <= fifo_rd_data;
+                        pixel_word_valid <= 1'b1;
+                        pixel_sub        <= 2'd0;
+                        pixel_phase      <= 1'b0;
+                        fifo_rd          <= 1'b1;
+                        r_out <= {fifo_rd_data[15:11], fifo_rd_data[15:13]};
+                        g_out <= {fifo_rd_data[10:5],  fifo_rd_data[10:9]};
+                        b_out <= {fifo_rd_data[4:0],   fifo_rd_data[4:2]};
+                    end
+                    else begin
+                        r_out <= 8'd0; g_out <= 8'd0; b_out <= 8'd0;
+                    end
+                    hpos <= hpos + 9'd1;
                 end
             end
             else begin
@@ -874,6 +929,7 @@ always @(posedge clk_vid) begin
                 pixel_sub        <= 2'd0;
                 pixel_phase      <= 1'b0;
                 pixel_word_valid <= 1'b0;
+                hpos             <= 9'd0;
             end
         end
     end

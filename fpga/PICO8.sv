@@ -229,6 +229,7 @@ localparam CONF_STR = {
 	"OMN,Aspect Ratio,Original,Full Screen,[ARC1],[ARC2];",
 	"OOP,Scale,Normal,V-Integer,Narrower HV-Integer,Wider HV-Integer;",
 	"OQ,Swap Joysticks,No,Yes;",
+	"OR,Native Scale,Fill,1:1 Centered;",
 	"-;",
 	"OKL,Save Slot,1,2,3,4;",
 	"TI,Save State;",
@@ -544,6 +545,7 @@ wire FB  = status[5];
 wire [2:0] led = status[8:6];
 wire [2:0] h_pos = status[14:12];  // OSD H Position (CRT): 0..6 → 0,+1,+2,+3,-3,-2,-1
 wire [2:0] v_pos = status[17:15];  // OSD V Position (CRT): 0..6 → 0,+1,+2,+3,-3,-2,-1
+wire scale_1to1  = status[27];     // OSD Native Scale (OR): 1 = 1:1 centered 128x128 (Game Boy-style), 0 = fill
 
 reg   [9:0] hc;
 reg   [9:0] vc;
@@ -647,6 +649,7 @@ pico8_video_top native_video
 
 	// Control
 	.enable         (use_nv),
+	.scale_1to1     (scale_1to1),
 	.active         (nv_active),
 	.vsync_out      (),
 

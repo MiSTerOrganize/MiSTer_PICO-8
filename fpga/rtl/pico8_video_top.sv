@@ -40,6 +40,7 @@ module pico8_video_top (
 
     // Control
     input  wire        enable,        // from ARM: activate native video
+    input  wire        scale_1to1,    // OSD Native Scale: 1 = 1:1 centered (Game Boy-style), 0 = fill
     output wire        active,        // module is outputting valid video
     output wire        vsync_out,     // active-low vsync for frame sync
 
@@ -156,6 +157,7 @@ pico8_video_reader reader (
     .audio_r_out    (reader_audio_r),
 
     .enable         (enable),
+    .scale_1to1     (scale_1to1),
     .frame_ready    (reader_frame_ready),
 
     .joystick_0     (joystick_0),
