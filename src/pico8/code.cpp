@@ -236,7 +236,16 @@ static std::string pxa_decompress(uint8_t const *input)
             int nbits = 4;
             while (get_bits(1))
                 ++nbits;
+            // Defensive: a malformed/edge-case stream can run nbits up (1<<nbits
+            // would be UB) and/or produce an MTF index outside [0,255], which
+            // std::rotate in move_to_front::get() would dereference out of
+            // bounds -> segfault/corruption. Bail gracefully. (Found via the
+            // cart-library scan: Dungeon Rider Part I / The Lost City of Phound.)
+            if (nbits > 24)
+                break;
             int n = get_bits(nbits) + (1 << nbits) - 16;
+            if (n < 0 || n >= 256)
+                break;
             uint8_t ch = mtf.get(n);
             if (!ch)
                 break;
@@ -265,6 +274,12 @@ static std::string pxa_decompress(uint8_t const *input)
                     len += (n = get_bits(3));
                 while (n == 7);
 
+                // Defensive: a back-reference must point inside the already-
+                // decompressed output. offset > ret.size() makes ret.size()-offset
+                // underflow (size_t) into a wild ret[] read -> OOB / segfault on
+                // malformed/edge-case carts. Bail gracefully.
+                if ((size_t)offset > ret.size())
+                    break;
                 TRACE("%04x [%d] %d@-%d\n", int(ret.size()), int(pos-oldpos), len, offset);
                 for (int i = 0; i < len; ++i)
                     ret.push_back(ret[ret.size() - offset]);
