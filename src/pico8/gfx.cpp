@@ -22,6 +22,9 @@
 #include "pico8/vm.h"
 #include "bios.h"
 
+// TEMPORARY DIAG (VR road corruption): defined in mister_main.cpp. REVERT AFTER MEASURED.
+extern "C" volatile int g_vr_capture;
+
 namespace z8::pico8
 {
 
@@ -1583,7 +1586,6 @@ void vm::api_rectfill(int16_t x0, int16_t y0, int16_t x1, int16_t y1,
      * draw-state context — geometry, raw color bits, pen, fill pattern, clip.
      * Paired with the framebuffer PPM dump. REVERT AFTER MEASURED. */
     {
-        extern "C" volatile int g_vr_capture;
         if (g_vr_capture)
         {
             long cb = c ? (long)((*c).bits()) : -1;
