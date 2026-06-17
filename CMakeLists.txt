@@ -158,8 +158,9 @@ if(BUILD_HEADLESS)
     add_executable(z8headless tools/z8headless.cpp)
     target_link_libraries(z8headless zepto8core lodepng)
     if(NOT WIN32)
-        target_link_libraries(z8headless -lm -ldl -lpthread)
-        target_link_options(z8headless PRIVATE -static-libstdc++ -static-libgcc)
+        target_link_libraries(z8headless -lm -lpthread)
+        # Fully static so the same binary runs anywhere, incl. a musl WSL distro.
+        target_link_options(z8headless PRIVATE -static)
     else()
         # MinGW: bundle libstdc++/libgcc/winpthread so the .exe runs standalone.
         target_link_libraries(z8headless -lpthread)

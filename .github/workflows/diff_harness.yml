@@ -1,10 +1,9 @@
 name: Diff Harness
 
-# Differential bug-finding harness. Builds tools/z8headless (engine-only PC frame
-# dumper, no SDL/MiSTer) and runs it headless on cart(s), uploading frame PNGs.
-# Foundation for diffing our engine fork against stock zepto8 / a reference and
-# for reproducing cart bugs off-device. NOT shipped, NOT part of the ARM binary.
-# Fast (~2 min): native x86-64, no QEMU/Docker/SDL.
+# Differential bug-finding harness. Builds tools/z8headless (engine-only frame
+# dumper, no SDL/MiSTer) FULLY STATIC, smoke-runs it, and uploads the binary +
+# bios.p8 so the cart library can be scanned off-device (e.g. via WSL). NOT
+# shipped, NOT part of the ARM binary. Fast (~2 min): native x86-64, no QEMU/SDL.
 
 on:
   workflow_dispatch:
@@ -23,7 +22,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install deps
         run: sudo apt-get update && sudo apt-get install -y cmake g++
-      - name: Build z8headless (engine-only, no SDL)
+      - name: Build z8headless (engine-only, fully static)
         run: |
           cmake -B build -DBUILD_HEADLESS=ON -DSKIP_SDL_FRONTEND=ON -DCMAKE_BUILD_TYPE=Release
           cmake --build build --target z8headless -j$(nproc)
@@ -34,29 +33,16 @@ jobs:
           cp src/pico8/bios.p8 ./bios.p8     # BIOS resolves via cwd (empty data-path prefix)
           ./build/z8headless --cart tools/test_carts/shapes.p8 --frames 90 --dump 1,30,60,89 --out out
           ls -la out
+      - name: Stage binary bundle
+        run: |
+          mkdir -p bundle
+          cp build/z8headless bundle/z8headless
+          cp src/pico8/bios.p8 bundle/bios.p8
       - uses: actions/upload-artifact@v4
         with:
           name: harness-frames
           path: out/*.png
-
-  # Windows build of z8headless.exe so the cart library can be scanned locally
-  # on the dev machine (git-bash/PowerShell run .exe). MinGW cross-compile.
-  build-windows:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install MinGW + cmake
-        run: sudo apt-get update && sudo apt-get install -y cmake g++-mingw-w64-i686 gcc-mingw-w64-i686
-      - name: Cross-compile z8headless.exe (32-bit i686 = ILP32, matches ARM data model)
-        run: |
-          cmake -B build-win \
-            -DCMAKE_SYSTEM_NAME=Windows \
-            -DCMAKE_C_COMPILER=i686-w64-mingw32-gcc \
-            -DCMAKE_CXX_COMPILER=i686-w64-mingw32-g++ \
-            -DBUILD_HEADLESS=ON -DSKIP_SDL_FRONTEND=ON -DWITH_QUICKJS=OFF -DCMAKE_BUILD_TYPE=Release
-          cmake --build build-win --target z8headless -j$(nproc)
-          file build-win/z8headless.exe
       - uses: actions/upload-artifact@v4
         with:
-          name: z8headless-windows
-          path: build-win/z8headless.exe
+          name: z8headless-linux
+          path: bundle/*
