@@ -24,6 +24,8 @@
 
 // TEMPORARY DIAG (VR road corruption): defined in mister_main.cpp. REVERT AFTER MEASURED.
 extern "C" volatile int g_vr_capture;
+extern "C" int g_vr_span[];          // x0,x1,y0,y1,color per span (VR_MAXSPAN*5)
+extern "C" volatile int g_vr_spanidx;
 
 namespace z8::pico8
 {
@@ -1588,11 +1590,13 @@ void vm::api_rectfill(int16_t x0, int16_t y0, int16_t x1, int16_t y1,
     {
         if (g_vr_capture)
         {
-            long cb = c ? (long)((*c).bits()) : -1;
-            fprintf(stderr, "[RF] x=%d..%d y=%d..%d c=0x%lx pen=%d fp=%02x%02x clip=%d,%d,%d,%d\n",
-                    (int)x0, (int)x1, (int)y0, (int)y1, cb,
-                    (int)ds.pen, (int)ds.fillp[1], (int)ds.fillp[0],
-                    (int)ds.clip.x1, (int)ds.clip.y1, (int)ds.clip.x2, (int)ds.clip.y2);
+            int col = c ? (int)(((*c).bits() >> 16) & 0xf) : (int)(ds.pen & 0xf);
+            int i = g_vr_spanidx;
+            if (i < 6000) {            // VR_MAXSPAN
+                int *p = &g_vr_span[i * 5];
+                p[0] = (int)x0; p[1] = (int)x1; p[2] = (int)y0; p[3] = (int)y1; p[4] = col;
+                g_vr_spanidx = i + 1;
+            }
         }
     }
 

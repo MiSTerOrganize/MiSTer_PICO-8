@@ -280,24 +280,42 @@ static void blit_stretched(SDL_Surface *surface, const lol::u8vec4 *src)
     if (SDL_MUSTLOCK(surface)) SDL_UnlockSurface(surface);
 }
 
-// TEMPORARY DIAG (VR road corruption): framebuffer PPM dump + capture flag.
-// g_vr_capture is armed once per second (frame-gated, not a hotpath); gfx.cpp
-// logs that frame's rectfill spans while it's set, and right after render() we
-// dump the resulting 128x128 RGBA as a PPM so the exact corrupted frame can be
-// viewed. The user brakes/holds at the corrupting track section so the dump
-// lands on a corrupted frame. REVERT AFTER MEASURED.
+// TEMPORARY DIAG (VR road corruption): capture the last ACTIVE frame (image +
+// road spans) and dump it ~1/sec. gfx.cpp appends each rectfill's resolved
+// (x0,x1,y0,y1,color) into g_vr_span while g_vr_capture is set. After render(),
+// if the frame drew the road (spanidx>0 = active, not paused), we save it as the
+// "last active" frame. Paused frames draw 0 road spans, so the saved frame is
+// always one that actually rendered the road — when the user pauses ON the
+// corruption, the last active frame (the corrupted one) is what gets saved, with
+// image and spans MATCHED. REVERT AFTER MEASURED.
+#define VR_MAXSPAN 6000
 extern "C" volatile int g_vr_capture = 0;
-static void vr_dump_ppm(const lol::u8vec4 *rgba)
+extern "C" int g_vr_span[VR_MAXSPAN * 5];   // x0,x1,y0,y1,color per span
+extern "C" volatile int g_vr_spanidx = 0;
+static lol::u8vec4 g_vr_saved_fb[PICO8_W * PICO8_H];
+static int g_vr_saved_span[VR_MAXSPAN * 5];
+static int g_vr_saved_count = 0;
+static void vr_dump_saved()
 {
     FILE *f = fopen("/media/fat/logs/PICO-8/fb_dump.ppm", "wb");
-    if (!f) return;
-    fprintf(f, "P6\n%d %d\n255\n", PICO8_W, PICO8_H);
-    for (int i = 0; i < PICO8_W * PICO8_H; ++i) {
-        unsigned char px[3] = { rgba[i].r, rgba[i].g, rgba[i].b };
-        fwrite(px, 1, 3, f);
+    if (f) {
+        fprintf(f, "P6\n%d %d\n255\n", PICO8_W, PICO8_H);
+        for (int i = 0; i < PICO8_W * PICO8_H; ++i) {
+            unsigned char px[3] = { g_vr_saved_fb[i].r, g_vr_saved_fb[i].g, g_vr_saved_fb[i].b };
+            fwrite(px, 1, 3, f);
+        }
+        fclose(f);
     }
-    fclose(f);
-    fprintf(stderr, "[VRDUMP] wrote fb_dump.ppm\n");
+    FILE *s = fopen("/media/fat/logs/PICO-8/vr_spans.txt", "w");
+    if (s) {
+        fprintf(s, "SPANS %d\n", g_vr_saved_count);
+        for (int i = 0; i < g_vr_saved_count; ++i) {
+            int *p = &g_vr_saved_span[i * 5];
+            fprintf(s, "%d %d %d %d %d\n", p[0], p[1], p[2], p[3], p[4]);
+        }
+        fclose(s);
+    }
+    fprintf(stderr, "[VRDUMP] saved last-active frame: %d spans\n", g_vr_saved_count);
     fflush(stderr);
 }
 
@@ -848,20 +866,29 @@ int main(int argc, char **argv)
             }
         }
 
-        // TEMPORARY DIAG (VR): arm rectfill capture once per second, before the
-        // cart draws this frame. REVERT AFTER MEASURED.
-        {
-            static unsigned _vr_fc = 0;
-            g_vr_capture = ((++_vr_fc % 60u) == 0) ? 1 : 0;
-            if (g_vr_capture) fprintf(stderr, "[VRCAP] frame=%u armed\n", _vr_fc);
-        }
+        // TEMPORARY DIAG (VR): capture this frame's road spans into the RAM
+        // buffer. REVERT AFTER MEASURED.
+        g_vr_capture = 1;
+        g_vr_spanidx = 0;
 
         g_vm->step(1.0f / target_fps);
 
         // Render video
         g_vm->render(rgba_buf);
-        // TEMPORARY DIAG (VR): dump the just-rendered frame when armed. REVERT AFTER MEASURED.
-        if (g_vr_capture) { vr_dump_ppm(rgba_buf); g_vr_capture = 0; }
+        // TEMPORARY DIAG (VR): if the road was drawn (active, not paused), save
+        // this frame as the last-active; dump the saved frame ~1/sec so the dump
+        // always reflects a real road frame. REVERT AFTER MEASURED.
+        g_vr_capture = 0;
+        if (g_vr_spanidx > 0) {
+            memcpy(g_vr_saved_fb, rgba_buf, sizeof(g_vr_saved_fb));
+            int n = g_vr_spanidx; if (n > VR_MAXSPAN) n = VR_MAXSPAN;
+            memcpy(g_vr_saved_span, g_vr_span, (size_t)n * 5 * sizeof(int));
+            g_vr_saved_count = n;
+        }
+        {
+            static unsigned _vr_fc = 0;
+            if (((++_vr_fc) % 60u) == 0 && g_vr_saved_count > 0) vr_dump_saved();
+        }
         if (have_native_video) {
             // FPGA native path: write 128×128 RGBA8 → DDR3 as RGB565
             // The FPGA reader polls DDR3 and outputs scaled native video
