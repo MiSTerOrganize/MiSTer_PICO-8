@@ -293,8 +293,8 @@ static void vr_dump_ppm(const lol::u8vec4 *rgba)
     if (!f) return;
     fprintf(f, "P6\n%d %d\n255\n", PICO8_W, PICO8_H);
     for (int i = 0; i < PICO8_W * PICO8_H; ++i) {
-        unsigned char rgb[3] = { rgba[i].r, rgba[i].g, rgba[i].b };
-        fwrite(rgb, 1, 3, f);
+        unsigned char px[3] = { rgba[i].r, rgba[i].g, rgba[i].b };
+        fwrite(px, 1, 3, f);
     }
     fclose(f);
     fprintf(stderr, "[VRDUMP] wrote fb_dump.ppm\n");
