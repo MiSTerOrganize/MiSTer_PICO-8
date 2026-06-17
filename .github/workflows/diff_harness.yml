@@ -31,7 +31,7 @@ jobs:
       - name: Smoke run on test cart
         run: |
           mkdir -p out
-          export ZEPTO8_BASE_DIR="$PWD"
+          cp src/pico8/bios.p8 ./bios.p8     # BIOS resolves via cwd (empty data-path prefix)
           ./build/z8headless --cart tools/test_carts/shapes.p8 --frames 90 --dump 1,30,60,89 --out out
           ls -la out
       - uses: actions/upload-artifact@v4

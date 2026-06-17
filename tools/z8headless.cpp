@@ -13,6 +13,7 @@
 //   Button mask bits: 0=left 1=right 2=up 3=down 4=O(z/btn4) 5=X(x/btn5)
 
 #include "pico8/vm.h"
+#include "lol/sys/init.h"   // lol::sys::set_data_path (BIOS/cart path prefix)
 #include "lodepng.h"
 
 #include <cstdio>
@@ -27,7 +28,7 @@ using namespace z8::pico8;
 
 int main(int argc, char **argv)
 {
-    std::string cart, outdir = ".", inputfile;
+    std::string cart, outdir = ".", inputfile, datadir;
     int frames = 120, hold = 0;
     std::set<int> dump;
     bool dump_all = false;
@@ -35,11 +36,12 @@ int main(int argc, char **argv)
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
         auto next = [&]() -> std::string { return (i + 1 < argc) ? argv[++i] : std::string(); };
-        if      (a == "--cart")   cart    = next();
-        else if (a == "--frames") frames  = atoi(next().c_str());
-        else if (a == "--out")    outdir  = next();
-        else if (a == "--hold")   hold    = atoi(next().c_str());
-        else if (a == "--input")  inputfile = next();
+        if      (a == "--cart")    cart    = next();
+        else if (a == "--frames")  frames  = atoi(next().c_str());
+        else if (a == "--out")     outdir  = next();
+        else if (a == "--hold")    hold    = atoi(next().c_str());
+        else if (a == "--input")   inputfile = next();
+        else if (a == "--datadir") datadir = next();   // dir containing bios.p8
         else if (a == "--dump") {
             std::string s = next();
             if (s == "all") dump_all = true;
@@ -67,6 +69,10 @@ int main(int argc, char **argv)
         if (f) { int fr, mk; while (fscanf(f, "%d %d", &fr, &mk) == 2) script[fr] = mk; fclose(f); }
         else fprintf(stderr, "warn: cannot open input script %s\n", inputfile.c_str());
     }
+
+    // BIOS (bios.p8) + relative cart paths resolve via this prefix. Must be set
+    // before vm creation (the BIOS loads in the vm constructor).
+    if (!datadir.empty()) lol::sys::set_data_path(datadir);
 
     auto vm = new z8::pico8::vm();
     // No-op stubs for desktop callbacks (default std::function throws on call).
