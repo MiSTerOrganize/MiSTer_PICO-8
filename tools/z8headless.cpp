@@ -51,6 +51,7 @@ int main(int argc, char **argv)
 
     std::string cart, outdir = ".", inputfile, datadir, dumpcode;
     int frames = 120, hold = 0;
+    uint64_t watchdog = 0;   // 0 = off; abort+dump stuck stack if a step exceeds N instr
     std::set<int> dump;
     bool dump_all = false, verbose = false;
 
@@ -65,6 +66,7 @@ int main(int argc, char **argv)
         else if (a == "--datadir") datadir = next();   // dir containing bios.p8
         else if (a == "--verbose") verbose = true;     // print load/run/frame markers
         else if (a == "--dumpcode") dumpcode = next();  // write decompressed cart code, then exit
+        else if (a == "--watchdog") watchdog = strtoull(next().c_str(), nullptr, 10); // runaway-loop guard
         else if (a == "--dump") {
             std::string s = next();
             if (s == "all") dump_all = true;
@@ -98,6 +100,7 @@ int main(int argc, char **argv)
     if (!datadir.empty()) lol::sys::set_data_path(datadir);
 
     auto vm = new z8::pico8::vm();
+    if (watchdog) { vm->set_watchdog(watchdog); fprintf(stderr, "[z8headless] watchdog=%llu instr/step\n", (unsigned long long)watchdog); }
     // No-op stubs for desktop callbacks (default std::function throws on call).
     vm->registerPointerLockCallback([](bool){});
     vm->registerSetFullscreenCallback([](int){});

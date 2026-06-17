@@ -192,6 +192,32 @@ void vm::instruction_hook(lua_State *l, lua_Debug *)
     // FIXME: this is because we do not consider system costs, see
     // https://pico-8.fandom.com/wiki/CPU for more information
     that->m_instructions += 1000;
+
+    // Diagnostic watchdog (default OFF). Catches cart infinite loops that never
+    // yield — e.g. a runaway main-thread loop — by dumping the stuck Lua call
+    // stack and aborting once one step() blows past the configured budget.
+    if (that->m_watchdog_max)
+    {
+        that->m_watchdog_instr += 1000;
+        if (that->m_watchdog_instr >= that->m_watchdog_max)
+        {
+            fprintf(stderr, "[watchdog] RUNAWAY: %llu instructions in one step "
+                    "(no yield/return) -- stuck call stack:\n",
+                    (unsigned long long)that->m_watchdog_instr);
+            for (int lvl = 0; lvl < 10; ++lvl)
+            {
+                lua_Debug ar;
+                if (!lua_getstack(l, lvl, &ar)) break;
+                lua_getinfo(l, "nSl", &ar);
+                fprintf(stderr, "[watchdog]   lvl%d line=%d func=%s src=%s\n",
+                        lvl, ar.currentline, ar.name ? ar.name : "?",
+                        ar.short_src);
+            }
+            fflush(stderr);
+            exit(97);
+        }
+    }
+
     if (that->m_instructions >= that->m_max_instructions)
     {
         // Heavy-bytecode carts (e.g. Another World, which interprets its
@@ -456,6 +482,8 @@ bool vm::step(float /* seconds */)
         handle_exit_request();
         return false;
     }
+
+    m_watchdog_instr = 0; // reset per-step runaway counter (watchdog, default off)
 
     bool ret = false;
     lua_getglobal(m_lua, "__z8_tick");
