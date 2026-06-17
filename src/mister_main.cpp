@@ -290,7 +290,7 @@ static void blit_stretched(SDL_Surface *surface, const lol::u8vec4 *src)
 // image and spans MATCHED. REVERT AFTER MEASURED.
 #define VR_MAXSPAN 6000
 extern "C" volatile int g_vr_capture = 0;
-extern "C" int g_vr_span[VR_MAXSPAN * 5];   // x0,x1,y0,y1,color per span
+extern "C" int g_vr_span[VR_MAXSPAN * 5] = {0};   // x0,x1,y0,y1,color per span
 extern "C" volatile int g_vr_spanidx = 0;
 static lol::u8vec4 g_vr_saved_fb[PICO8_W * PICO8_H];
 static int g_vr_saved_span[VR_MAXSPAN * 5];
