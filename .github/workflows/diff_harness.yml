@@ -46,3 +46,30 @@ jobs:
         with:
           name: z8headless-linux
           path: bundle/*
+
+  # AddressSanitizer build (fully static so it runs on a musl WSL distro) for
+  # precise crash triage: ASan self-reports the exact faulting file:line + stack.
+  build-asan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install deps
+        run: sudo apt-get update && sudo apt-get install -y cmake g++
+      - name: Build z8headless (ASan, static)
+        run: |
+          cmake -B build-asan -DBUILD_HEADLESS=ON -DSKIP_SDL_FRONTEND=ON -DWITH_QUICKJS=OFF \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_C_FLAGS="-fsanitize=address -fno-omit-frame-pointer -g" \
+            -DCMAKE_CXX_FLAGS="-fsanitize=address -fno-omit-frame-pointer -g" \
+            -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address -static-libasan -static-libstdc++ -static-libgcc"
+          cmake --build build-asan --target z8headless -j$(nproc)
+          file build-asan/z8headless
+      - name: Stage asan bundle
+        run: |
+          mkdir -p abundle
+          cp build-asan/z8headless abundle/z8headless-asan
+          cp src/pico8/bios.p8 abundle/bios.p8
+      - uses: actions/upload-artifact@v4
+        with:
+          name: z8headless-asan
+          path: abundle/*
