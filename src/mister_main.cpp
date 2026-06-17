@@ -280,6 +280,27 @@ static void blit_stretched(SDL_Surface *surface, const lol::u8vec4 *src)
     if (SDL_MUSTLOCK(surface)) SDL_UnlockSurface(surface);
 }
 
+// TEMPORARY DIAG (VR road corruption): framebuffer PPM dump + capture flag.
+// g_vr_capture is armed once per second (frame-gated, not a hotpath); gfx.cpp
+// logs that frame's rectfill spans while it's set, and right after render() we
+// dump the resulting 128x128 RGBA as a PPM so the exact corrupted frame can be
+// viewed. The user brakes/holds at the corrupting track section so the dump
+// lands on a corrupted frame. REVERT AFTER MEASURED.
+volatile int g_vr_capture = 0;
+static void vr_dump_ppm(const lol::u8vec4 *rgba)
+{
+    FILE *f = fopen("/media/fat/logs/PICO-8/fb_dump.ppm", "wb");
+    if (!f) return;
+    fprintf(f, "P6\n%d %d\n255\n", PICO8_W, PICO8_H);
+    for (int i = 0; i < PICO8_W * PICO8_H; ++i) {
+        unsigned char rgb[3] = { rgba[i].r, rgba[i].g, rgba[i].b };
+        fwrite(rgb, 1, 3, f);
+    }
+    fclose(f);
+    fprintf(stderr, "[VRDUMP] wrote fb_dump.ppm\n");
+    fflush(stderr);
+}
+
 // ── Joystick input ────────────────────────────────────────────────────
 // Reads Linux joystick events from /dev/input/js0
 // Button mapping (verified on hardware):
@@ -827,10 +848,20 @@ int main(int argc, char **argv)
             }
         }
 
+        // TEMPORARY DIAG (VR): arm rectfill capture once per second, before the
+        // cart draws this frame. REVERT AFTER MEASURED.
+        {
+            static unsigned _vr_fc = 0;
+            g_vr_capture = ((++_vr_fc % 60u) == 0) ? 1 : 0;
+            if (g_vr_capture) fprintf(stderr, "[VRCAP] frame=%u armed\n", _vr_fc);
+        }
+
         g_vm->step(1.0f / target_fps);
 
         // Render video
         g_vm->render(rgba_buf);
+        // TEMPORARY DIAG (VR): dump the just-rendered frame when armed. REVERT AFTER MEASURED.
+        if (g_vr_capture) { vr_dump_ppm(rgba_buf); g_vr_capture = 0; }
         if (have_native_video) {
             // FPGA native path: write 128×128 RGBA8 → DDR3 as RGB565
             // The FPGA reader polls DDR3 and outputs scaled native video

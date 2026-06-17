@@ -1578,16 +1578,19 @@ void vm::api_rectfill(int16_t x0, int16_t y0, int16_t x1, int16_t y1,
     x1 -= ds.camera.x;
     y1 -= ds.camera.y;
 
-    /* TEMPORARY DIAG (VR road corruption): flag rectfill spans whose X coords
-     * are far off-screen (overflow/wrap signature from polyfill's fix32 slope).
-     * Bounded to the first 40 abnormal calls. REVERT AFTER MEASURED. */
+    /* TEMPORARY DIAG (VR road corruption): when g_vr_capture is armed for this
+     * frame (set in mister_main.cpp once/sec), log EVERY rectfill span with full
+     * draw-state context — geometry, raw color bits, pen, fill pattern, clip.
+     * Paired with the framebuffer PPM dump. REVERT AFTER MEASURED. */
     {
-        static int _rf_diag = 0;
-        if (_rf_diag < 40 && (x0 < -200 || x0 > 320 || x1 < -200 || x1 > 320))
+        extern volatile int g_vr_capture;
+        if (g_vr_capture)
         {
-            _rf_diag++;
-            fprintf(stderr, "[RFILL] x0=%d y0=%d x1=%d y1=%d\n",
-                    (int)x0, (int)y0, (int)x1, (int)y1);
+            long cb = c ? (long)((*c).bits()) : -1;
+            fprintf(stderr, "[RF] x=%d..%d y=%d..%d c=0x%lx pen=%d fp=%02x%02x clip=%d,%d,%d,%d\n",
+                    (int)x0, (int)x1, (int)y0, (int)y1, cb,
+                    (int)ds.pen, (int)ds.fillp[1], (int)ds.fillp[0],
+                    (int)ds.clip.x1, (int)ds.clip.y1, (int)ds.clip.x2, (int)ds.clip.y2);
         }
     }
 
