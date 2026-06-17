@@ -49,7 +49,7 @@ int main(int argc, char **argv)
     signal(SIGABRT, crash_handler);
     signal(SIGFPE,  crash_handler);
 
-    std::string cart, outdir = ".", inputfile, datadir;
+    std::string cart, outdir = ".", inputfile, datadir, dumpcode;
     int frames = 120, hold = 0;
     std::set<int> dump;
     bool dump_all = false, verbose = false;
@@ -64,6 +64,7 @@ int main(int argc, char **argv)
         else if (a == "--input")   inputfile = next();
         else if (a == "--datadir") datadir = next();   // dir containing bios.p8
         else if (a == "--verbose") verbose = true;     // print load/run/frame markers
+        else if (a == "--dumpcode") dumpcode = next();  // write decompressed cart code, then exit
         else if (a == "--dump") {
             std::string s = next();
             if (s == "all") dump_all = true;
@@ -107,6 +108,17 @@ int main(int argc, char **argv)
     fprintf(stderr, "[z8headless] loading %s\n", cart.c_str());
     vm->load(cart);
     if (verbose) fprintf(stderr, "[z8headless] loaded OK\n");
+
+    // --dumpcode: write the decompressed cart code (for decompressor diffing
+    // against PICO-8 ground truth) and exit before run().
+    if (!dumpcode.empty()) {
+        std::string const &code = vm->get_code();
+        FILE *cf = fopen(dumpcode.c_str(), "wb");
+        if (cf) { fwrite(code.data(), 1, code.size(), cf); fclose(cf); }
+        fprintf(stderr, "[z8headless] dumped %zu bytes of code -> %s\n", code.size(), dumpcode.c_str());
+        return 0;
+    }
+
     vm->run();
     if (verbose) fprintf(stderr, "[z8headless] run() OK\n");
 
