@@ -176,9 +176,13 @@ std::string vm::get_path_config()
 std::string vm::get_path_cstore(std::string cart_name)
 {
     // extract name from path
-    size_t found;
-    found = cart_name.find_last_of("/\\");
-    cart_name = cart_name.substr(found);
+    size_t found = cart_name.find_last_of("/\\");
+    if (found != std::string::npos)
+        cart_name = cart_name.substr(found);
+    // else: no path separator — cart_name is already a bare basename, leave it.
+    // (substr(npos) throws std::out_of_range; hit when a cart is loaded by bare
+    //  name with no slash, e.g. the headless harness. MiSTer uses absolute paths
+    //  so users don't hit it, but the guard is correct.)
 
     // save .p8.png as .p8 (pico 8 do that, not sure why)
     if (lol::ends_with(lol::tolower(cart_name), ".p8.png"))
