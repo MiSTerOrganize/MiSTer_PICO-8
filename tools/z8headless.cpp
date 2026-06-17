@@ -23,15 +23,36 @@
 #include <vector>
 #include <map>
 #include <set>
+#include <csignal>
+#include <execinfo.h>
+#include <unistd.h>
 
 using namespace z8::pico8;
 
+// Crash triage: on a fatal signal, dump a backtrace (offsets) so a segfaulting
+// cart can be localized. On a fully-static non-PIE binary the offsets are
+// absolute addresses -> resolve with addr2line -e z8headless <addr>.
+static void crash_handler(int sig)
+{
+    void *bt[40];
+    int n = backtrace(bt, 40);
+    fprintf(stderr, "\n[CRASH] fatal signal %d — backtrace (%d frames):\n", sig, n);
+    fflush(stderr);
+    backtrace_symbols_fd(bt, n, 2);
+    _exit(139);
+}
+
 int main(int argc, char **argv)
 {
+    setvbuf(stderr, NULL, _IOLBF, 0);   // line-buffered so crash output isn't lost
+    signal(SIGSEGV, crash_handler);
+    signal(SIGABRT, crash_handler);
+    signal(SIGFPE,  crash_handler);
+
     std::string cart, outdir = ".", inputfile, datadir;
     int frames = 120, hold = 0;
     std::set<int> dump;
-    bool dump_all = false;
+    bool dump_all = false, verbose = false;
 
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
@@ -42,6 +63,7 @@ int main(int argc, char **argv)
         else if (a == "--hold")    hold    = atoi(next().c_str());
         else if (a == "--input")   inputfile = next();
         else if (a == "--datadir") datadir = next();   // dir containing bios.p8
+        else if (a == "--verbose") verbose = true;     // print load/run/frame markers
         else if (a == "--dump") {
             std::string s = next();
             if (s == "all") dump_all = true;
@@ -84,7 +106,9 @@ int main(int argc, char **argv)
 
     fprintf(stderr, "[z8headless] loading %s\n", cart.c_str());
     vm->load(cart);
+    if (verbose) fprintf(stderr, "[z8headless] loaded OK\n");
     vm->run();
+    if (verbose) fprintf(stderr, "[z8headless] run() OK\n");
 
     std::vector<lol::u8vec4> fb(128 * 128);
     int held = hold;
@@ -93,6 +117,7 @@ int main(int argc, char **argv)
         if (it != script.end()) held = it->second;
         for (int b = 0; b < 6; ++b) vm->button(0, b, (held >> b) & 1);
 
+        if (verbose && fr < 8) fprintf(stderr, "[z8headless] frame %d\n", fr);
         vm->step(1.0f / 60.0f);
         vm->render(fb.data());
 
