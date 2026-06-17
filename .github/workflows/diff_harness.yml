@@ -46,13 +46,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install MinGW + cmake
-        run: sudo apt-get update && sudo apt-get install -y cmake g++-mingw-w64-x86-64 gcc-mingw-w64-x86-64
-      - name: Cross-compile z8headless.exe
+        run: sudo apt-get update && sudo apt-get install -y cmake g++-mingw-w64-i686 gcc-mingw-w64-i686
+      - name: Cross-compile z8headless.exe (32-bit i686 = ILP32, matches ARM data model)
         run: |
           cmake -B build-win \
             -DCMAKE_SYSTEM_NAME=Windows \
-            -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc \
-            -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++ \
+            -DCMAKE_C_COMPILER=i686-w64-mingw32-gcc \
+            -DCMAKE_CXX_COMPILER=i686-w64-mingw32-g++ \
             -DBUILD_HEADLESS=ON -DSKIP_SDL_FRONTEND=ON -DWITH_QUICKJS=OFF -DCMAKE_BUILD_TYPE=Release
           cmake --build build-win --target z8headless -j$(nproc)
           file build-win/z8headless.exe
