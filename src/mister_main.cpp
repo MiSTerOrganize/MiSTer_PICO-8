@@ -286,7 +286,7 @@ static void blit_stretched(SDL_Surface *surface, const lol::u8vec4 *src)
 // dump the resulting 128x128 RGBA as a PPM so the exact corrupted frame can be
 // viewed. The user brakes/holds at the corrupting track section so the dump
 // lands on a corrupted frame. REVERT AFTER MEASURED.
-volatile int g_vr_capture = 0;
+extern "C" volatile int g_vr_capture = 0;
 static void vr_dump_ppm(const lol::u8vec4 *rgba)
 {
     FILE *f = fopen("/media/fat/logs/PICO-8/fb_dump.ppm", "wb");
