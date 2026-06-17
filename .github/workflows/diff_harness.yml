@@ -1,0 +1,40 @@
+name: Diff Harness
+
+# Differential bug-finding harness. Builds tools/z8headless (engine-only PC frame
+# dumper, no SDL/MiSTer) and runs it headless on cart(s), uploading frame PNGs.
+# Foundation for diffing our engine fork against stock zepto8 / a reference and
+# for reproducing cart bugs off-device. NOT shipped, NOT part of the ARM binary.
+# Fast (~2 min): native x86-64, no QEMU/Docker/SDL.
+
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Run label'
+        required: false
+        type: string
+
+run-name: ${{ inputs.reason || 'diff-harness' }}
+
+jobs:
+  harness:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install deps
+        run: sudo apt-get update && sudo apt-get install -y cmake g++
+      - name: Build z8headless (engine-only, no SDL)
+        run: |
+          cmake -B build -DBUILD_HEADLESS=ON -DSKIP_SDL_FRONTEND=ON -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --target z8headless -j$(nproc)
+          file build/z8headless
+      - name: Smoke run on test cart
+        run: |
+          mkdir -p out
+          export ZEPTO8_BASE_DIR="$PWD"
+          ./build/z8headless --cart tools/test_carts/shapes.p8 --frames 90 --dump 1,30,60,89 --out out
+          ls -la out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: harness-frames
+          path: out/*.png

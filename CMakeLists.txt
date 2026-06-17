@@ -23,6 +23,13 @@ add_compile_options(-Wno-unused-parameter -Wno-sign-compare)
 # Global defines
 add_definitions(-DHAVE_CONFIG_H=0 -DPACKAGE_VERSION="0.0.0" -D__MISTER__=1)
 
+# ── Harness options (differential bug-finding) ─────────────────────────
+# BUILD_HEADLESS: also build tools/z8headless (engine-only frame dumper).
+# SKIP_SDL_FRONTEND: skip the SDL PICO-8 executable (used for PC harness
+# builds that don't have / don't want SDL). The ARM build sets neither.
+option(BUILD_HEADLESS "Build the headless diff-harness frame dumper" OFF)
+option(SKIP_SDL_FRONTEND "Skip the SDL PICO-8 frontend executable" OFF)
+
 # ── Include paths ──────────────────────────────────────────────────────
 # lol_shim MUST come first to intercept <lol/...> includes
 include_directories(BEFORE
@@ -100,6 +107,7 @@ target_link_libraries(zepto8core z8lua lodepng quickjs)
 # ── MiSTer frontend ───────────────────────────────────────────────────
 # SDL 1.2.15 is built as a static library in the CI pipeline.
 # SDL_STATIC_PREFIX is set by the workflow cmake invocation.
+if(NOT SKIP_SDL_FRONTEND)
 set(SDL_STATIC_PREFIX "" CACHE STRING "Path to static SDL 1.2 install prefix")
 
 if(SDL_STATIC_PREFIX AND EXISTS "${SDL_STATIC_PREFIX}/lib/libSDL.a")
@@ -125,3 +133,16 @@ target_link_options(PICO-8 PRIVATE -static-libstdc++ -static-libgcc)
 # ── Install ────────────────────────────────────────────────────────────
 install(TARGETS PICO-8 RUNTIME DESTINATION bin)
 install(FILES src/pico8/bios.p8 DESTINATION bin/pico8)
+
+endif() # NOT SKIP_SDL_FRONTEND
+
+# ── Headless diff-harness frame dumper ─────────────────────────────────
+# Engine-only (zepto8core + lodepng), no SDL. Builds for PC (Linux/Windows).
+if(BUILD_HEADLESS)
+    add_executable(z8headless tools/z8headless.cpp)
+    target_link_libraries(z8headless zepto8core lodepng)
+    if(NOT WIN32)
+        target_link_libraries(z8headless -lm -ldl -lpthread)
+        target_link_options(z8headless PRIVATE -static-libstdc++ -static-libgcc)
+    endif()
+endif()
