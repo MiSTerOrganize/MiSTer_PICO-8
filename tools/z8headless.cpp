@@ -36,10 +36,14 @@ static void crash_handler(int sig)
 {
     void *bt[40];
     int n = backtrace(bt, 40);
-    fprintf(stderr, "\n[CRASH] fatal signal %d — backtrace (%d frames):\n", sig, n);
+    if (sig == SIGALRM)
+        fprintf(stderr, "\n[HANG] wall-clock alarm fired (likely C++ engine "
+                "infinite loop) — backtrace (%d frames):\n", n);
+    else
+        fprintf(stderr, "\n[CRASH] fatal signal %d — backtrace (%d frames):\n", sig, n);
     fflush(stderr);
     backtrace_symbols_fd(bt, n, 2);
-    _exit(139);
+    _exit(sig == SIGALRM ? 98 : 139);
 }
 
 int main(int argc, char **argv)
@@ -48,9 +52,10 @@ int main(int argc, char **argv)
     signal(SIGSEGV, crash_handler);
     signal(SIGABRT, crash_handler);
     signal(SIGFPE,  crash_handler);
+    signal(SIGALRM, crash_handler);   // wall-clock hang catcher (C++ engine loops)
 
     std::string cart, outdir = ".", inputfile, datadir, dumpcode;
-    int frames = 120, hold = 0;
+    int frames = 120, hold = 0, alarm_secs = 0;
     uint64_t watchdog = 0;   // 0 = off; abort+dump stuck stack if a step exceeds N instr
     std::set<int> dump;
     bool dump_all = false, verbose = false;
@@ -66,7 +71,8 @@ int main(int argc, char **argv)
         else if (a == "--datadir") datadir = next();   // dir containing bios.p8
         else if (a == "--verbose") verbose = true;     // print load/run/frame markers
         else if (a == "--dumpcode") dumpcode = next();  // write decompressed cart code, then exit
-        else if (a == "--watchdog") watchdog = strtoull(next().c_str(), nullptr, 10); // runaway-loop guard
+        else if (a == "--watchdog") watchdog = strtoull(next().c_str(), nullptr, 10); // Lua runaway-loop guard
+        else if (a == "--alarm")    alarm_secs = atoi(next().c_str()); // wall-clock hang backtrace (C++ loops)
         else if (a == "--dump") {
             std::string s = next();
             if (s == "all") dump_all = true;
@@ -133,6 +139,7 @@ int main(int argc, char **argv)
         for (int b = 0; b < 6; ++b) vm->button(0, b, (held >> b) & 1);
 
         if (verbose && fr < 8) fprintf(stderr, "[z8headless] frame %d\n", fr);
+        if (alarm_secs) alarm(alarm_secs); // re-arm each frame; fires if one step() hangs
         vm->step(1.0f / 60.0f);
         vm->render(fb.data());
 
@@ -149,6 +156,7 @@ int main(int argc, char **argv)
             else     printf("wrote %s\n", path);
         }
     }
+    if (alarm_secs) alarm(0);   // disarm before clean exit
     fprintf(stderr, "[z8headless] done (%d frames)\n", frames);
     return 0;
 }
