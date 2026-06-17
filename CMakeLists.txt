@@ -61,7 +61,13 @@ set(Z8LUA_SOURCES
 )
 set_source_files_properties(${Z8LUA_SOURCES} PROPERTIES LANGUAGE CXX)
 add_library(z8lua STATIC ${Z8LUA_SOURCES})
-target_compile_definitions(z8lua PRIVATE LUA_USE_POSIX LUA_USE_STRTODHEX)
+if(WIN32)
+    # MinGW lacks sys/wait.h etc.; LUA_USE_POSIX is unneeded for the headless
+    # harness (no os.execute/io). Keep hex-float parsing.
+    target_compile_definitions(z8lua PRIVATE LUA_USE_STRTODHEX)
+else()
+    target_compile_definitions(z8lua PRIVATE LUA_USE_POSIX LUA_USE_STRTODHEX)
+endif()
 target_include_directories(z8lua PRIVATE src/3rdparty/z8lua)
 
 # ── lodepng ────────────────────────────────────────────────────────────
