@@ -184,6 +184,13 @@ public:
     virtual void add_extcmd(std::string const &, std::function<void(std::string const &)>) override;
     virtual void add_stat(int16_t, std::function<std::any()>) override;
 
+    // Diagnostic watchdog (z8headless harness only; default 0 = OFF so the
+    // shipped MiSTer binary is unaffected). When >0, if a single step()
+    // executes more than this many Lua instructions without returning, the
+    // instruction hook dumps the stuck call stack to stderr and aborts —
+    // catches cart infinite loops that never yield (main-thread runaways).
+    void set_watchdog(uint64_t max_instr) { m_watchdog_max = max_instr; }
+
 private:
     void runtime_error(std::string str);
     static int panic_hook(struct lua_State *l);
@@ -500,6 +507,8 @@ private:
     int m_instructions = 0;
     const int m_default_max_instructions = 300000;
     int m_max_instructions = m_default_max_instructions;
+    uint64_t m_watchdog_max = 0; // 0 = off; diagnostic runaway-loop guard
+    uint64_t m_watchdog_instr = 0; // per-step accumulator for the watchdog
 
     std::string m_path_active_dir;
     std::string m_path_config_dir = "zepto-8";
