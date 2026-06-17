@@ -27,7 +27,9 @@
 
 #include "3rdparty/lodepng/lodepng.h"
 extern "C" {
+#ifndef NO_QUICKJS
 #include "3rdparty/quickjs/quickjs.h"
+#endif
 }
 
 #include "zepto8.h"
@@ -135,6 +137,12 @@ bool cart::load_lua(std::string const &filename)
 
 bool cart::load_js(std::string const &filename)
 {
+#ifdef NO_QUICKJS
+    // JS cart loader disabled in this build (no quickjs — e.g. MinGW headless).
+    // .js carts are not used by the harness; .p8 / .p8.png load normally.
+    (void)filename;
+    return false;
+#else
     init_filename(filename);
 
     // Read file
@@ -177,6 +185,7 @@ bool cart::load_js(std::string const &filename)
     JS_FreeRuntime(rt);
 
     return success;
+#endif // NO_QUICKJS
 }
 
 //

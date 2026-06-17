@@ -29,6 +29,9 @@ add_definitions(-DHAVE_CONFIG_H=0 -DPACKAGE_VERSION="0.0.0" -D__MISTER__=1)
 # builds that don't have / don't want SDL). The ARM build sets neither.
 option(BUILD_HEADLESS "Build the headless diff-harness frame dumper" OFF)
 option(SKIP_SDL_FRONTEND "Skip the SDL PICO-8 frontend executable" OFF)
+# QuickJS only powers the .js cart loader and needs POSIX threads/atomics
+# (won't build on MinGW). Off for Windows headless builds; .p8/.p8.png unaffected.
+option(WITH_QUICKJS "Build the QuickJS .js cart loader" ON)
 
 # ── Include paths ──────────────────────────────────────────────────────
 # lol_shim MUST come first to intercept <lol/...> includes
@@ -66,6 +69,7 @@ add_library(lodepng STATIC src/3rdparty/lodepng/lodepng.cpp)
 target_include_directories(lodepng PRIVATE src/3rdparty/lodepng)
 
 # ── QuickJS (compiled as C) ───────────────────────────────────────────
+if(WITH_QUICKJS)
 set(QUICKJS_SOURCES
     src/3rdparty/quickjs/quickjs.c
     src/3rdparty/quickjs/libbf.c
@@ -82,6 +86,7 @@ target_compile_definitions(quickjs PRIVATE
 target_compile_options(quickjs PRIVATE
     -Wno-unused-parameter -Wno-sign-compare
 )
+endif()
 
 # ── libzepto8 core ─────────────────────────────────────────────────────
 set(ZEPTO8_CORE_SOURCES
@@ -102,7 +107,12 @@ set(ZEPTO8_CORE_SOURCES
     src/pico8/api.cpp
 )
 add_library(zepto8core STATIC ${ZEPTO8_CORE_SOURCES})
-target_link_libraries(zepto8core z8lua lodepng quickjs)
+if(WITH_QUICKJS)
+    target_link_libraries(zepto8core z8lua lodepng quickjs)
+else()
+    target_link_libraries(zepto8core z8lua lodepng)
+    target_compile_definitions(zepto8core PRIVATE NO_QUICKJS)
+endif()
 
 # ── MiSTer frontend ───────────────────────────────────────────────────
 # SDL 1.2.15 is built as a static library in the CI pipeline.
