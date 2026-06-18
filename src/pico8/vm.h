@@ -137,6 +137,10 @@ public:
     };
 
     virtual std::string const &get_code() const override;
+    // Code after #include expansion (what the engine actually runs via
+    // preprocess_code()). Used by the z8headless harness so the decode
+    // differential also covers the preprocessor stage, not just raw decode.
+    std::string get_preprocessed_code() const;
     virtual u4mat2<128, 128> const &get_front_screen() const override;
     u4mat2<128, 128> const& get_current_screen() const;
     u4mat2<128, 128>& get_current_screen();

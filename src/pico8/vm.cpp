@@ -124,6 +124,11 @@ std::string const &vm::get_code() const
     return m_cart.get_code();
 }
 
+std::string vm::get_preprocessed_code() const
+{
+    return m_cart.preprocess_code();
+}
+
 u4mat2<128, 128> const &vm::get_front_screen() const
 {
     return m_front_buffer;

@@ -118,13 +118,15 @@ int main(int argc, char **argv)
     vm->load(cart);
     if (verbose) fprintf(stderr, "[z8headless] loaded OK\n");
 
-    // --dumpcode: write the decompressed cart code (for decompressor diffing
-    // against PICO-8 ground truth) and exit before run().
+    // --dumpcode: write the cart code AFTER #include expansion (preprocess_code,
+    // what the engine actually runs) for diffing against PICO-8 ground truth.
+    // Covers both the decompressor (.p8.png/ROM) AND the #include preprocessor
+    // (.p8 text) stages. Exit before run().
     if (!dumpcode.empty()) {
-        std::string const &code = vm->get_code();
+        std::string code = vm->get_preprocessed_code();
         FILE *cf = fopen(dumpcode.c_str(), "wb");
         if (cf) { fwrite(code.data(), 1, code.size(), cf); fclose(cf); }
-        fprintf(stderr, "[z8headless] dumped %zu bytes of code -> %s\n", code.size(), dumpcode.c_str());
+        fprintf(stderr, "[z8headless] dumped %zu bytes of preprocessed code -> %s\n", code.size(), dumpcode.c_str());
         return 0;
     }
 
