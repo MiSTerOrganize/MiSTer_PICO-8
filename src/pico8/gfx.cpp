@@ -892,7 +892,6 @@ void vm::api_circ(int16_t x, int16_t y, int16_t r, opt<fix32> c)
     if (x + r < 0 || x - r >= 128 || y + r < 0 || y - r >= 128) return;
 
     uint32_t color_bits = to_color_bits(c);
-    fprintf(stderr, "[DIAG-CIRC] api_circ r=%d x=%d y=%d\n", (int)r, (int)x, (int)y); fflush(stderr); // TEMPORARY DIAG
     // seems to come from https://rosettacode.org/wiki/Bitmap/Midpoint_circle_algorithm#BASIC256
     // NB: loop vars are int (not int16_t) — a large radius would otherwise
     // overflow dy/err and spin forever (dy wraps past 32767 -> dx>=dy never
