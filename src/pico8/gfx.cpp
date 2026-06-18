@@ -892,8 +892,12 @@ void vm::api_circ(int16_t x, int16_t y, int16_t r, opt<fix32> c)
     if (x + r < 0 || x - r >= 128 || y + r < 0 || y - r >= 128) return;
 
     uint32_t color_bits = to_color_bits(c);
+    fprintf(stderr, "[DIAG-CIRC] api_circ r=%d x=%d y=%d\n", (int)r, (int)x, (int)y); fflush(stderr); // TEMPORARY DIAG
     // seems to come from https://rosettacode.org/wiki/Bitmap/Midpoint_circle_algorithm#BASIC256
-    for (int16_t dx = r, dy = 0, err = 0; dx >= dy; )
+    // NB: loop vars are int (not int16_t) — a large radius would otherwise
+    // overflow dy/err and spin forever (dy wraps past 32767 -> dx>=dy never
+    // ends). PICO-8 doesn't hang on big radii; set_pixel clips per-pixel.
+    for (int dx = r, dy = 0, err = 0; dx >= dy; )
     {
         set_pixel(x + dx, y + dy, color_bits);
         set_pixel(x + dy, y + dx, color_bits);
@@ -928,7 +932,9 @@ void vm::api_circfill(int16_t x, int16_t y, int16_t r, opt<fix32> c)
 
     uint32_t color_bits = to_color_bits(c);
     // seems to come from https://rosettacode.org/wiki/Bitmap/Midpoint_circle_algorithm#BASIC256
-    for (int16_t dx = r, dy = 0, err = 0; dx >= dy; )
+    // int (not int16_t) loop vars — see api_circ: large radius overflows the
+    // counters and spins forever otherwise.
+    for (int dx = r, dy = 0, err = 0; dx >= dy; )
     {
         // Some minor overdraw here when dx == 0 or dx == dy, but nothing serious
         hline(x - dx, x + dx, y - dy, color_bits);
