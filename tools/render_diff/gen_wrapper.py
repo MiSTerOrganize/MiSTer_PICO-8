@@ -19,7 +19,30 @@ import sys, os, subprocess, tempfile
 CHECKPOINTS = [1, 2, 8, 30, 60, 120, 240, 300]   # display frames to hash
 DEFAULT_STOP = max(CHECKPOINTS) + 5
 
-def harness(stop_at, noinput=False, dumpframe=0):
+def harness(stop_at, noinput=False, dumpframe=0, seq=0):
+    if seq:
+        # SEQUENCE mode: hash 0x6000 EVERY frame 1..seq (no checkpoint gating), no
+        # dump. Used by the Tier-2 trustworthiness discriminator: a candidate whose
+        # z8 frame-hash SET ~= official's (just phase-shifted) is an animation/pacing
+        # FALSE POSITIVE; largely-disjoint sets = a REAL render divergence. Input off.
+        return (f"""-- z8render-diff SEQ harness (throwaway; cart untouched)
+__f=0
+__rf=flip
+srand(1)
+t=function() return __f/60 end
+time=t
+__m=function(i) if i then return false end return 0 end
+btn=__m
+btnp=__m
+flip=function()
+ local h=0
+ for a=0x6000,0x7fff do h=bxor(rotl(h,3),@a) end
+ __f+=1
+ printh("FBHASH f".. __f .."="..tostr(h,true))
+ if __rf then __rf() end
+ if __f>={seq} then stop() end
+end
+""", "")
     # Trustworthy combined harness -> returns (PREPEND, APPEND).
     # PREPEND (before cart): flip() hook for top-level flip-loop carts (which never
     #   return to appended code). Counts+hashes per flip ONLY while __tk is false.
@@ -95,7 +118,7 @@ def to_p8(cart, shrinko_dir):
         raise RuntimeError(f"shrinko8 failed on {cart}: {r.stderr[:300]}")
     return tmp, tmp
 
-def inject(p8_path, out_path, stop_at, noinput=False, dumpframe=0):
+def inject(p8_path, out_path, stop_at, noinput=False, dumpframe=0, seq=0):
     with open(p8_path, "r", encoding="utf-8", errors="replace") as f:
         lines = f.readlines()
     # find __lua__ then the next section marker (__xxx__) after it
@@ -105,7 +128,7 @@ def inject(p8_path, out_path, stop_at, noinput=False, dumpframe=0):
     # next section marker (__gfx__ etc.) after __lua__ = end of the code section
     nxt = next((i for i in range(lua_i + 1, len(lines)) if l_is_section(lines[i])),
                len(lines))
-    pre, post = harness(stop_at, noinput, dumpframe)
+    pre, post = harness(stop_at, noinput, dumpframe, seq)
     if not pre.endswith("\n"): pre += "\n"
     if not post.endswith("\n"): post += "\n"
     # PREPEND pre (right after __lua__, before cart code -> catches flip-loop carts),
@@ -128,9 +151,10 @@ def main():
     stop_at = int(a[a.index("--frames") + 1]) if "--frames" in a else DEFAULT_STOP
     noinput = "--noinput" in a
     dumpframe = int(a[a.index("--dumpframe") + 1]) if "--dumpframe" in a else 0
+    seq = int(a[a.index("--seq") + 1]) if "--seq" in a else 0
     p8, tmp = to_p8(cart, shrinko)
     try:
-        inject(p8, out, stop_at, noinput, dumpframe)
+        inject(p8, out, stop_at, noinput, dumpframe, seq)
     finally:
         if tmp and os.path.exists(tmp):
             os.remove(tmp)

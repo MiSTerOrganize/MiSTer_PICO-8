@@ -152,3 +152,32 @@ Net: the tool is trustworthy because every "this cart is buggy" claim is gated b
 exact-hash divergence AND a human-read triptych; magnitude is only a triage sort-key.
 Honest residual: the WRAP-OVERSIZE subset (~half of full games) still can't be headless-
 wrapped (official 8192-token cap) -- those are reported as uncovered, not as pass/fail.
+
+## Tier-2 SEQ discriminator (2026-06-18) -- the automated FP filter, VALIDATED
+The full-library run exposed that the fixed-checkpoint pass over-flags badly (~18/46
+RENDER-DIVERGE in the first batch) because title color-cycles + idle sprite animation
+make the engines momentarily out-of-phase AT a sampled checkpoint. Magnitude/cluster
+can't separate that from a real bug. The robust fix is SEQ mode + TWO phase-invariant
+signals (gen_wrapper.py --seq N hashes EVERY frame 1..N, no input; seq_analyze.py):
+  - exact = same-frame exact-hash rate -> catches in-phase animation (most frames agree)
+  - jacc  = Jaccard of the two frame-hash SETS -> catches constant phase-shift (same
+            frames, shifted in time)
+  A real PERSISTENT render bug is LOW on BOTH (differs every frame AND those frames
+  never appear in the other engine). Buckets: PACING-FP (exact>=.5 OR jacc>=.5) /
+  REAL-CANDIDATE (exact<.5 AND jacc<.2) / REVIEW-IMAGE.
+VALIDATED on 3 carts (no-input, 90 frames):
+  Jumping Jack (Tier-1 MATCH)        exact=1.00 jacc=1.00 -> clean
+  Ape Clerk    (Tier-1 DIVERGE@f1)   exact=0.71 jacc=0.07 -> PACING-FP (anim transitions)
+  Alone in Pico(Tier-1 DIVERGE@f8)   exact=0.11 jacc=0.99 -> PACING-FP (constant shift)
+Both Tier-1 "divergences" are correctly demoted to FP; the MATCH cart stays clean.
+
+THE TRUSTWORTHY PIPELINE (final):
+  Pass 1 (input + checkpoints, compare_render.py): MATCH set = clean; also flags
+    NO-CHECKPOINTS (z8/official crash/hang -> real robustness signal) + WRAP-OVERSIZE +
+    reaches-gameplay. RENDER/AUDIO-DIVERGE here = CANDIDATES only (input nondeterminism).
+  Pass 2 (Tier-2 SEQ, no input, seq_analyze.py) on the candidate subset: demotes the
+    animation/pacing FPs, leaves REAL-CANDIDATE = the trustworthy render-bug list.
+  Pass 3: eyeball REAL-CANDIDATE triptychs (fbdiff.py) -> confirmed bugs.
+LIMITATION (honest): no-input SEQ exercises title/intro/attract only; a gameplay-gated
+render bug (Virtua Racing track) renders fine at the title and is classified clean ->
+needs per-cart deterministic input (the genuinely hard, not-yet-automated case).
