@@ -102,3 +102,20 @@ candidates with no input:
   CONFIRMED bug -- confirm via frame-dump (PNG) vs official screenshot + root-cause.
 Triage discipline: every RENDER-DIVERGE must pass the no-input re-run before it counts
 as a candidate; input-driven diffs are filtered out.
+
+## Wander the Cosmos confirmation (2026-06-18) -- NOT a confirmed bug
+Drilled the pilot's one real candidate. Dumped both engines' raw framebuffer at f120
+(--dumpframe) + pixel-diffed: 125/16384 px differ (0.76%), SCATTERED across the whole
+frame, dark-color swaps (z8=5<->official=0/1/2/3). Official frame = the TITLE screen
+with a STARFIELD (no input -> never left title). So the divergence is the starfield
+twinkle. Decisive root-cause test: rnd_seq conformance cart (srand-seeded rnd()) ->
+zepto8 rnd() is byte-IDENTICAL to official (all 18 values). So NOT an rnd bug. With
+rnd conformant + srand fixed + t() frame-based, the residual scatter is most likely
+subtle _update-vs-flip frame-PACING (a 30fps cart's per-update star animation; the
+exact update:display scheduling the flip-hook exposes differs slightly per engine).
+=> Wander is NOT a confirmed zepto8 render bug -- real+reproducible but sub-visible and
+   probably a pacing/harness artifact. (no-false-found-it: traced, did not declare.)
+Wins: (1) rnd conformance is now a permanent test (rnd_seq, PASS). (2) TRIAGE TUNING:
+scattered single-pixel twinkle (starfields/particles) is a frame-pacing false-positive
+source; weight RENDER-DIVERGE by magnitude/clustering -- the trustworthy signal is a
+large/clustered diff (broken sprite, wrong colours over a region), not 100-px scatter.

@@ -19,7 +19,7 @@ import sys, os, subprocess, tempfile
 CHECKPOINTS = [1, 2, 8, 30, 60, 120, 240, 300]   # display frames to hash
 DEFAULT_STOP = max(CHECKPOINTS) + 5
 
-def harness(stop_at, noinput=False):
+def harness(stop_at, noinput=False, dumpframe=0):
     # PREPEND (before cart code): override flip() -- the UNIVERSAL per-frame hook.
     # The engine calls global flip() to present each frame for modern _update/_draw
     # carts, AND old top-level flip-loop carts call it manually. flip == one display
@@ -39,6 +39,18 @@ def harness(stop_at, noinput=False):
         " if p<3 then m=32 end\n"
         " if p>7 and p<11 then m=16 end\n"
         " if __f>90 and __f<240 then m=m|2 end\n")
+    # optional one-shot raw-framebuffer dump at a target frame (root-cause a divergence):
+    # printh 128 rows of 64 bytes as hex (FBDUMP <row> <128hex>), then stop.
+    dumpblock = "" if not dumpframe else (
+        f" if __f=={dumpframe} then\n"
+        '  local x="0123456789abcdef"\n'
+        "  for r=0,127 do\n"
+        '   local s=""\n'
+        "   for c=0,63 do local b=@(0x6000+r*64+c) s=s..sub(x,b\\16+1,b\\16+1)..sub(x,b%16+1,b%16+1) end\n"
+        '   printh("FBDUMP "..r.." "..s)\n'
+        "  end\n"
+        "  stop()\n"
+        " end\n")
     return f"""-- z8render-diff harness (auto-injected, throwaway; cart untouched)
 __f=0
 __ck={{{cks}}}
@@ -63,7 +75,7 @@ flip=function()
   printh("FBHASH f".. __f .."="..tostr(h,true))
   printh("AUDHASH f".. __f .."="..tostr(d,true))
  end
- if __rf then __rf() end
+{dumpblock} if __rf then __rf() end
  if __f>={stop_at} then stop() end
 end
 """
@@ -80,7 +92,7 @@ def to_p8(cart, shrinko_dir):
         raise RuntimeError(f"shrinko8 failed on {cart}: {r.stderr[:300]}")
     return tmp, tmp
 
-def inject(p8_path, out_path, stop_at, noinput=False):
+def inject(p8_path, out_path, stop_at, noinput=False, dumpframe=0):
     with open(p8_path, "r", encoding="utf-8", errors="replace") as f:
         lines = f.readlines()
     # find __lua__ then the next section marker (__xxx__) after it
@@ -90,7 +102,7 @@ def inject(p8_path, out_path, stop_at, noinput=False):
     # PREPEND the harness right after the __lua__ marker, before the cart's code,
     # so the flip() override is in place before the cart runs (catches top-level
     # flip-loop carts whose code never returns to an appended harness).
-    h = harness(stop_at, noinput)
+    h = harness(stop_at, noinput, dumpframe)
     insert_at = lua_i + 1
     out = lines[:insert_at] + [h if h.endswith("\n") else h + "\n"] + lines[insert_at:]
     with open(out_path, "w", encoding="utf-8", newline="\n") as f:
@@ -109,9 +121,10 @@ def main():
               "C:/Users/miste/AppData/Local/Temp/shrinko8"
     stop_at = int(a[a.index("--frames") + 1]) if "--frames" in a else DEFAULT_STOP
     noinput = "--noinput" in a
+    dumpframe = int(a[a.index("--dumpframe") + 1]) if "--dumpframe" in a else 0
     p8, tmp = to_p8(cart, shrinko)
     try:
-        inject(p8, out, stop_at, noinput)
+        inject(p8, out, stop_at, noinput, dumpframe)
     finally:
         if tmp and os.path.exists(tmp):
             os.remove(tmp)

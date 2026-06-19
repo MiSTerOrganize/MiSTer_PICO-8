@@ -15,7 +15,7 @@
 Z8="${Z8:-./z8headless}"
 DATADIR="${DATADIR:-.}"
 GOLD="${GOLD:-goldens.txt}"
-CARTS="mech_check fix32_math peek_extmem pal_secret tline_map"
+CARTS="mech_check fix32_math peek_extmem pal_secret tline_map rnd_seq"
 
 fail=0; total=0
 for cart in $CARTS; do
