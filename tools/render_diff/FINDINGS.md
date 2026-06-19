@@ -71,6 +71,22 @@ HONEST residual: no-input cannot separate "z8 fails to render" from "engines at 
 auto-advance state" for every cart -> the probable set needs input-controlled / matched-state
 follow-up. Same root limitation as the gameplay-gated (VR) gap.
 
+## OVERSIZE (674 carts) coverage -- PROTOTYPE PROVEN (2026-06-19)
+The 674 WRAP-OVERSIZE carts can't take an injected harness (cart already near the 8192-token
+limit; e.g. 13 Jumps = 8007 tokens). shrinko8 --minify barely helps (PICO-8 counts TOKENS,
+not chars; minify freed only 114 tokens on 13 Jumps). SOLUTION (proven): capture official's
+framebuffer token-free via the GUI.
+  official side: `pico8 -run "<UNMODIFIED cart>" -width 512 -height 512 -windowed 1`
+    -> OS window client-area grab (512x512 = clean 4x of 128px) -> /4 downsample
+    -> RGB->palette-index. Demonstrated on 13 Jumps (oversize): 16383/16384 px map EXACTLY
+       to PICO-8 palette indices (99.99%) -> classifier-ready.
+  z8 side: z8headless --dump on the RAW cart (no token limit, no harness, token-free).
+  compare: feed both into the pixel-window classifier (grab a few frames at different wall-
+    clock points for phase-robustness).
+Caveats: GUI (window pops, needs the dev display, local-only), sequential ~7s/cart (~80 min
+for 674). NOT for CI. But it CLOSES the 28% -- oversize is testable, not "untested forever".
+Same window-grab also fixes the NO-CHECKPOINTS hook-gap carts (z8 native --dump + official grab).
+
 ## Next
 - Root-cause + fix the 3 confirmed bugs in zepto8 (palette path for #1; background-tile/map path
   for #2/#3 -- check how many other carts share it).
