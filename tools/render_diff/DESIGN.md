@@ -22,12 +22,28 @@ Validated recipe (the harness to inject into each cart):
   loop; `stop()` past the last checkpoint quits cleanly.
 - Capture: zepto8 `printh`→stdout+stderr; official `printh`→terminal (strip `INFO: `).
 
-## Milestone 2 — wrapper generator (real carts): TODO
-Per cart: (1) get the cart's full content — `.p8` direct; `.p8.png` decompress→`.p8`
-(shrinko8 / official `pico8` load+save, LOCAL). Must preserve __gfx__/__map__/__sfx__,
-not just code. (2) Inject the harness: wrap the cart's `_init`/`_update`/`_update60`/
-`_draw` so the wrapper forces 60fps + counts + checkpoint-hashes (without breaking the
-cart's own loop). (3) Throwaway wrapper — never written back to the user's cart.
+## Milestone 2 — wrapper generator (real carts): ✅ DONE 2026-06-18
+`gen_wrapper.py` — `.p8` direct; `.p8.png` decompressed via **shrinko8** to a full
+`.p8` (preserves __gfx__/__map__/__sfx__/__music__). Injects the harness by
+**PREPENDING** (right after `__lua__`, before the cart's code).
+
+KEY DESIGN (better than the M1 append approach): the harness **overrides `flip()`** —
+the UNIVERSAL per-frame hook. Verified: the engine calls global `flip()` to present
+each frame for modern `_update`/`_draw` carts AND old top-level flip-loop carts call
+it manually — so one hook catches every cart structure, and `flip` == one display
+frame so cadence aligns automatically (no `_update` 30/60 issue). The harness also
+overrides `t()`/`time()` to be frame-based (`__rd_f/60`) so time-driven carts run the
+same #frames on both engines, and `srand(1)`/`btn`/`btnp` for determinism. It hashes
+`0x6000` at each flip checkpoint and `stop()`s past the last one.
+
+VALIDATED: synthetic modern `_update60` cart — full match. **campfire.p8.png**
+(flip-loop + time-driven) — all 8 checkpoints (f1/f2/f8/f30/f60/f120/f240/f300)
+**identical** between official PICO-8 and z8headless = conformant.
+
+RUN CONVENTION: pass z8headless `--frames` GENEROUSLY (e.g. 2000) — flip-loop carts
+flip < once per engine-frame, so z8 needs extra engine-frames to reach the checkpoint
+flip-count; the cart's `stop()` bounds it once flips hit the target, so over-
+provisioning is free. official `-x` is frame-based 1:1.
 
 ## Milestone 3 — dual-engine batch + diff + triage: TODO
 For each cart: run wrapper on official PICO-8 `-x` (LOCAL goldens) + z8headless; diff
