@@ -19,7 +19,48 @@ import sys, os, subprocess, tempfile
 CHECKPOINTS = [1, 2, 8, 30, 60, 120, 240, 300]   # display frames to hash
 DEFAULT_STOP = max(CHECKPOINTS) + 5
 
-def harness(stop_at, noinput=False, dumpframe=0, seq=0, dwin=None):
+def harness(stop_at, noinput=False, dumpframe=0, seq=0, dwin=None, inp=False):
+    if dwin and inp:
+        # WINDOW dump WITH scripted gameplay input -- to reach + diff GAMEPLAY (resolves
+        # no-input state-drift FPs + catches gameplay-gated render bugs like VR's track).
+        # Both engines get the IDENTICAL deterministic input; the pixel-window classifier
+        # tolerates small input-timing drift (anchor vs whole window), so a persistent
+        # gameplay render bug shows high residual while position drift stays low.
+        # Mask: mash X to start/skip menus, then hold right + periodic jump(X)/up.
+        s, e = dwin
+        return (f"""-- z8render-diff WINDOW+INPUT harness (throwaway; cart untouched)
+__f=0
+__rf=flip
+srand(1)
+t=function() return __f/60 end
+time=t
+__im=function(i)
+ local m=0
+ if __f<16 then m=32 end
+ if __f>=16 then
+  m=2
+  if __f%16<3 then m=m|32 end
+  if __f%32<4 then m=m|4 end
+ end
+ if i then return (m>>i)&1==1 end
+ return m
+end
+btn=__im
+btnp=__im
+flip=function()
+ __f+=1
+ if __f>={s} and __f<={e} then
+  local x="0123456789abcdef"
+  for r=0,127 do
+   local ss=""
+   for c=0,63 do local b=@(0x6000+r*64+c) ss=ss..sub(x,b\\16+1,b\\16+1)..sub(x,b%16+1,b%16+1) end
+   printh("FBDUMP "..__f.." "..r.." "..ss)
+  end
+ end
+ if __rf then __rf() end
+ if __f>{e} then stop() end
+end
+""", "")
     if dwin:
         # WINDOW dump: dump the full 128x128 framebuffer for EVERY frame in [s..e],
         # frame-tagged ("FBDUMP <frame> <row> <hex>"), no input. The pixel-window
@@ -151,7 +192,7 @@ def to_p8(cart, shrinko_dir):
         raise RuntimeError(f"shrinko8 failed on {cart}: {r.stderr[:300]}")
     return tmp, tmp
 
-def inject(p8_path, out_path, stop_at, noinput=False, dumpframe=0, seq=0, dwin=None):
+def inject(p8_path, out_path, stop_at, noinput=False, dumpframe=0, seq=0, dwin=None, inp=False):
     with open(p8_path, "r", encoding="utf-8", errors="replace") as f:
         lines = f.readlines()
     # find __lua__ then the next section marker (__xxx__) after it
@@ -161,7 +202,7 @@ def inject(p8_path, out_path, stop_at, noinput=False, dumpframe=0, seq=0, dwin=N
     # next section marker (__gfx__ etc.) after __lua__ = end of the code section
     nxt = next((i for i in range(lua_i + 1, len(lines)) if l_is_section(lines[i])),
                len(lines))
-    pre, post = harness(stop_at, noinput, dumpframe, seq, dwin)
+    pre, post = harness(stop_at, noinput, dumpframe, seq, dwin, inp)
     if not pre.endswith("\n"): pre += "\n"
     if not post.endswith("\n"): post += "\n"
     # PREPEND pre (right after __lua__, before cart code -> catches flip-loop carts),
@@ -186,9 +227,10 @@ def main():
     dumpframe = int(a[a.index("--dumpframe") + 1]) if "--dumpframe" in a else 0
     seq = int(a[a.index("--seq") + 1]) if "--seq" in a else 0
     dwin = (int(a[a.index("--dumpwin") + 1]), int(a[a.index("--dumpwin") + 2])) if "--dumpwin" in a else None
+    inp = "--play" in a
     p8, tmp = to_p8(cart, shrinko)
     try:
-        inject(p8, out, stop_at, noinput, dumpframe, seq, dwin)
+        inject(p8, out, stop_at, noinput, dumpframe, seq, dwin, inp)
     finally:
         if tmp and os.path.exists(tmp):
             os.remove(tmp)
