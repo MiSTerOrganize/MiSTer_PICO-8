@@ -19,7 +19,7 @@ import sys, os, subprocess, tempfile
 CHECKPOINTS = [1, 2, 8, 30, 60, 120, 240, 300]   # display frames to hash
 DEFAULT_STOP = max(CHECKPOINTS) + 5
 
-def harness(stop_at):
+def harness(stop_at, noinput=False):
     # PREPEND (before cart code): override flip() -- the UNIVERSAL per-frame hook.
     # The engine calls global flip() to present each frame for modern _update/_draw
     # carts, AND old top-level flip-loop carts call it manually. flip == one display
@@ -31,7 +31,14 @@ def harness(stop_at):
     # input + render(FB) + audio(stat) hashing in the fewest tokens. Carts still over
     # the limit on official are flagged WRAP-OVERSIZE (can't auto-wrap with extra Lua).
     # __m: scripted generic advance input (pulse X/O + hold right); btn/btnp alias it.
+    # --noinput zeros the mask (secondary triage: if a RENDER-DIVERGE persists with no
+    # input it is a pure render bug; if it vanishes, the divergence was input-driven).
     # t/time: frame-based deterministic. flip: universal per-frame hook (FB+audio hash).
+    maskbody = "" if noinput else (
+        " local p=__f%48\n"
+        " if p<3 then m=32 end\n"
+        " if p>7 and p<11 then m=16 end\n"
+        " if __f>90 and __f<240 then m=m|2 end\n")
     return f"""-- z8render-diff harness (auto-injected, throwaway; cart untouched)
 __f=0
 __ck={{{cks}}}
@@ -41,11 +48,7 @@ t=function() return __f/60 end
 time=t
 __m=function(i)
  local m=0
- local p=__f%48
- if p<3 then m=32 end
- if p>7 and p<11 then m=16 end
- if __f>90 and __f<240 then m=m|2 end
- if i then return (m>>i)&1==1 end
+{maskbody} if i then return (m>>i)&1==1 end
  return m
 end
 btn=__m
@@ -77,7 +80,7 @@ def to_p8(cart, shrinko_dir):
         raise RuntimeError(f"shrinko8 failed on {cart}: {r.stderr[:300]}")
     return tmp, tmp
 
-def inject(p8_path, out_path, stop_at):
+def inject(p8_path, out_path, stop_at, noinput=False):
     with open(p8_path, "r", encoding="utf-8", errors="replace") as f:
         lines = f.readlines()
     # find __lua__ then the next section marker (__xxx__) after it
@@ -87,7 +90,7 @@ def inject(p8_path, out_path, stop_at):
     # PREPEND the harness right after the __lua__ marker, before the cart's code,
     # so the flip() override is in place before the cart runs (catches top-level
     # flip-loop carts whose code never returns to an appended harness).
-    h = harness(stop_at)
+    h = harness(stop_at, noinput)
     insert_at = lua_i + 1
     out = lines[:insert_at] + [h if h.endswith("\n") else h + "\n"] + lines[insert_at:]
     with open(out_path, "w", encoding="utf-8", newline="\n") as f:
@@ -105,9 +108,10 @@ def main():
     shrinko = a[a.index("--shrinko") + 1] if "--shrinko" in a else \
               "C:/Users/miste/AppData/Local/Temp/shrinko8"
     stop_at = int(a[a.index("--frames") + 1]) if "--frames" in a else DEFAULT_STOP
+    noinput = "--noinput" in a
     p8, tmp = to_p8(cart, shrinko)
     try:
-        inject(p8, out, stop_at)
+        inject(p8, out, stop_at, noinput)
     finally:
         if tmp and os.path.exists(tmp):
             os.remove(tmp)

@@ -90,3 +90,15 @@ errored both). Pipeline validated end-to-end.
 Official PICO-8 (`#PICO-8_Official/`) runs LOCAL only — never CI/committed. Goldens
 (our carts' output numbers) are committable; the binary is not. See
 feedback_pico8_license_compliance.md + feedback_official_pico8_reference_only.md.
+
+## No-input triage (2026-06-18) -- validated, found 1 real candidate
+`gen_wrapper.py --noinput` zeros the input mask. Re-running the 2 pilot RENDER-DIVERGE
+candidates with no input:
+- **Gridbeans**: all 8 checkpoints MATCH official -> FALSE POSITIVE (was input-driven).
+- **Wander the Cosmos**: still DIVERGES (f1-f60 match, f120/240/300 differ) with zero
+  input + srand(1) + frame-based time -> REAL zepto8-vs-official candidate (render bug,
+  rnd-conformance, or memory/stat init). Not a harness artifact (harness identical +
+  deterministic on both; bxor/rotl/tostr already conformance-verified). NOT yet a
+  CONFIRMED bug -- confirm via frame-dump (PNG) vs official screenshot + root-cause.
+Triage discipline: every RENDER-DIVERGE must pass the no-input re-run before it counts
+as a candidate; input-driven diffs are filtered out.
