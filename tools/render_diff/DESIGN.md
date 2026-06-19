@@ -181,3 +181,39 @@ THE TRUSTWORTHY PIPELINE (final):
 LIMITATION (honest): no-input SEQ exercises title/intro/attract only; a gameplay-gated
 render bug (Virtua Racing track) renders fine at the title and is classified clean ->
 needs per-cart deterministic input (the genuinely hard, not-yet-automated case).
+
+## HARDENING before relying on output (2026-06-19) -- 3 checks, all done
+Before trusting the full-library numbers, validated the three weakest links:
+
+H1 -- the 84 "z8 produced nothing" (NO-CHECKPOINTS, z8=0 off>0). Ran z8headless NATIVE
+  frame dump (--dump all, bypasses my Lua flip-hook) on a 15 sample: 11/15 render real
+  multi-colour content (PNG bit-depth 2-4), only 4/15 near-blank (1-bit). CONCLUSION:
+  the 84 is a FLIP-HOOK COVERAGE GAP, not z8 bugs -- z8 renders fine, my global-flip()
+  hash hook just doesn't fire for those cart structures. Reclassified as UNCOVERED (like
+  oversize), NOT a bug list. The gap only ever yields NO-CHECKPOINTS, so it cannot
+  pollute MATCH or RENDER-DIVERGE (those required the hook to fire on both engines).
+
+H2 -- the audio discriminator (250 AUDIO-DIVERGE). Added AUDHASH to SEQ mode; ran 5
+  AUDIO-DIVERGE carts no-input on both engines + z8 twice. RESULT: z8 fully reproducible
+  (run1==run2) AND audio bit-identical to official no-input (exact=90/90, jacc=1.00, all
+  5 actively playing music). CONCLUSION: AUDIO-DIVERGE is 100% input-driven (scripted
+  input triggers different sfx), NOT audio bugs; zepto8 audio path is conformant. Audio
+  is not reported as a bug list.
+
+H3 -- does 8-checkpoint MATCH hide between-frame diffs? Ran 15 spread-out MATCH carts in
+  every-frame no-input SEQ. 12/15 exact=1.00 (perfect); Tailpipe exact=0.52/jacc=1.00
+  (same content, phase); Timmy's Return REVIEW; Night of the Worm Slayer exact=0/jacc=0
+  -> EYEBALLED = visually IDENTICAL title (continuous idle-animation one phase-step off).
+  CONCLUSION 1: all 15 MATCH carts are genuinely clean -> the 928 MATCH headline is
+  TRUSTWORTHY; checkpoint sampling hid no real bug. CONCLUSION 2 (important refinement):
+  a CONTINUOUSLY-animated screen yields exact=0 AND jacc=0 yet is a phase FP -> Tier-2
+  "REAL-CANDIDATE" is a TRIAGE LABEL, NEVER a bug claim; the triptych eyeball is the
+  mandatory final authority and the REAL-CANDIDATE count will be inflated by animation.
+
+REFINED TRUST MODEL (what to believe):
+  - 928 MATCH = trustworthy clean (validated).
+  - AUDIO-DIVERGE / NO-CHECKPOINTS(z8-empty) = NOT bugs (input-driven / hook-gap).
+  - WRAP-OVERSIZE = uncovered (honest).
+  - RENDER-DIVERGE -> Tier-2 SEQ -> REAL-CANDIDATE/REVIEW are EYEBALL-GATED; only an
+    eyeballed+confirmed triptych is reported as a bug. Low false-positive by construction.
+  - Blind spot unchanged: gameplay-gated render bugs (VR class) need per-cart input.

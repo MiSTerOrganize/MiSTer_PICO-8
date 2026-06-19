@@ -37,8 +37,11 @@ btnp=__m
 flip=function()
  local h=0
  for a=0x6000,0x7fff do h=bxor(rotl(h,3),@a) end
+ local d=0
+ for i=16,23 do d=d*64+stat(i) end
  __f+=1
  printh("FBHASH f".. __f .."="..tostr(h,true))
+ printh("AUDHASH f".. __f .."="..tostr(d,true))
  if __rf then __rf() end
  if __f>={seq} then stop() end
 end
