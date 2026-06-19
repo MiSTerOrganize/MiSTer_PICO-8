@@ -119,3 +119,36 @@ Wins: (1) rnd conformance is now a permanent test (rnd_seq, PASS). (2) TRIAGE TU
 scattered single-pixel twinkle (starfields/particles) is a frame-pacing false-positive
 source; weight RENDER-DIVERGE by magnitude/clustering -- the trustworthy signal is a
 large/clustered diff (broken sprite, wrong colours over a region), not 100-px scatter.
+
+## TRUSTWORTHY triage flow (2026-06-18) -- validated, this is the shipping design
+The "weight by magnitude/clustering" idea above was TESTED and PARTIALLY FAILED, which
+is the key finding: a DENSE starfield (Wander, 125px) reaches largest_connected_comp=56
+and densest_16x16_cell=49 -- it trips raw cluster-size thresholds even though the
+triptych shows it's obviously a scattered twinkle FP. So **raw magnitude/cluster size
+CANNOT be the verdict** (it false-positives on dense particle fields). The validated
+trustworthy pipeline is TWO TIERS with the IMAGE as final authority:
+
+- **Tier 1 (auto, zero false claims): exact FBHASH gate.** A cart whose framebuffer is
+  bit-identical to official at all 8 checkpoints across 300 frames is DEFINITIVELY
+  rendering correctly. This MATCH set is the trustworthy "confirmed-good" list -- no
+  human review needed, no false negatives. (Most simple/static carts land here.)
+- **Tier 2 (DIVERGE candidates): triptych + visual triage.** For each diverging cart,
+  `fbdiff.py` dumps the raw framebuffer both sides and writes z8/official/**diff** PNGs.
+  The diff PNG (magenta = differing px over the official frame) is read by eye -- a
+  scattered field over the whole frame = particle/pacing FP; a contiguous broken
+  sprite / wrong-colour region = REAL bug. Claude reads these PNGs at scale, so the
+  user is still saved the manual play-through; the human/Claude eyeball is what makes
+  the bug list trustworthy (no auto-mislabel reaches the user).
+- **`fbdiff.py` HINT (sort-key only, NOT verdict):** prints total / largest_cc /
+  densest_16x16 / **bg_swap_ratio**. bg_swap_ratio = fraction of diff px with bg (0/1)
+  on one side; a moving particle field ~= 0.99 (a star that relocated -> bg on one
+  side), a real palette/sprite bug is low (real colour swapped for real colour). Hint
+  buckets: LIKELY-REAL (largest_cc>=24 & bg<0.5, or total>=1500) | PARTICLE-FP? (bg>=
+  0.85) | REVIEW-IMAGE. Used to ORDER which triptychs to eyeball first, never to label.
+  VALIDATED on Wander: total=125 largest_cc=56 cell=49 bg_swap_ratio=0.99 -> PARTICLE-FP?
+  (correct -- raw cluster size alone had mislabeled it CLUSTERED-REAL).
+
+Net: the tool is trustworthy because every "this cart is buggy" claim is gated by an
+exact-hash divergence AND a human-read triptych; magnitude is only a triage sort-key.
+Honest residual: the WRAP-OVERSIZE subset (~half of full games) still can't be headless-
+wrapped (official 8192-token cap) -- those are reported as uncovered, not as pass/fail.

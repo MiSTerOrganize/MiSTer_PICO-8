@@ -20,27 +20,24 @@ CHECKPOINTS = [1, 2, 8, 30, 60, 120, 240, 300]   # display frames to hash
 DEFAULT_STOP = max(CHECKPOINTS) + 5
 
 def harness(stop_at, noinput=False, dumpframe=0):
-    # PREPEND (before cart code): override flip() -- the UNIVERSAL per-frame hook.
-    # The engine calls global flip() to present each frame for modern _update/_draw
-    # carts, AND old top-level flip-loop carts call it manually. flip == one display
-    # frame on both engines, so cadence aligns automatically (no _update 30/60 issue).
-    # At flip, 0x6000 holds the completed frame -> hash it at checkpoints.
+    # Trustworthy combined harness -> returns (PREPEND, APPEND).
+    # PREPEND (before cart): flip() hook for top-level flip-loop carts (which never
+    #   return to appended code). Counts+hashes per flip ONLY while __tk is false.
+    # APPEND (after cart; runs only for modern carts whose top-level returns):
+    #   takes full control -- nils the cart's _update/_update60 and re-defines them so
+    #   the cart's update runs EXACTLY ONCE per frame on BOTH engines (deterministic
+    #   1:1 cadence). This eliminates the _update-vs-flip frame-PACING that caused the
+    #   Wander starfield false-positive. Driven by the engine's frame loop (--frames N)
+    #   so it stays within z8's per-frame budget (a top-level for-loop hit a cutoff).
+    # Comments are FREE in PICO-8 tokens; code tokens are not (near-8192-token carts ->
+    # WRAP-OVERSIZE). __hs(): shared FB+audio hash (deduped). t/time frame-based; srand
+    # fixed; btn/btnp = scripted advance input (--noinput zeros it for secondary triage).
     cks = "".join("[%d]=1," % c for c in CHECKPOINTS)
-    # Token-minified: comments are FREE in PICO-8 (not counted), but code tokens are,
-    # and prepending pushes near-8192-token carts over the official limit. This keeps
-    # input + render(FB) + audio(stat) hashing in the fewest tokens. Carts still over
-    # the limit on official are flagged WRAP-OVERSIZE (can't auto-wrap with extra Lua).
-    # __m: scripted generic advance input (pulse X/O + hold right); btn/btnp alias it.
-    # --noinput zeros the mask (secondary triage: if a RENDER-DIVERGE persists with no
-    # input it is a pure render bug; if it vanishes, the divergence was input-driven).
-    # t/time: frame-based deterministic. flip: universal per-frame hook (FB+audio hash).
     maskbody = "" if noinput else (
         " local p=__f%48\n"
         " if p<3 then m=32 end\n"
         " if p>7 and p<11 then m=16 end\n"
         " if __f>90 and __f<240 then m=m|2 end\n")
-    # optional one-shot raw-framebuffer dump at a target frame (root-cause a divergence):
-    # printh 128 rows of 64 bytes as hex (FBDUMP <row> <128hex>), then stop.
     dumpblock = "" if not dumpframe else (
         f" if __f=={dumpframe} then\n"
         '  local x="0123456789abcdef"\n'
@@ -51,7 +48,12 @@ def harness(stop_at, noinput=False, dumpframe=0):
         "  end\n"
         "  stop()\n"
         " end\n")
-    return f"""-- z8render-diff harness (auto-injected, throwaway; cart untouched)
+    # Flip-only harness (PREPEND only): proven to work for ALL cart structures (the
+    # engine calls global flip() to present for modern _update/_draw carts AND flip-loop
+    # carts call it manually). Frame-pacing scatter (e.g. starfields) is handled NOT by
+    # cadence surgery but by the two-tier magnitude triage (fbdiff cluster analysis):
+    # exact-hash pass -> candidates -> FB-dump + cluster -> SCATTER-FP vs CLUSTERED-REAL.
+    pre = f"""-- z8render-diff harness (throwaway; cart untouched)
 __f=0
 __ck={{{cks}}}
 __rf=flip
@@ -79,6 +81,7 @@ flip=function()
  if __f>={stop_at} then stop() end
 end
 """
+    return pre, ""
 
 def to_p8(cart, shrinko_dir):
     """Return path to a full .p8 (decompress .p8.png via shrinko8 to a temp file)."""
@@ -99,12 +102,15 @@ def inject(p8_path, out_path, stop_at, noinput=False, dumpframe=0):
     lua_i = next((i for i, l in enumerate(lines) if l.strip() == "__lua__"), None)
     if lua_i is None:
         raise RuntimeError("no __lua__ section")
-    # PREPEND the harness right after the __lua__ marker, before the cart's code,
-    # so the flip() override is in place before the cart runs (catches top-level
-    # flip-loop carts whose code never returns to an appended harness).
-    h = harness(stop_at, noinput, dumpframe)
-    insert_at = lua_i + 1
-    out = lines[:insert_at] + [h if h.endswith("\n") else h + "\n"] + lines[insert_at:]
+    # next section marker (__gfx__ etc.) after __lua__ = end of the code section
+    nxt = next((i for i in range(lua_i + 1, len(lines)) if l_is_section(lines[i])),
+               len(lines))
+    pre, post = harness(stop_at, noinput, dumpframe)
+    if not pre.endswith("\n"): pre += "\n"
+    if not post.endswith("\n"): post += "\n"
+    # PREPEND pre (right after __lua__, before cart code -> catches flip-loop carts),
+    # APPEND post (end of code section, before next __section__ -> modern-cart driver).
+    out = (lines[:lua_i + 1] + [pre] + lines[lua_i + 1:nxt] + [post] + lines[nxt:])
     with open(out_path, "w", encoding="utf-8", newline="\n") as f:
         f.writelines(out)
 
