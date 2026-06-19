@@ -25,27 +25,44 @@ def harness(stop_at):
     # carts, AND old top-level flip-loop carts call it manually. flip == one display
     # frame on both engines, so cadence aligns automatically (no _update 30/60 issue).
     # At flip, 0x6000 holds the completed frame -> hash it at checkpoints.
-    cks = "".join("[%d]=true," % c for c in CHECKPOINTS)
-    return f"""-- ===== z8render-diff harness (auto-injected, throwaway; cart file untouched) =====
-__rd_f=0
-__rd_ck={{{cks}}}
-__rd_realflip=flip
+    cks = "".join("[%d]=1," % c for c in CHECKPOINTS)
+    # Token-minified: comments are FREE in PICO-8 (not counted), but code tokens are,
+    # and prepending pushes near-8192-token carts over the official limit. This keeps
+    # input + render(FB) + audio(stat) hashing in the fewest tokens. Carts still over
+    # the limit on official are flagged WRAP-OVERSIZE (can't auto-wrap with extra Lua).
+    # __m: scripted generic advance input (pulse X/O + hold right); btn/btnp alias it.
+    # t/time: frame-based deterministic. flip: universal per-frame hook (FB+audio hash).
+    return f"""-- z8render-diff harness (auto-injected, throwaway; cart untouched)
+__f=0
+__ck={{{cks}}}
+__rf=flip
 srand(1)
-btn=function() return false end
-btnp=function() return false end
--- frame-based deterministic time so time-driven carts run the SAME #frames on
--- both engines (z8headless time() can be wall-clock-ish; official -x is frame-based).
-t=function() return __rd_f/60 end
+t=function() return __f/60 end
 time=t
+__m=function(i)
+ local m=0
+ local p=__f%48
+ if p<3 then m=32 end
+ if p>7 and p<11 then m=16 end
+ if __f>90 and __f<240 then m=m|2 end
+ if i then return (m>>i)&1==1 end
+ return m
+end
+btn=__m
+btnp=__m
 flip=function()
  local h=0
  for a=0x6000,0x7fff do h=bxor(rotl(h,3),@a) end
- __rd_f+=1
- if __rd_ck[__rd_f] then printh("FBHASH f".. __rd_f .."="..tostr(h,true)) end
- if __rd_realflip then __rd_realflip() end
- if __rd_f>={stop_at} then stop() end
+ local d=0
+ for i=16,23 do d=d*64+stat(i) end
+ __f+=1
+ if __ck[__f] then
+  printh("FBHASH f".. __f .."="..tostr(h,true))
+  printh("AUDHASH f".. __f .."="..tostr(d,true))
+ end
+ if __rf then __rf() end
+ if __f>={stop_at} then stop() end
 end
--- ===== end harness; original cart code follows =====
 """
 
 def to_p8(cart, shrinko_dir):

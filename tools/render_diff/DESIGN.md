@@ -45,11 +45,36 @@ flip < once per engine-frame, so z8 needs extra engine-frames to reach the check
 flip-count; the cart's `stop()` bounds it once flips hit the target, so over-
 provisioning is free. official `-x` is frame-based 1:1.
 
-## Milestone 3 — dual-engine batch + diff + triage: TODO
-For each cart: run wrapper on official PICO-8 `-x` (LOCAL goldens) + z8headless; diff
-the per-checkpoint FBHASH lines; emit a triaged report: MATCH / DIVERGE / errored /
-non-deterministic. Multicart (e.g. Virtua Racing `vracing_0..N.p8`) handled specially
-(wrap entry + drive into the buggy sub-cart).
+## Milestone 3 — dual-engine batch + diff + triage: PIPELINE WORKING; 2 real limits found
+`compare_render.py` joins z8 + official result files (FBHASH/AUDHASH per cart) and
+classifies: MATCH / RENDER-DIVERGE / AUDIO-DIVERGE / NO-GAMEPLAY? / WRAP-OVERSIZE /
+NO-CHECKPOINTS. Batch = gen wrappers (python) -> z8 one Docker loop (`--frames 2000`)
+-> official `-x` loop (PowerShell, flags "program too large" -> OVERSIZE) -> compare.
+
+**8-cart pilot (2026-06-18):** 1 MATCH (Jumping Jack), 2 RENDER-DIVERGE (Wander the
+Cosmos @f30, Gridbeans @f60), 4 WRAP-OVERSIZE, 1 NO-CHECKPOINTS (3D Picoh Mummy,
+errored both). Pipeline validated end-to-end.
+
+### 🛑 Two honest limitations the pilot exposed
+1. **WRAP-OVERSIZE (the big one): ~half of FULL GAMES hit official's 8192-token cap.**
+   The injected harness (even minified) pushes near-max carts over the limit ->
+   official rejects "program too large" -> can't headless-wrap. Small carts/demos are
+   fine; big games (the most bug-prone) often are NOT. Fallback for those = the slow
+   GUI-screenshot route (CTRL-6 automation), or they stay unchecked. This is a real
+   ceiling on the headless approach. Ideas to explore: strip the cart's own dead code
+   to make token room (risky); GUI fallback for the oversize subset; a token-free
+   external driver (none known for official -x).
+2. **RENDER-DIVERGE is a CANDIDATE, not a confirmed bug.** The scripted input + timing
+   can drive the two engines to different gameplay states (input-/nondeterminism-
+   driven), which looks like a render divergence. Secondary triage REQUIRED: re-run the
+   diverging cart with NO input (`__m` returns 0) -- if it still diverges it's a pure
+   render bug; if it matches, the divergence was input-driven (not a render bug).
+
+### TODO to make M3 trustworthy at scale
+- Secondary no-input triage pass for RENDER-DIVERGE candidates (auto).
+- WRAP-OVERSIZE handling (GUI fallback or accept-and-report the uncovered subset).
+- Multicart (Virtua Racing `vracing_0..N.p8`) special handling.
+- Then the full 3302-cart run (multi-hour, official side real-time).
 
 ## Honest limits (state in the report)
 - Non-deterministic carts (rnd-from-time/entropy) → false positives; `srand` fixes
