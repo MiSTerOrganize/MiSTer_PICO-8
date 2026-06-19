@@ -1,0 +1,71 @@
+# z8conformance goldens -- ground truth captured from OFFICIAL PICO-8 0.2.7a6
+# (`pico8 -x cart.p8`, headless), generated LOCALLY on the dev machine.
+#
+# These are OUR conformance carts' OUTPUT VALUES -- license-safe to commit
+# (they are not the PICO-8 binary, data, or design; just numbers our carts
+# printed). The official PICO-8 binary itself stays strictly local, never
+# committed/shipped (see feedback_pico8_license_compliance.md).
+#
+# run_conformance.sh runs each cart through z8headless (zepto8) and diffs its
+# output against these goldens. ANY difference = a zepto8 conformance bug,
+# pinned to the exact API the cart exercises. Regenerate after intentional
+# changes via gen_goldens (official PICO-8, local) -- see README.md.
+#
+# Captured 2026-06-18, all carts MATCH z8headless (zero divergences).
+
+[mech_check]
+CONFHASH=0xac47.c84b
+
+[fix32_math]
+CONFVAL absmin=0x7fff.ffff
+CONFVAL ashr=0xffc0.0000
+CONFVAL atan2=0x0000.da38
+CONFVAL band=0x0b0d.0000
+CONFVAL bxor=0xedcb.0000
+CONFVAL ceil=0xfffd.0000
+CONFVAL cos=0x0000.cf22
+CONFVAL div=0x0021.5555
+CONFVAL divneg=0xffde.aaab
+CONFVAL flr=0x0003.0000
+CONFVAL flrneg=0xfffc.0000
+CONFVAL lshr=0x0040.0000
+CONFVAL maxfrac=0x0000.0002
+CONFVAL mod=0x0001.8000
+CONFVAL modneg=0x0001.8000
+CONFVAL mul=0x4240.0000
+CONFVAL mulfrac=0x0000.4000
+CONFVAL mulneg=0xbdc0.0000
+CONFVAL rotl=0x3456.7812
+CONFVAL rotr=0x7812.3456
+CONFVAL shl=0x0010.0000
+CONFVAL sin=0xffff.698f
+CONFVAL sqrt0=0x0000.0000
+CONFVAL sqrt2=0x0001.6a09
+CONFVAL tostr_neg=0xfffe.8000
+
+[peek_extmem]
+CONFVAL at4300=0x0055.0000
+CONFVAL at8000=0x0012.0000
+CONFVAL at8002=0x00ab.0000
+CONFVAL dol8020=0x1234.5678
+CONFVAL hi_bit2=0x0080.0000
+CONFVAL oob_ffff=0x0000.0000
+CONFVAL pct8010=0x1234.0000
+CONFVAL peek2_8010=0x1234.0000
+CONFVAL peek4_8020=0x1234.5678
+CONFVAL peek8000=0x0012.0000
+
+[pal_secret]
+CONFVAL drawpal_px=0x000a.0000
+CONFVAL fillp_reg=0x35a3.0000
+CONFVAL palt_default=0x0010.0000
+CONFVAL screenpal_px=0x0007.0000
+CONFVAL secret_5f10=0x008a.0000
+CONFVAL secret_5f11=0x0003.0000
+
+[tline_map]
+CONFVAL hi_oob_px=0x0005.0000
+CONFVAL inbounds_px=0x0005.0000
+CONFVAL mget00=0x0001.0000
+CONFVAL mget10=0x0002.0000
+CONFVAL neg_oob_px=0x0005.0000
