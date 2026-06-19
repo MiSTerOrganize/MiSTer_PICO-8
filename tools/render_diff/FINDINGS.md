@@ -87,6 +87,33 @@ Caveats: GUI (window pops, needs the dev display, local-only), sequential ~7s/ca
 for 674). NOT for CI. But it CLOSES the 28% -- oversize is testable, not "untested forever".
 Same window-grab also fixes the NO-CHECKPOINTS hook-gap carts (z8 native --dump + official grab).
 
+## INPUT-CONTROLLED (--play) finalization (2026-06-19) -- definitive
+Re-ran all 1099 candidates with identical scripted gameplay input (--play; mash X to start,
+then hold right + periodic jump/up), window 40-100, both engines -> pixel_window_classify.
+Compared against the no-input pass (the INTERSECTION is the clean signal):
+  - HIGH in BOTH passes = real bug (state-independent): Lina 100/100, On A Roll 90/93,
+    Burger Age 84/84, Aurora 88/76, Mina 59/66, Coiled 53/53.
+  - HIGH no-input, LOW play = STATE-DRIFT FP, resolved by input: Flip Out 59->0, Froggo
+    85->28, Still a Magical Girl 33->13, Bloom Eternal 37->14.
+  - LOW no-input, HIGH play = INPUT-SURFACED: real gameplay bug (Head-8n: z8 BLACK in the
+    maze game, official full -> REAL, invisible to no-input!) OR input-drift FP (P3 16->60,
+    RabuRabu 7->48 = gameplay state diverged from 1-frame input timing -> FP by eyeball).
+  - official-black FP (Ghost Ship) stays high in both but official renders black -> excluded.
+
+DEFINITIVE confirmed real render bugs (eyeballed; high in both / persistent / not FP class):
+  REM (palette) | Mina (border tiles) | Bomba (bg tiles) | Skelethrone (bg colour) |
+  Froggo (bg) | Coiled (missing character) | Lina (z8 black) | Burger Age (z8 black) |
+  Medusa (z8 black) | On A Roll (board not drawn) | Aurora Railway (under-render) |
+  Head-8n (z8 black in gameplay)  => ~12 confirmed (the montage's "3" was badly low).
+PROBABLE (z8 won't advance to gameplay / under-renders -- eyeball or input-tune):
+  Arena Shooter, Road Fever, Rest In Pyrite, Aconcagua, Pumpkin Slasher.
+
+HONEST endpoint: no single automated metric gives a zero-eyeball verdict -- real bugs AND
+persistent-animation/input-drift FPs all sustain residual. The TOOLKIT (no-input + --play
+pixel-window classifier, intersection, per-frame nonblack auto-class for z8-black/official-
+black, ARM cross-check) RANKS + auto-classifies the clear cases; the eyeball confirms the
+BOTH-FULL middle. Multicart (VR) still needs z8headless --input/--dump + official GUI grab.
+
 ## Next
 - Root-cause + fix the 3 confirmed bugs in zepto8 (palette path for #1; background-tile/map path
   for #2/#3 -- check how many other carts share it).
