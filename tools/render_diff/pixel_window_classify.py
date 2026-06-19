@@ -70,8 +70,10 @@ def main():
     ids = sorted(os.path.splitext(os.path.basename(p))[0] for p in glob.glob(os.path.join(zd, "*.txt")))
     rows = []
     for cid in ids:
-        z = load(os.path.join(zd, cid + ".txt"))
-        o = load(os.path.join(od, cid + ".txt"))
+        zp = os.path.join(zd, cid + ".txt"); op = os.path.join(od, cid + ".txt")
+        if not (os.path.exists(zp) and os.path.exists(op)):
+            rows.append((-1, cid, "NO-DUMP", names.get(cid, cid))); continue
+        z = load(zp); o = load(op)
         if not z or not o:
             rows.append((-1, cid, "NO-DUMP", names.get(cid, cid))); continue
         zframes = sorted(z); oframes = sorted(o)
