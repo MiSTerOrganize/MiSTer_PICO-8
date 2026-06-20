@@ -215,3 +215,19 @@ different headless time -> non-comparable cross-engine -> EXCLUDE (renders fine 
 Detector: grep -qE "srand\(stat\(|srand\(time\(|srand\(t\(\)" <decompressed cart>.
 Remaining trustworthy real candidates (NOT entropy-seeded): Mina, Bomba, Lina, Burger Age,
 Medusa, On A Roll, Aurora (+ Skelethrone/Coiled use time() for ANIMATION not seed -- check).
+
+## FIX #2 LANDED (2026-06-19): stat(102) returns number 0 (standalone), not nil
+Target: Lina - A Fishy Quest (01149) -- THE #1 candidate (100% residual no-input + --play +
+pixel-window; z8 drew 40 px, official 16384/16384 every frame). Root cause: Lina's entire
+_draw is gated on check_url(), which returns true only if stat(102)==0 (number) or a host
+string. We returned nil (a 2026-05-21 oblivion_eve fix), so nil==0 -> false -> _draw skipped
+-> black screen (the 40 px = the `else: print(stat(102),0,64)` branch).
+GROUND TRUTH (measured, official PICO-8 0.2.7a6 -x standalone): stat(102) = NUMBER 0.
+The old nil matched the BBS WEB player (host string), not standalone PC -- wrong reference.
+Fix: src/pico8/vm.cpp api_stat id 102 -> (int16_t)0. Commit 1bc5047.
+VERIFIED on locally-built z8headless: Lina 40 px -> 16384/16384 (matches official). oblivion_eve
+NOT regressed (still renders 2241-8498 px animated title; "Quit" now shows = correct standalone
+behavior, works via extcmd("shutdown") handler). Burger/Medusa/On-A-Roll do NOT use stat(102)
+(checked) -- separate root causes, still open.
+GENERAL: BBS-fingerprinting carts (stat(102)/stat(120)/stat(121)) must be answered as STANDALONE
+on MiSTer -- measure the official standalone value, don't infer from the web-player context.
