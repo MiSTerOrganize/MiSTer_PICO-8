@@ -209,14 +209,14 @@ tup<uint8_t, uint8_t, uint8_t> vm::api_cursor(int16_t x, int16_t y, opt<uint8_t>
     auto &ds = m_ram.draw_state;
     uint8_t old_x = ds.cursor.x, old_y = ds.cursor.y, old_c = ds.pen;
 
-    // PC PICO-8 clamps NEGATIVE cursor coords to 0 (measured: cursor(_,-1)
-    // behaves identically to cursor(_,0) -- no print-scroll; whereas cursor(_,255)
-    // DOES scroll). The cursor byte (0x5f26/0x5f27) can't hold a negative, so a
-    // negative arg must clamp to 0 on set, not wrap to 255. Taking the args as
-    // int16_t (not uint8_t) preserves the sign so we can distinguish -1 from 255;
-    // without this, a negative cursor y wrapped to 255 and print()'s scroll calc
-    // (255 + height - 128 = +133) ran scrool_screen(133), clearing the whole
-    // framebuffer -- the Burger Age (and any sin()-positioned text) black screen.
+    // Negative cursor coords clamp to 0: cursor(_,-1) behaves identically to
+    // cursor(_,0) (no print-scroll), whereas cursor(_,255) DOES scroll. The cursor
+    // byte (0x5f26/0x5f27) can't hold a negative, so a negative arg must clamp to 0
+    // on set, not wrap to 255. Taking the args as int16_t (not uint8_t) preserves
+    // the sign so we can distinguish -1 from 255; without this a negative cursor y
+    // wrapped to 255 and print()'s scroll calc (255 + height - 128 = +133) ran
+    // scrool_screen(133), clearing the whole framebuffer -- a black-screen bug for
+    // any cart positioning text at a sometimes-negative y (e.g. sin()-bobbing text).
     ds.cursor.x = (uint8_t)std::max<int16_t>(0, x);
     ds.cursor.y = (uint8_t)std::max<int16_t>(0, y);
     if (in_c) ds.pen = *in_c;

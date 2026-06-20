@@ -1754,21 +1754,17 @@ var<bool, int16_t, fix32, std::string, std::nullptr_t> vm::api_stat(int16_t id)
     if (id == 101)
         return nullptr;
 
-    // stat(102) = host "website address". MEASURED on official PICO-8
-    // 0.2.7a6 (-x standalone): returns the NUMBER 0 for a local-file/
-    // standalone cart (only returns a host STRING like "www.lexaloffle.com"
-    // when running inside the BBS web player). MiSTer is always standalone
-    // (local .p8.png), so 0 is the correct, PC-faithful value.
+    // stat(102) = host "website address". For a local-file / standalone cart it
+    // is the NUMBER 0; it is only a host STRING (e.g. "www.lexaloffle.com") when
+    // running inside the BBS web player. MiSTer is always standalone (local
+    // .p8.png), so 0 is the correct value.
     //
-    // History: this previously returned nullptr to suppress oblivion_eve's
-    // title "Quit" item (`if stat(102)==0 then S[1][7]="quit"`). That was a
-    // mis-reference -- it matched the BBS WEB player, not standalone PC
-    // PICO-8. On standalone PC, oblivion_eve DOES show Quit (and ours works
-    // via the registered extcmd("shutdown") handler), so 0 is correct there
-    // too. Returning nullptr instead black-screened every cart that gates
-    // its render on `stat(102)==0` (e.g. Lina - A Fishy Quest's check_url(),
-    // whose entire _draw is skipped when the check fails). Verified: official
-    // renders Lina full-screen; with 0 we now match.
+    // History: this previously returned nullptr to suppress oblivion_eve's title
+    // "Quit" item (`if stat(102)==0 then S[1][7]="quit"`). That matched the BBS
+    // web-player context, not standalone -- standalone shows Quit (and ours works
+    // via the registered extcmd("shutdown") handler), so 0 is correct. Returning
+    // nullptr instead black-screened every cart that gates its render on
+    // `stat(102)==0` (a check_url()-style guard wrapping the whole _draw).
     if (id == 102)
         return (int16_t)0;
 
