@@ -204,18 +204,26 @@ void vm::vline(int16_t x, int16_t y1, int16_t y2, uint32_t color_bits)
 // Text
 //
 
-tup<uint8_t, uint8_t, uint8_t> vm::api_cursor(uint8_t x, uint8_t y, opt<uint8_t> in_c)
+tup<uint8_t, uint8_t, uint8_t> vm::api_cursor(int16_t x, int16_t y, opt<uint8_t> in_c)
 {
     auto &ds = m_ram.draw_state;
-    uint8_t c = in_c ? *in_c : ds.pen;
+    uint8_t old_x = ds.cursor.x, old_y = ds.cursor.y, old_c = ds.pen;
 
-    std::swap(ds.cursor.x, x);
-    std::swap(ds.cursor.y, y);
-    std::swap(ds.pen, c);
+    // PC PICO-8 clamps NEGATIVE cursor coords to 0 (measured: cursor(_,-1)
+    // behaves identically to cursor(_,0) -- no print-scroll; whereas cursor(_,255)
+    // DOES scroll). The cursor byte (0x5f26/0x5f27) can't hold a negative, so a
+    // negative arg must clamp to 0 on set, not wrap to 255. Taking the args as
+    // int16_t (not uint8_t) preserves the sign so we can distinguish -1 from 255;
+    // without this, a negative cursor y wrapped to 255 and print()'s scroll calc
+    // (255 + height - 128 = +133) ran scrool_screen(133), clearing the whole
+    // framebuffer -- the Burger Age (and any sin()-positioned text) black screen.
+    ds.cursor.x = (uint8_t)std::max<int16_t>(0, x);
+    ds.cursor.y = (uint8_t)std::max<int16_t>(0, y);
+    if (in_c) ds.pen = *in_c;
 
     ds.print_start_x = ds.cursor.x;
 
-    return std::make_tuple(x, y, c);
+    return std::make_tuple(old_x, old_y, old_c);
 }
 
 uint8_t get_p8scii_value(uint8_t ch)

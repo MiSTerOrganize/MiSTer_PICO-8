@@ -252,7 +252,7 @@ private:
     void api_serial(int16_t chan, int16_t address, int16_t len);
 
     // Text
-    tup<uint8_t, uint8_t, uint8_t> api_cursor(uint8_t x, uint8_t y, opt<uint8_t> c);
+    tup<uint8_t, uint8_t, uint8_t> api_cursor(int16_t x, int16_t y, opt<uint8_t> c);
     tup<opt<fix32>, opt<fix32> > api_print(opt<rich_string> str, opt<fix32> x, opt<fix32> y, opt<fix32> c);
 
     // Graphics
