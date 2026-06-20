@@ -114,6 +114,29 @@ pixel-window classifier, intersection, per-frame nonblack auto-class for z8-blac
 black, ARM cross-check) RANKS + auto-classifies the clear cases; the eyeball confirms the
 BOTH-FULL middle. Multicart (VR) still needs z8headless --input/--dump + official GUI grab.
 
+## FIX root-cause progress (2026-06-19)
+Cluster hypotheses DISSOLVED on inspection (no fix-one-helps-many shortcuts):
+  - cartdata stub = misleading diagnostic print (private.cpp:152); cartdata IS implemented.
+  - "tline" in Mina/Bomba = ou*tline*_text substring; they use map()+sspr, not tline.
+  - pal(table) bulk-set IS handled (bios.p8 pal_args_1/2 iterate the table).
+=> the ~12 bugs are INDIVIDUAL subtle z8-vs-official divergences; each is its own root-cause.
+
+REM (00344) root-cause IN PROGRESS -- ruled out cleanly (minimal-repro + dual-engine, no
+guesses, all minimal-repro + dual-engine verified): RULED OUT as conformant on z8 -->
+  - pal(c0,c1)  -> 12 (both)        - single poke(0x5f00+i,12) -> 12 (both)
+  - spr draw-palette apply -> 12 (both)   - variadic poke4(0x5f00,..) byte readback = 1..16 (both)
+  - end-of-frame palette regs 0x5f00-0x5f1f byte-IDENTICAL (both)
+CONCLUSION: REM's wrong framebuffer indices (same geometry) come from **tline** -- the only
+render op REM uses that's left, and the only confirmed-bug cart using real tline. REM's floor:
+tline(0,ye,127,ye,x,z,(ca*rz)>>(6-scale),(-sa*rz)>>(6-scale)) -- fix32 multiply + VARIABLE
+right-shift for the texel dx/dy step. basic tline (tline_map.p8 conformance) PASSES, so the
+sub-bug is in tline with REM's specific params: likely the fix32 >> by (6-scale) in dx/dy
+(texel-step) diverging, OR tline's draw-palette application mid-fog. NEXT (focused): replicate
+REM's exact tline params (extract runtime x/z/ca/sa/rz/scale) into a conformance cart to pin
+texel-step-vs-palette, then patch src/pico8 gfx.cpp tline + regression-test via render-diff.
+REM is the HARDEST confirmed bug (3D mode-7 floor). Froggo (secret-palette 0x5f10, the
+oblivion_eve family) is the recommended faster first LANDED fix.
+
 ## Next
 - Root-cause + fix the 3 confirmed bugs in zepto8 (palette path for #1; background-tile/map path
   for #2/#3 -- check how many other carts share it).
