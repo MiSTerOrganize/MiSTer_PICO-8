@@ -152,6 +152,19 @@ spr/tline draw-palette, variadic poke4, poke4+tline, fix32 shifts, sub-texel, tr
 conformant on z8). REM = hardest confirmed bug (3D mode-7 + per-band fog); next approach =
 feature-bisect REM's draw code (progressively disable render features to localise).
 
+## REM feature-bisect result (2026-06-19): procedural dream-THEME divergence
+Spatial per-row diff: divergence is UNIFORM across the whole screen (~860-1024 of 1024
+px per row, sky+walls+floor alike) -> NOT a single render call. Colour histogram f60:
+z8 = pale theme (col 7=10682, 6=4540); official = warm theme (col 9=7581, 4=2273, a=1962).
+So REM (a "Dream GENERATOR") produces an ENTIRELY DIFFERENT procedural dream/fog-palette
+THEME on z8 vs official -- a generation-path divergence, not a core render op (pal/poke/
+spr/tline/poke4/shift/sub-texel/trig all proven conformant; trig fix didn't help; basic
+rnd conformance-verified). User's "wrong colours = palette" instinct CONFIRMED: it's the
+fog-palette THEME selection in REM's generation. Function-noop bisect failed (noop changes
+REM's flip cadence -> 0 frames). NEXT (dedicated session): trace REM's theme/mem_pals
+selection (the op feeding set_fog's pals[]) with peek-comparison instrumentation; may be a
+"different-but-valid procedural output" rather than corruption. REM deferred as hardest.
+
 ## Next
 - Root-cause + fix the 3 confirmed bugs in zepto8 (palette path for #1; background-tile/map path
   for #2/#3 -- check how many other carts share it).
