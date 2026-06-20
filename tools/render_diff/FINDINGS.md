@@ -185,3 +185,22 @@ with a working in-generation probe (or testing REM with real hardware input).
 - Root-cause + fix the 3 confirmed bugs in zepto8 (palette path for #1; background-tile/map path
   for #2/#3 -- check how many other carts share it).
 - VR-class gap: per-cart deterministic input to reach gameplay for the racing/action carts.
+
+## ENTROPY-SEEDED FALSE POSITIVES (2026-06-19) -- REM + Froggo off the list
+HARDWARE test (user): REM renders FINE on MiSTer -- warm/correct -- it just generates a
+RANDOM scene each startup. So REM's 94.4% headless divergence was a FALSE POSITIVE: REM
+seeds its RNG from real-time entropy; z8headless and official-x supply different headless
+time -> different dream -> flagged. On hardware both use the RTC -> random-but-fine. NOT a bug.
+Run-twice test: all 12 are deterministic WITHIN an engine (run1==run2) -- so the FP class is
+entropy-SEEDING (cross-engine time differs), not run-to-run randomness; my harness srand(1)
+is OVERRIDDEN by the cart's own srand. Detector = cart-side srand(stat-time).
+FOUND: Froggo srand(stat(95)) x3 (RTC seed) -> same class -> FP-suspect, off the list.
+Skelethrone/Coiled use time() (animation phase) -- need a look. The other 7 (Mina, Bomba,
+Lina, Burger Age, Medusa, On A Roll, Aurora) have NO cart-side srand -> harness srand(1)
+controls them -> genuinely diffable -> still trustworthy real candidates.
+GENERAL LESSON: the render-diff must EXCLUDE entropy-seeded carts (grep cart for srand(stat..))
+-- they are non-comparable cross-engine and produce false positives even though deterministic
+within an engine + fine on hardware. Add to the harness/triage as a pre-filter.
+REM center-line (transparent vertical seam during pan): deferred -- almost certainly a
+raycaster center-ray (vanishing-point) artifact present on PC too (= REM design); user to
+confirm via PC pan. Render-diff missed it (1px ~0.8% sub-threshold + motion-only).
