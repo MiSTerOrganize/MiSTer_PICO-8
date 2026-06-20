@@ -231,3 +231,22 @@ behavior, works via extcmd("shutdown") handler). Burger/Medusa/On-A-Roll do NOT 
 (checked) -- separate root causes, still open.
 GENERAL: BBS-fingerprinting carts (stat(102)/stat(120)/stat(121)) must be answered as STANDALONE
 on MiSTer -- measure the official standalone value, don't infer from the web-player context.
+
+## FIX #3 LANDED (2026-06-19): cursor() negative coords wiped the screen via print-scroll
+Target: Burger Age (01514) -- z8 BLACK (0 px), official ~13700. Root cause is a GENERAL
+zepto8 engine bug (not cart-specific), likely affecting multiple candidates.
+Chain: cart's textout() -> cursor(x, wavepos()) where wavepos=1.5*sin(...) is sometimes
+NEGATIVE -> api_cursor took uint8_t so neg y wrapped to ~255 -> print() auto-scroll computed
+final_y = 255 + height - 128 = +133 -> scrool_screen(133) memmove/memset PAST the framebuffer
+-> entire screen cleared to black, every frame.
+GROUND TRUTH (official PICO-8 0.2.7a6 -x, measured sweep): cursor y = -8/-1/0/60 -> NO scroll
+(fb 16384); 120->15616, 124->15365, 128->14868, 130->14612, 200->5652, 255->20. So PC CLAMPS
+negative cursor coords to 0 on set (cursor(_,-1) == cursor(_,0)); positive scrolls proportionally.
+Fix: api_cursor args uint8_t -> int16_t (preserve sign), clamp negatives to 0 before storing the
+byte. src/pico8/{gfx.cpp,vm.h}. Commit 7b3d3a5.
+VERIFIED on z8headless vs official: neg-y print no longer erases; sweep -8..200 matches official
+exactly (255 is 0 vs official 20 -- pre-existing extreme-edge scroll-clamp, no real-cart impact);
+Burger Age 0 -> ~13700 (matches official); Lina (FIX #2) still 16384, no regression.
+GENERAL IMPACT: any cart drawing text at a sometimes-negative y (wavy/bobbing text via sin) was
+having its frame wiped on z8. RE-RUN the render-diff after this ships -- expect several other
+black/under-render candidates (and high-residual carts with animated HUD text) to clear.
