@@ -165,6 +165,22 @@ REM's flip cadence -> 0 frames). NEXT (dedicated session): trace REM's theme/mem
 selection (the op feeding set_fog's pals[]) with peek-comparison instrumentation; may be a
 "different-but-valid procedural output" rather than corruption. REM deferred as hardest.
 
+## REM theme-selection trace (2026-06-19): rnd-COUNT desync in generation
+Wrapped rnd to count calls + logged the chosen theme (fog=fogs[rnd_range(0,#fogs)], line 731).
+RESULT: by frame 1 z8 made rc=986 rnd calls, official rc=14 (~70x); after init z8 does ~3
+rnd/frame, official 0/frame (flat 14). So z8's dream GENERATION consumes vastly more rnd ->
+fog theme picked from a totally different rnd state -> z8 pale (col 7,6) vs official warm
+(9,4,a). The rnd consumer is carve() (the maze DFS, ~4 rnd/cell via get_rnd_dirs); maze dims
+mw/mh come from the world chosen by rnd(worlds) -> the 986-vs-14 cascades from an EARLIER
+rnd-count divergence. rnd VALUES are conformant (rnd_seq), so the divergence is the NUMBER of
+rnd calls = a generation loop/branch running more on z8 (control-flow, not values). EXACT
+branch NOT pinned: needs per-phase rnd-count instrumentation inside generate_level, but REM
+resists behavior-altering wrappers (noop-set_fog and --play both yield 0 frames -- REM's flip
+cadence changes). UNRESOLVED whether this is a real generation control-flow bug OR a no-input
+state-drift artifact (official may sit at a near-static intro at 14 rnd while z8 auto-runs the
+animated dream). REM is the single hardest of the 12 -- deferred; needs a dedicated session
+with a working in-generation probe (or testing REM with real hardware input).
+
 ## Next
 - Root-cause + fix the 3 confirmed bugs in zepto8 (palette path for #1; background-tile/map path
   for #2/#3 -- check how many other carts share it).
