@@ -1,5 +1,5 @@
-# Phase C -- official PICO-8 (-x headless, GROUND TRUTH) over every wrapper.
-# LOCAL ONLY: official PICO-8 is a reference oracle, never shipped/committed/in-CI.
+# Phase C -- PICO-8 (-x headless, GROUND TRUTH) over every wrapper.
+# LOCAL ONLY: PICO-8 is a reference oracle, never shipped/committed/in-CI.
 # Resumable via off_done.txt. Detects "program too large" -> OVERSIZE (8192-token cap).
 # Output format = compare_render.py's parser (## <id> + FBHASH/AUDHASH / OVERSIZE).
 $ErrorActionPreference = "SilentlyContinue"

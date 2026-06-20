@@ -1,4 +1,4 @@
-# Tier-2 step 3: official PICO-8 -x over candidate SEQ wrappers -> per-id off_seq\<id>.txt.
+# Tier-2 step 3: PICO-8 -x over candidate SEQ wrappers -> per-id off_seq\<id>.txt.
 # LOCAL ONLY reference oracle. Resumable (skips already-written per-id files).
 $ErrorActionPreference = "SilentlyContinue"
 $exe   = "C:\Users\miste\OneDrive\Desktop\MiSTerOrganize\MiSTerFrontier\#PICO-8_Official\Windows\pico-8_0.2.7a6_windows\pico-8\pico8.exe"

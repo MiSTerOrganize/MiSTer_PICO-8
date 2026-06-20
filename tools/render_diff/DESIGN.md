@@ -1,13 +1,13 @@
-# Full-library PICO-8 render-diff (zepto8 vs official PICO-8) — design + status
+# Full-library PICO-8 render-diff (zepto8 vs PICO-8) — design + status
 
 GOAL: auto-triage the whole cart library (3302 carts) — flag every cart where zepto8
-(what we ship) renders differently from official PICO-8 (ground truth). Turns
+(what we ship) renders differently from PICO-8 (ground truth). Turns
 "play 3302 carts by hand" into "review the flagged ~dozens." This is why official
 PICO-8 was bought. Will flag + then fix the Virtua Racing track corruption (task #13).
 
 ## Milestone 1 — DRIVE mechanism: ✅ VALIDATED 2026-06-18
 A cart driven frame-by-frame, framebuffer-hashed at checkpoints, produces IDENTICAL
-hashes on official PICO-8 (`-x` headless) and z8headless. Proven apples-to-apples on
+hashes on PICO-8 (`-x` headless) and z8headless. Proven apples-to-apples on
 `_mechcheck_driven.p8`: f1=0xd70e.d70c, f30=0xf264.e32b, f120=0x4001.4ea4,
 f300=0x8dd9.96fd — all 4 match on both engines.
 
@@ -38,7 +38,7 @@ same #frames on both engines, and `srand(1)`/`btn`/`btnp` for determinism. It ha
 
 VALIDATED: synthetic modern `_update60` cart — full match. **campfire.p8.png**
 (flip-loop + time-driven) — all 8 checkpoints (f1/f2/f8/f30/f60/f120/f240/f300)
-**identical** between official PICO-8 and z8headless = conformant.
+**identical** between PICO-8 and z8headless = conformant.
 
 RUN CONVENTION: pass z8headless `--frames` GENEROUSLY (e.g. 2000) — flip-loop carts
 flip < once per engine-frame, so z8 needs extra engine-frames to reach the checkpoint
@@ -87,7 +87,7 @@ errored both). Pipeline validated end-to-end.
 - Outcome = automated TRIAGE (big time-save), not zero-false-positive magic.
 
 ## License
-Official PICO-8 (`#PICO-8_Official/`) runs LOCAL only — never CI/committed. Goldens
+PICO-8 (`#PICO-8_Official/`) runs LOCAL only — never CI/committed. Goldens
 (our carts' output numbers) are committable; the binary is not. See
 feedback_pico8_license_compliance.md + feedback_official_pico8_reference_only.md.
 

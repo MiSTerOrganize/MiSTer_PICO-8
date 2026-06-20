@@ -1,6 +1,6 @@
 # Full-library render-diff -- findings (2026-06-19)
 
-zepto8 (what we ship) vs official PICO-8 (ground truth, local-only), 3302-cart library.
+zepto8 (what we ship) vs PICO-8 (ground truth, local-only), 3302-cart library.
 
 ## Funnel
 - 3302 carts -> 3275 wrappable (27 skipped: 25 POOM data-only sub-carts w/ no __lua__, 2 malformed PNGs).
@@ -222,8 +222,8 @@ pixel-window; z8 drew 40 px, official 16384/16384 every frame). Root cause: Lina
 _draw is gated on check_url(), which returns true only if stat(102)==0 (number) or a host
 string. We returned nil (a 2026-05-21 oblivion_eve fix), so nil==0 -> false -> _draw skipped
 -> black screen (the 40 px = the `else: print(stat(102),0,64)` branch).
-GROUND TRUTH (measured, official PICO-8 0.2.7a6 -x standalone): stat(102) = NUMBER 0.
-The old nil matched the BBS WEB player (host string), not standalone PC -- wrong reference.
+GROUND TRUTH (measured, PICO-8 0.2.7a6 -x standalone): stat(102) = NUMBER 0.
+The old nil matched the BBS WEB player (host string), not standalone -- wrong reference.
 Fix: src/pico8/vm.cpp api_stat id 102 -> (int16_t)0. Commit 1bc5047.
 VERIFIED on locally-built z8headless: Lina 40 px -> 16384/16384 (matches official). oblivion_eve
 NOT regressed (still renders 2241-8498 px animated title; "Quit" now shows = correct standalone
@@ -239,7 +239,7 @@ Chain: cart's textout() -> cursor(x, wavepos()) where wavepos=1.5*sin(...) is so
 NEGATIVE -> api_cursor took uint8_t so neg y wrapped to ~255 -> print() auto-scroll computed
 final_y = 255 + height - 128 = +133 -> scrool_screen(133) memmove/memset PAST the framebuffer
 -> entire screen cleared to black, every frame.
-GROUND TRUTH (official PICO-8 0.2.7a6 -x, measured sweep): cursor y = -8/-1/0/60 -> NO scroll
+GROUND TRUTH (PICO-8 0.2.7a6 -x, measured sweep): cursor y = -8/-1/0/60 -> NO scroll
 (fb 16384); 120->15616, 124->15365, 128->14868, 130->14612, 200->5652, 255->20. So PC CLAMPS
 negative cursor coords to 0 on set (cursor(_,-1) == cursor(_,0)); positive scrolls proportionally.
 Fix: api_cursor args uint8_t -> int16_t (preserve sign), clamp negatives to 0 before storing the

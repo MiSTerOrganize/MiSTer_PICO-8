@@ -3,7 +3,7 @@ version 42
 __lua__
 -- z8conformance: fix32 (16.16) arithmetic edge cases — the Virtua Racing class.
 -- Emits CONFVAL lines (value tests, not framebuffer). Any divergence between
--- official PICO-8 and z8headless = a zepto8 fix32 conformance bug.
+-- PICO-8 and z8headless = a zepto8 fix32 conformance bug.
 local function e(l,x) printh("CONFVAL "..l.."="..tostr(x,true)) end
 e("div",100/3)
 e("divneg",-100/3)

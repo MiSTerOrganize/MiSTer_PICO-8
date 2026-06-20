@@ -1,15 +1,15 @@
-# z8conformance goldens -- ground truth captured from OFFICIAL PICO-8 0.2.7a6
+# z8conformance goldens -- ground truth captured from PICO-8 0.2.7a6
 # (`pico8 -x cart.p8`, headless), generated LOCALLY on the dev machine.
 #
 # These are OUR conformance carts' OUTPUT VALUES -- license-safe to commit
 # (they are not the PICO-8 binary, data, or design; just numbers our carts
-# printed). The official PICO-8 binary itself stays strictly local, never
+# printed). The PICO-8 binary itself stays strictly local, never
 # committed/shipped (see feedback_pico8_license_compliance.md).
 #
 # run_conformance.sh runs each cart through z8headless (zepto8) and diffs its
 # output against these goldens. ANY difference = a zepto8 conformance bug,
 # pinned to the exact API the cart exercises. Regenerate after intentional
-# changes via gen_goldens (official PICO-8, local) -- see README.md.
+# changes via gen_goldens (PICO-8, local) -- see README.md.
 #
 # Captured 2026-06-18, all carts MATCH z8headless (zero divergences).
 

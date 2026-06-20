@@ -1,4 +1,4 @@
-# official PICO-8 -x window dumps -> win_off\<id>.txt. LOCAL ONLY. Resumable.
+# PICO-8 -x window dumps -> win_off\<id>.txt. LOCAL ONLY. Resumable.
 $ErrorActionPreference = "SilentlyContinue"
 $exe   = "C:\Users\miste\OneDrive\Desktop\MiSTerOrganize\MiSTerFrontier\#PICO-8_Official\Windows\pico-8_0.2.7a6_windows\pico-8\pico8.exe"
 $wrap  = "C:\Users\miste\AppData\Local\Temp\rd_run\win_wrap"

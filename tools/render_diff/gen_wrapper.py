@@ -2,7 +2,7 @@
 """
 gen_wrapper.py -- render-diff wrapper generator (Milestone 2).
 
-Takes a real PICO-8 cart (.p8 or .p8.png) and emits a THROWAWAY test wrapper .p8
+Takes a PICO-8 cart (.p8 or .p8.png) and emits a THROWAWAY test wrapper .p8
 that drives the cart frame-by-frame at a forced 60fps and printh's a framebuffer
 hash at checkpoint frames (the validated M1 recipe). Run the wrapper on official
 PICO-8 (-x, ground truth) and z8headless (ours); diff the FBHASH lines.

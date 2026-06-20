@@ -1,4 +1,4 @@
-# eyeball-pass step 3: official PICO-8 -x FBDUMP over candidate dump wrappers -> off_dump\<id>.txt
+# eyeball-pass step 3: PICO-8 -x FBDUMP over candidate dump wrappers -> off_dump\<id>.txt
 # LOCAL ONLY reference oracle. Resumable.
 $ErrorActionPreference = "SilentlyContinue"
 $exe   = "C:\Users\miste\OneDrive\Desktop\MiSTerOrganize\MiSTerFrontier\#PICO-8_Official\Windows\pico-8_0.2.7a6_windows\pico-8\pico8.exe"

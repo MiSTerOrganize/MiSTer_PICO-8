@@ -1,14 +1,14 @@
 #!/bin/sh
 # z8conformance differential runner (zepto8 side).
 # Runs each conformance cart through z8headless and diffs its CONFHASH/CONFVAL
-# output against goldens.txt (ground truth from official PICO-8). Any mismatch
+# output against goldens.txt (ground truth from PICO-8). Any mismatch
 # = a zepto8 conformance bug, pinned to the cart's API.
 #
 # Usage (in a glibc/musl container or WSL with z8headless + bios.p8 present):
 #   Z8=/path/to/z8headless  DATADIR=/path/with/bios.p8  sh run_conformance.sh
 # Defaults assume the cwd holds z8headless + bios.p8 + the carts + goldens.txt.
 #
-# Official-side goldens are regenerated LOCALLY (official PICO-8 is never in CI):
+# Official-side goldens are regenerated LOCALLY (PICO-8 is never in CI):
 #   for c in *.p8; do pico8 -x "$c" -home /tmp/p8h; done   # capture printh "CONF*"
 # (see README.md). This runner needs only z8headless + the committed goldens.
 
@@ -28,7 +28,7 @@ for cart in $CARTS; do
     echo "PASS  $cart"
   else
     fail=$((fail+1))
-    echo "FAIL  $cart  -- zepto8 diverges from official PICO-8:"
+    echo "FAIL  $cart  -- zepto8 diverges from PICO-8:"
     printf '%s\n' "$want" > /tmp/_want.$$ ; printf '%s\n' "$got" > /tmp/_got.$$
     diff /tmp/_want.$$ /tmp/_got.$$ | sed 's/^/      /'
     rm -f /tmp/_want.$$ /tmp/_got.$$
