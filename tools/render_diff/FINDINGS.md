@@ -137,6 +137,21 @@ texel-step-vs-palette, then patch src/pico8 gfx.cpp tline + regression-test via 
 REM is the HARDEST confirmed bug (3D mode-7 floor). Froggo (secret-palette 0x5f10, the
 oblivion_eve family) is the recommended faster first LANDED fix.
 
+## FIX #1 LANDED (2026-06-19): sin/cos peak off-by-one -> fixes Head-8n
+trigtables.h sintable had 4096 entries but sin_helper indexes up to 4096 (a>>2, a max
+0x4001) -> OOB read gave +-1.58 at the +-1 peaks (cos0/cos.5/sin.25/sin.75). Verified vs
+official (cos(0) 0x0001.9510 -> 0x0001.0000). Added 4097th entry 0x0000. REGRESSION (fixed
+z8 vs official, render-diff): Head-8n 99.9% -> 0.0% FIXED; all other trig values unchanged;
+no conformance regression. High-leverage (any cart hitting exact peak trig angles + explains
+REM's x86!=ARM since OOB is UB). Found via the render-diff trig conformance probe. SHIP: push
+src -> GitHub Actions rebuilds ARM binary -> DB -> users.
+
+REM NOT fixed by this (still 94.4%) -- user correctly flagged "wrong colours != trig". REM's
+colour bug is SEPARATE and remains UN-ISOLATED after exhaustive conformance testing (pal/poke/
+spr/tline draw-palette, variadic poke4, poke4+tline, fix32 shifts, sub-texel, trig -- ALL
+conformant on z8). REM = hardest confirmed bug (3D mode-7 + per-band fog); next approach =
+feature-bisect REM's draw code (progressively disable render features to localise).
+
 ## Next
 - Root-cause + fix the 3 confirmed bugs in zepto8 (palette path for #1; background-tile/map path
   for #2/#3 -- check how many other carts share it).
