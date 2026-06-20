@@ -630,7 +630,7 @@ static std::vector<uint8_t> legacy_compress(std::string const &input)
         {
             int k = 0, end = std::min((int)input.length() - j, 17);
 
-            // XXX: official PICO-8 stops at i - j, despite being able
+            // XXX: PICO-8 stops at i - j, despite being able
             // to support input.length() - j, it seems.
             end = std::min(end, i - j);
 

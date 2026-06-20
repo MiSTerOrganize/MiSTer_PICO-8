@@ -1150,7 +1150,7 @@ void vm::api_tline(int16_t x0, int16_t y0, int16_t x1, int16_t y1,
     // tline mask is set explicitly (mask.x/y == 0), skip the positive-
     // modulo wrap of mx/my. The wrap turns slightly-negative coords like
     // mx=-0.05 into 127.95, which then becomes cell 127 (stale cart data).
-    // PC PICO-8 instead uses bitwise truncation that keeps -0.05 as a
+    // PICO-8 instead uses bitwise truncation that keeps -0.05 as a
     // small-magnitude value, which after C++ integer-division-by-65536
     // (truncation toward zero) becomes 0, reading cell 0 (cart's intended
     // tile). The cart relies on this: e2()'s tline calls start with
@@ -1199,7 +1199,7 @@ void vm::api_tline(int16_t x0, int16_t y0, int16_t x1, int16_t y1,
         // produces wrong-color pixels on the gear). truncation(-0.05) = 0
         // also doesn't read stale data, but FORCES sx=0 which distorts the
         // gear shape (column-0 sprites repeat). Best: SKIP the pixel
-        // entirely when coords would be out of range — matches PC PICO-8
+        // entirely when coords would be out of range — matches PICO-8
         // behavior of "out-of-bounds tline reads draw nothing", letting
         // the underlying framebuffer show through naturally.
         int mx_int = (int32_t)mx.bits() / 65536;

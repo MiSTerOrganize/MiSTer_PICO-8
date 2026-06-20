@@ -338,7 +338,7 @@ function load(arg, breadcrumb, params)
         -- the flash; carts that don't (Virtua Racing track loads) show
         -- it as a one-frame pink "ok" flash on cart switch. No cart
         -- depends on this output, so removing is safe.
-        -- Cart switched. PC PICO-8 doesn't return execution to the
+        -- Cart switched. PICO-8 doesn't return execution to the
         -- caller after a successful load() — the current cart's
         -- coroutine is abandoned and the new cart starts. Try to yield
         -- forever to match.
