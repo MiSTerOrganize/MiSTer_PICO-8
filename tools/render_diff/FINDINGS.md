@@ -204,3 +204,14 @@ within an engine + fine on hardware. Add to the harness/triage as a pre-filter.
 REM center-line (transparent vertical seam during pan): deferred -- almost certainly a
 raycaster center-ray (vanishing-point) artifact present on PC too (= REM design); user to
 confirm via PC pan. Render-diff missed it (1px ~0.8% sub-threshold + motion-only).
+
+## ENTROPY-FP SCAN of all 140 candidates (2026-06-19)
+Grepped each candidate's cart for srand(stat()/time()/t()). 4 of 140 are entropy-seeded
+(+ REM = 5 FPs total, off the list): Froggo srand(stat(95)), Zarchy engine srand(time()),
+Nano4x-Supremacy srand(stat/time), Mansion Bros srand(t()). Only 4/140 -> the list is NOT
+dominated by entropy FPs. PRE-FILTER RULE (bake into render-diff triage): a cart calling
+srand(stat..)/srand(time())/srand(t()) seeds from the RTC -> z8headless vs official-x get
+different headless time -> non-comparable cross-engine -> EXCLUDE (renders fine on hardware).
+Detector: grep -qE "srand\(stat\(|srand\(time\(|srand\(t\(\)" <decompressed cart>.
+Remaining trustworthy real candidates (NOT entropy-seeded): Mina, Bomba, Lina, Burger Age,
+Medusa, On A Roll, Aurora (+ Skelethrone/Coiled use time() for ANIMATION not seed -- check).
