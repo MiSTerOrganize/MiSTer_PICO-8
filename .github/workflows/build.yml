@@ -142,6 +142,16 @@ jobs:
               GH_TOKEN="${{ secrets.MISTER_FRONTIER_DISPATCH_TOKEN }}" \
                 gh workflow run "Build Custom Database" -R MiSTerOrganize/MiSTer_Frontier \
                 || echo "WARN: DB dispatch failed (token may be expired)"
+              # Refresh the rolling 'latest' GitHub Release so its zip asset
+              # matches the just-committed binary. The commit-back push above
+              # used GITHUB_TOKEN, which does NOT re-trigger refresh_release's
+              # `on: push`, so we dispatch it explicitly (same PAT as the DB
+              # rebuild). Manual RBF/handler/README pushes hit its on:push path
+              # trigger directly. Content-gated -> a redundant fire is a no-op.
+              echo "Triggering rolling 'latest' release refresh..."
+              GH_TOKEN="${{ secrets.MISTER_FRONTIER_DISPATCH_TOKEN }}" \
+                gh workflow run refresh_release.yml -R ${{ github.repository }} \
+                || echo "WARN: refresh_release dispatch failed"
             else
               echo "WARN: MISTER_FRONTIER_DISPATCH_TOKEN not set -- skipping DB auto-dispatch."
               echo "      Add this PAT secret to close the db.json staleness window."

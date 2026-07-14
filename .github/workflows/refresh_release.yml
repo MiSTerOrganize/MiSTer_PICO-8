@@ -1,0 +1,122 @@
+name: Refresh latest release
+run-name: refresh latest (${{ github.event.head_commit.message || inputs.reason || github.event_name }})
+
+# Keeps a rolling `latest` GitHub Release whose zip asset always matches the
+# shipped files on `main` (RBF + ARM binary + _handler.sh + bios.p8 + README).
+#
+# Triggers:
+#   * push to main touching a shipped file  -> catches manual RBF / handler /
+#     README rolls (a dev push, so it fires normally).
+#   * workflow_dispatch -> build.yml calls this via the PAT right after it
+#     commits a rebuilt ARM binary back to main. That commit-back push uses the
+#     default GITHUB_TOKEN, which by design does NOT re-trigger `on: push`, so
+#     the explicit dispatch is how an ARM-binary-only change (RBF unchanged)
+#     gets picked up. Mirrors build.yml's DB-rebuild dispatch pattern.
+#
+# A content signature (sha256 of a byte-deterministic zip) gates the work, so
+# any redundant double-fire is a cheap no-op. Hand-cut version tags (v3.9, ...)
+# are never touched -- only the rolling `latest` pointer moves. update_all /
+# db.json is unaffected (it tracks main); this only serves pinning tools +
+# manual zip downloaders. Rule: [[release-tag-asset-currency]].
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '_Other/*.rbf'
+      - 'games/**'
+      - 'docs/**'
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Why (shown as the run title in the Actions tab)'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh-latest-release
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build byte-deterministic release zip from current main
+        run: |
+          python3 - <<'PY'
+          import zipfile, os, glob, hashlib
+          BIN = "games/PICO-8/PICO-8"
+          FILES = [
+              BIN,
+              "games/PICO-8/bios.p8",
+              "games/PICO-8/_handler.sh",
+              "docs/PICO-8/README.md",
+          ]
+          rbfs = sorted(glob.glob("_Other/*.rbf"))
+          assert len(rbfs) == 1, "expected exactly one RBF, got %r" % rbfs
+          FILES += rbfs
+          EXE = {BIN, "games/PICO-8/_handler.sh"}
+          # Deterministic: sorted arcnames + fixed timestamp + fixed mode ->
+          # identical content yields identical bytes -> stable sha256 gate.
+          entries = sorted((p.replace(os.sep, "/"), p) for p in FILES)
+          out = "MiSTer-PICO-8-release.zip"
+          with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+              for arc, path in entries:
+                  assert os.path.isfile(path), "missing shipped file: " + path
+                  zi = zipfile.ZipInfo(arc, date_time=(1980, 1, 1, 0, 0, 0))
+                  zi.compress_type = zipfile.ZIP_DEFLATED
+                  zi.external_attr = (0o755 if path in EXE else 0o644) << 16
+                  with open(path, "rb") as f:
+                      z.writestr(zi, f.read())
+          print("built", out, os.path.getsize(out), "bytes")
+          print("sha256", hashlib.sha256(open(out, "rb").read()).hexdigest())
+          PY
+
+      - name: Refresh rolling 'latest' release when content changed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          REPO="${{ github.repository }}"
+          ZIP="MiSTer-PICO-8-release.zip"
+          NEW=$(sha256sum "$ZIP" | awk '{print $1}')
+          CUR=$(gh release view latest -R "$REPO" --json assets \
+                  -q ".assets[] | select(.name==\"$ZIP\") | .digest" 2>/dev/null \
+                  | sed 's/^sha256://')
+          echo "current-main zip sha256 = $NEW"
+          echo "published latest asset  = ${CUR:-<none>}"
+          if [ "$NEW" = "$CUR" ]; then
+            echo "latest already matches current main -- no refresh needed."
+            exit 0
+          fi
+          git config user.email "ci@misterorganize"
+          git config user.name "MiSTer Organize CI"
+          # Move the rolling pointer tag to current main HEAD (never touches
+          # hand-cut version tags).
+          git tag -f latest
+          git push -f origin latest
+          NOTES=$(printf '%s\n' \
+            'Rolling snapshot - always matches the current main branch.' \
+            '' \
+            'Auto-refreshed by CI whenever the RBF, ARM binary, _handler.sh, or README changes on main. For a frozen build, pin a version tag (e.g. v3.9) instead of latest.' \
+            '' \
+            'MiSTer Frontier auto-installs and updates through the update_all database; this zip is only a manual-install snapshot.')
+          if gh release view latest -R "$REPO" >/dev/null 2>&1; then
+            gh release upload latest "$ZIP" --clobber -R "$REPO"
+            gh release edit latest -R "$REPO" --target "$GITHUB_SHA" \
+              --title "latest (tracks main)" --notes "$NOTES"
+          else
+            gh release create latest "$ZIP" -R "$REPO" --target "$GITHUB_SHA" \
+              --title "latest (tracks main)" --notes "$NOTES"
+          fi
+          # Byte-verify the uploaded asset matches what we built.
+          UP=$(gh release view latest -R "$REPO" --json assets \
+                 -q ".assets[] | select(.name==\"$ZIP\") | .digest" | sed 's/^sha256://')
+          echo "uploaded latest asset   = $UP"
+          [ "$UP" = "$NEW" ] || { echo "ERROR: uploaded digest != built digest"; exit 1; }
+          echo "latest refreshed OK ($NEW)"
