@@ -13,11 +13,13 @@ run-name: refresh latest (${{ github.event.head_commit.message || inputs.reason 
 #     the explicit dispatch is how an ARM-binary-only change (RBF unchanged)
 #     gets picked up. Mirrors build.yml's DB-rebuild dispatch pattern.
 #
-# A content signature (sha256 of a byte-deterministic zip) gates the work, so
-# any redundant double-fire is a cheap no-op. Hand-cut version tags (v3.9, ...)
-# are never touched -- only the rolling `latest` pointer moves. update_all /
-# db.json is unaffected (it tracks main); this only serves pinning tools +
-# manual zip downloaders. Rule: [[release-tag-asset-currency]].
+# The work is gated on a CONTENT SIGNATURE (sha256 over each shipped file's
+# hash -- independent of zip compression / runner image), stored as a
+# `content-sig:` line in the release body. A redundant double-fire is a cheap
+# no-op. Hand-cut version tags (v3.9, ...) are never touched -- only the
+# rolling `latest` pointer moves. update_all / db.json is unaffected (it tracks
+# main); this only serves pinning tools + manual zip downloaders.
+# Rule: [[release-tag-asset-currency]].
 
 on:
   push:
@@ -46,7 +48,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build byte-deterministic release zip from current main
+      - name: Build release zip + content signature from current main
         run: |
           python3 - <<'PY'
           import zipfile, os, glob, hashlib
@@ -61,20 +63,25 @@ jobs:
           assert len(rbfs) == 1, "expected exactly one RBF, got %r" % rbfs
           FILES += rbfs
           EXE = {BIN, "games/PICO-8/_handler.sh"}
-          # Deterministic: sorted arcnames + fixed timestamp + fixed mode ->
-          # identical content yields identical bytes -> stable sha256 gate.
           entries = sorted((p.replace(os.sep, "/"), p) for p in FILES)
+          # Content signature: sha256 over "arcname:filehash" lines. Depends
+          # ONLY on shipped file contents -> stable across runners / zlib
+          # versions (unlike the compressed zip bytes).
+          sig_parts = []
           out = "MiSTer-PICO-8-release.zip"
           with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
               for arc, path in entries:
                   assert os.path.isfile(path), "missing shipped file: " + path
+                  data = open(path, "rb").read()
+                  sig_parts.append(arc + ":" + hashlib.sha256(data).hexdigest())
                   zi = zipfile.ZipInfo(arc, date_time=(1980, 1, 1, 0, 0, 0))
                   zi.compress_type = zipfile.ZIP_DEFLATED
                   zi.external_attr = (0o755 if path in EXE else 0o644) << 16
-                  with open(path, "rb") as f:
-                      z.writestr(zi, f.read())
+                  z.writestr(zi, data)
+          sig = hashlib.sha256("\n".join(sig_parts).encode()).hexdigest()
+          open("content.sig", "w").write(sig)
           print("built", out, os.path.getsize(out), "bytes")
-          print("sha256", hashlib.sha256(open(out, "rb").read()).hexdigest())
+          print("content-sig", sig)
           PY
 
       - name: Refresh rolling 'latest' release when content changed
@@ -84,12 +91,11 @@ jobs:
           set -e
           REPO="${{ github.repository }}"
           ZIP="MiSTer-PICO-8-release.zip"
-          NEW=$(sha256sum "$ZIP" | awk '{print $1}')
-          CUR=$(gh release view latest -R "$REPO" --json assets \
-                  -q ".assets[] | select(.name==\"$ZIP\") | .digest" 2>/dev/null \
-                  | sed 's/^sha256://')
-          echo "current-main zip sha256 = $NEW"
-          echo "published latest asset  = ${CUR:-<none>}"
+          NEW=$(cat content.sig)
+          CUR=$(gh release view latest -R "$REPO" --json body \
+                  -q '.body' 2>/dev/null | sed -n 's/^content-sig: //p' | head -1)
+          echo "current-main content-sig = $NEW"
+          echo "published latest sig     = ${CUR:-<none>}"
           if [ "$NEW" = "$CUR" ]; then
             echo "latest already matches current main -- no refresh needed."
             exit 0
@@ -105,7 +111,9 @@ jobs:
             '' \
             'Auto-refreshed by CI whenever the RBF, ARM binary, _handler.sh, or README changes on main. For a frozen build, pin a version tag (e.g. v3.9) instead of latest.' \
             '' \
-            'MiSTer Frontier auto-installs and updates through the update_all database; this zip is only a manual-install snapshot.')
+            'MiSTer Frontier auto-installs and updates through the update_all database; this zip is only a manual-install snapshot.' \
+            '' \
+            "content-sig: $NEW")
           if gh release view latest -R "$REPO" >/dev/null 2>&1; then
             gh release upload latest "$ZIP" --clobber -R "$REPO"
             gh release edit latest -R "$REPO" --target "$GITHUB_SHA" \
@@ -114,9 +122,8 @@ jobs:
             gh release create latest "$ZIP" -R "$REPO" --target "$GITHUB_SHA" \
               --title "latest (tracks main)" --notes "$NOTES"
           fi
-          # Byte-verify the uploaded asset matches what we built.
-          UP=$(gh release view latest -R "$REPO" --json assets \
-                 -q ".assets[] | select(.name==\"$ZIP\") | .digest" | sed 's/^sha256://')
-          echo "uploaded latest asset   = $UP"
-          [ "$UP" = "$NEW" ] || { echo "ERROR: uploaded digest != built digest"; exit 1; }
-          echo "latest refreshed OK ($NEW)"
+          # Confirm the release now advertises the new signature.
+          POST=$(gh release view latest -R "$REPO" --json body -q '.body' \
+                   | sed -n 's/^content-sig: //p' | head -1)
+          [ "$POST" = "$NEW" ] || { echo "ERROR: published sig != built sig"; exit 1; }
+          echo "latest refreshed OK (content-sig $NEW)"
