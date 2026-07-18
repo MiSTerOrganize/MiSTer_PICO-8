@@ -44,6 +44,16 @@ jobs:
           cp src/pico8/bios.p8 ./bios.p8     # BIOS resolves via cwd (empty data-path prefix)
           ./build/z8headless --cart tools/test_carts/shapes.p8 --frames 90 --dump 1,30,60,89 --out out
           ls -la out
+      - name: Golden-master trace determinism check (--test)
+        run: |
+          # Two boot-to-frame-120 runs must produce byte-identical hash
+          # traces (frame:videocrc:audiocrc) — the golden-master contract.
+          ./build/z8headless --cart tools/test_carts/shapes.p8 --frames 120 --test out/trace_a.txt
+          ./build/z8headless --cart tools/test_carts/shapes.p8 --frames 120 --test out/trace_b.txt
+          diff out/trace_a.txt out/trace_b.txt
+          test "$(wc -l < out/trace_a.txt)" -eq 120
+          echo "trace deterministic OK:"
+          head -5 out/trace_a.txt
       - name: Stage binary bundle
         run: |
           mkdir -p bundle

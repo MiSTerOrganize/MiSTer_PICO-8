@@ -34,6 +34,7 @@
 #include <lol/sys/init.h>
 #include "cart_browser.h"
 #include "native_video_writer.h"
+#include "test_trace.h"
 
 // ── Configuration ─────────────────────────────────────────────────────
 
@@ -51,6 +52,16 @@ static const int DEFAULT_FPS    = 60;   // PICO-8 BIOS expects 60 ticks/sec
 
 static volatile bool g_running = true;
 static volatile bool g_return_to_browser = false;
+
+// ── Golden-master hash trace (-test flag) ─────────────────────────────
+// When enabled, each gameplay frame emits FRAME:VIDEOCRC:AUDIOCRC to the
+// trace file (see src/test_trace.h — same format + hash points as the x86
+// z8headless --test oracle, so traces diff directly). Default-off; inert
+// unless -test is passed. In test mode the free-running audio thread is
+// NOT started — the main loop pulls the engine audio deterministically.
+static FILE *g_test_trace = NULL;
+static long long g_test_frame = 0;         // frames traced so far
+static long long g_test_frames_limit = 0;  // -testframes N: exit(0) after N (0 = unlimited)
 static std::unique_ptr<z8::pico8::vm> g_vm;
 static bool g_joystick_connected = false;
 static SDL_Joystick* g_sdl_joystick = NULL;  // SDL joystick for polling hat/axis state
@@ -318,6 +329,8 @@ static void print_usage(const char *prog)
     fprintf(stderr, "  -nojoy      Disable joystick\n");
     fprintf(stderr, "  -nativevideo Write video to DDR3 for FPGA native output (CRT)\n");
     fprintf(stderr, "  -data <dir> Set data directory (for pico8/bios.p8)\n");
+    fprintf(stderr, "  -test <file>      Write golden-master hash trace (frame:videocrc:audiocrc)\n");
+    fprintf(stderr, "  -testframes <N>   With -test: exit(0) after tracing N frames\n");
     fprintf(stderr, "  -h          Show this help\n");
 }
 
@@ -346,10 +359,24 @@ int main(int argc, char **argv)
         else if (arg == "-nojoy")            { enable_joy = false; }
         else if (arg == "-nativevideo")      { enable_native_video = true; }
         else if (arg == "-data" && i + 1 < argc) { data_dir = argv[++i]; }
+        else if (arg == "-test" && i + 1 < argc) {
+            const char *tp = argv[++i];
+            g_test_trace = fopen(tp, "w");
+            if (!g_test_trace) { fprintf(stderr, "Cannot open trace file: %s\n", tp); return 1; }
+            // Fully buffered — flushed at fclose, never per line (no
+            // per-frame SD I/O; see feedback_logging_hotpath_perf.md).
+            setvbuf(g_test_trace, NULL, _IOFBF, 65536);
+        }
+        else if (arg == "-testframes" && i + 1 < argc) { g_test_frames_limit = atoll(argv[++i]); }
         else if (arg == "-h" || arg == "--help") { print_usage(argv[0]); return 0; }
         else if (arg[0] != '-')              { cart_path = arg; }
         else { fprintf(stderr, "Unknown option: %s\n", arg.c_str()); return 1; }
     }
+
+    // Test-trace mode steps at exactly 60 fps so hardware traces are
+    // directly comparable to the x86 z8headless oracle (which always
+    // steps 1/60).
+    if (g_test_trace) target_fps = DEFAULT_FPS;
 
     if (cart_path.empty()) {
         // No cart specified — will show browser (SDL mode) or wait for OSD (native video)
@@ -681,9 +708,13 @@ int main(int argc, char **argv)
         g_vm->run();
         fprintf(stderr, "=== Game started: %s (PID=%d) ===\n", cart_path.c_str(), getpid());
 
-        // Start audio thread
+        // Start audio thread. In test-trace mode the thread stays OFF —
+        // it free-runs get_audio() in 512-sample chunks, which would race
+        // the main loop's deterministic per-frame pulls and desync the
+        // audio hash. The trace block below pulls, hashes, and (when the
+        // ring has space) still plays the audio from the main loop.
         bool audio_started = false;
-        if (have_audio) {
+        if (have_audio && !g_test_trace) {
             audio_started = audio_thread_start();
         }
 
@@ -831,6 +862,43 @@ int main(int argc, char **argv)
 
         // Render video
         g_vm->render(rgba_buf);
+
+        // ── Golden-master hash trace (-test) ─────────────────────────
+        // Hash points mirror tools/z8headless.cpp exactly: video = CRC32
+        // over R,G,B of the native 128x128 render output (pre-upscale);
+        // audio = CRC32 over this frame's 22050 Hz mono engine output
+        // (367/368-sample pacing, hashed pre-upsample so the platform
+        // upsampler/ring cannot affect the trace).
+        if (g_test_trace) {
+            uint32_t vh = 0;
+            for (int i = 0; i < PICO8_W * PICO8_H; ++i) {
+                uint8_t px[3] = { rgba_buf[i].r, rgba_buf[i].g, rgba_buf[i].b };
+                vh = tt_crc32(vh, px, 3);
+            }
+            int ns = tt_audio_samples_for_frame(g_test_frame, SRC_RATE, DEFAULT_FPS);
+            static int16_t tmono[512];
+            g_vm->get_audio(tmono, (size_t)ns * sizeof(int16_t));
+            uint32_t ah = tt_crc32(0, tmono, (size_t)ns * sizeof(int16_t));
+            tt_emit(g_test_trace, g_test_frame, vh, ah);
+
+            // Keep the run audible: upsample + write to the DDR3 ring
+            // when there's space, drop when full — the hash was taken
+            // pre-upsample, so playback can never affect the trace.
+            if (have_native_video && have_audio) {
+                static int16_t tstereo[2400];
+                int out = upsample_mono_to_stereo(tmono, ns, tstereo, 1200);
+                if (NativeVideoWriter_AudioSpace() >= (uint32_t)out)
+                    NativeVideoWriter_WriteAudio(tstereo, out);
+            }
+
+            g_test_frame++;
+            if (g_test_frames_limit && g_test_frame >= g_test_frames_limit) {
+                fclose(g_test_trace);
+                fprintf(stderr, "[test] trace complete (%lld frames) — exiting\n", g_test_frame);
+                exit(0);
+            }
+        }
+
         if (have_native_video) {
             // FPGA native path: write 128×128 RGBA8 → DDR3 as RGB565
             // The FPGA reader polls DDR3 and outputs scaled native video

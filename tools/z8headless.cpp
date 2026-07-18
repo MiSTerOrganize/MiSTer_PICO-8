@@ -10,9 +10,13 @@
 //   z8headless --cart C.p8 --frames N --dump all|F1,F2,.. --out DIR
 //              [--hold MASK]          constant P1 button mask every frame
 //              [--input SCRIPT]       per-frame input: "FRAME MASK" lines
+//              [--test TRACEFILE]     golden-master hash trace: one
+//                                     FRAME:VIDEOCRC:AUDIOCRC line per frame
+//                                     (see src/test_trace.h for the format)
 //   Button mask bits: 0=left 1=right 2=up 3=down 4=O(z/btn4) 5=X(x/btn5)
 
 #include "pico8/vm.h"
+#include "test_trace.h"
 #include "lol/sys/init.h"   // lol::sys::set_data_path (BIOS/cart path prefix)
 #include "lodepng.h"
 
@@ -54,7 +58,7 @@ int main(int argc, char **argv)
     signal(SIGFPE,  crash_handler);
     signal(SIGALRM, crash_handler);   // wall-clock hang catcher (C++ engine loops)
 
-    std::string cart, outdir = ".", inputfile, datadir, dumpcode;
+    std::string cart, outdir = ".", inputfile, datadir, dumpcode, tracefile;
     int frames = 120, hold = 0, alarm_secs = 0;
     uint64_t watchdog = 0;   // 0 = off; abort+dump stuck stack if a step exceeds N instr
     std::set<int> dump;
@@ -71,6 +75,7 @@ int main(int argc, char **argv)
         else if (a == "--datadir") datadir = next();   // dir containing bios.p8
         else if (a == "--verbose") verbose = true;     // print load/run/frame markers
         else if (a == "--dumpcode") dumpcode = next();  // write decompressed cart code, then exit
+        else if (a == "--test")     tracefile = next(); // golden-master hash trace output
         else if (a == "--watchdog") watchdog = strtoull(next().c_str(), nullptr, 10); // Lua runaway-loop guard
         else if (a == "--alarm")    alarm_secs = atoi(next().c_str()); // wall-clock hang backtrace (C++ loops)
         else if (a == "--dump") {
@@ -133,6 +138,15 @@ int main(int argc, char **argv)
     vm->run();
     if (verbose) fprintf(stderr, "[z8headless] run() OK\n");
 
+    // --test: golden-master hash trace (frame:videocrc:audiocrc per frame).
+    // Fully buffered — flushed once at fclose, not per line.
+    FILE *tracef = nullptr;
+    if (!tracefile.empty()) {
+        tracef = fopen(tracefile.c_str(), "w");
+        if (!tracef) { fprintf(stderr, "err: cannot open trace file %s\n", tracefile.c_str()); return 2; }
+        setvbuf(tracef, NULL, _IOFBF, 65536);
+    }
+
     std::vector<lol::u8vec4> fb(128 * 128);
     int held = hold;
     for (int fr = 0; fr < frames; ++fr) {
@@ -144,6 +158,23 @@ int main(int argc, char **argv)
         if (alarm_secs) alarm(alarm_secs); // re-arm each frame; fires if one step() hangs
         vm->step(1.0f / 60.0f);
         vm->render(fb.data());
+
+        if (tracef) {
+            // Video: CRC32 over R,G,B of the native 128x128 render output
+            // (alpha excluded). Member access keeps it layout-agnostic.
+            uint32_t vh = 0;
+            for (int i = 0; i < 128 * 128; ++i) {
+                uint8_t px[3] = { fb[i].r, fb[i].g, fb[i].b };
+                vh = tt_crc32(vh, px, 3);
+            }
+            // Audio: this frame's share of 22050 Hz mono engine output
+            // (367/368 alternating — long-run exact), hashed pre-upsample.
+            int ns = tt_audio_samples_for_frame(fr, 22050, 60);
+            int16_t amono[512];
+            vm->get_audio(amono, (size_t)ns * sizeof(int16_t));
+            uint32_t ah = tt_crc32(0, amono, (size_t)ns * sizeof(int16_t));
+            tt_emit(tracef, fr, vh, ah);
+        }
 
         if (dump_all || dump.count(fr)) {
             std::vector<unsigned char> img(128 * 128 * 4);
@@ -159,6 +190,10 @@ int main(int argc, char **argv)
         }
     }
     if (alarm_secs) alarm(0);   // disarm before clean exit
+    if (tracef) {
+        fclose(tracef);
+        fprintf(stderr, "[z8headless] trace written -> %s\n", tracefile.c_str());
+    }
     fprintf(stderr, "[z8headless] done (%d frames)\n", frames);
     return 0;
 }
