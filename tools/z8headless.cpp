@@ -110,6 +110,12 @@ int main(int argc, char **argv)
     // before vm creation (the BIOS loads in the vm constructor).
     if (!datadir.empty()) lol::sys::set_data_path(datadir);
 
+    // Trace mode: force the deterministic PRNG seed BEFORE vm creation
+    // (private_init_ram seeds in the constructor). Without this, the
+    // per-boot wall-clock rnd() seed makes traces nondeterministic for
+    // any cart that calls rnd() during boot.
+    if (!tracefile.empty()) setenv("Z8_TEST_SEED", "1", 0);
+
     auto vm = new z8::pico8::vm();
     if (watchdog) { vm->set_watchdog(watchdog); fprintf(stderr, "[z8headless] watchdog=%llu instr/step\n", (unsigned long long)watchdog); }
     // No-op stubs for desktop callbacks (default std::function throws on call).

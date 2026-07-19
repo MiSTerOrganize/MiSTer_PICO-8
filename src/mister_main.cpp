@@ -375,8 +375,12 @@ int main(int argc, char **argv)
 
     // Test-trace mode steps at exactly 60 fps so hardware traces are
     // directly comparable to the x86 z8headless oracle (which always
-    // steps 1/60).
-    if (g_test_trace) target_fps = DEFAULT_FPS;
+    // steps 1/60), and forces the deterministic PRNG seed (must be set
+    // before the vm is constructed — private_init_ram seeds there).
+    if (g_test_trace) {
+        target_fps = DEFAULT_FPS;
+        setenv("Z8_TEST_SEED", "1", 0);
+    }
 
     if (cart_path.empty()) {
         // No cart specified — will show browser (SDL mode) or wait for OSD (native video)
