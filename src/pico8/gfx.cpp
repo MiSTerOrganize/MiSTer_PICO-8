@@ -1102,6 +1102,18 @@ void vm::api_line(opt<fix32> arg0, opt<fix32> arg1, opt<fix32> arg2,
     x1 -= ds.camera.x; y1 -= ds.camera.y;
 
     bool horiz = abs(x1 - x0) >= abs(y1 - y0);
+
+    // PICO-8 rasterization is direction-independent: line(a,b) and
+    // line(b,a) plot the SAME pixels (conformance probes 2026-07-19,
+    // l2/l7). Normalize to increasing major axis so the fix32 stepping
+    // below matches both directions. (Polyline state was already stored
+    // from the original endpoints above.)
+    if (horiz ? (x0 > x1) : (y0 > y1))
+    {
+        std::swap(x0, x1);
+        std::swap(y0, y1);
+    }
+
     int16_t dx = x0 <= x1 ? 1 : -1;
     int16_t dy = y0 <= y1 ? 1 : -1;
 
@@ -1110,6 +1122,22 @@ void vm::api_line(opt<fix32> arg0, opt<fix32> arg1, opt<fix32> arg2,
     int16_t y = lol::clamp(int(y0), -1, 128);
     int16_t xend = lol::clamp(int(x1), -1, 128);
     int16_t yend = lol::clamp(int(y1), -1, 128);
+
+    // Minor-axis position = flr(start + slope * step + 0.5), ALL in fix32:
+    // the slope is truncated to 16.16 before use. PICO-8 rasterizes in
+    // fix32 — double-precision interpolation rounds exact .5 crossings
+    // differently (conformance matrix 2026-07-19: line(0,0,10,3) puts
+    // x=5 at y=1 — fix32 slope 0x0.4ccc makes 5*slope+0.5 = 1.9999,
+    // floor 1 — where round(mix()) in double gives exactly 1.5 -> 2).
+    // A slope*int product is exact in fix32, so closed form == the
+    // accumulated form. Denominator 0 only for single-point lines, whose
+    // loop breaks before the slope is used.
+    // (int64 division: INT32_MIN/-1 would trap with 32-bit operands.)
+    int32_t slope_bits = 0;
+    if (horiz && x1 != x0)
+        slope_bits = (int32_t)((((int64_t)(y1 - y0)) << 16) / (x1 - x0));
+    else if (!horiz && y1 != y0)
+        slope_bits = (int32_t)((((int64_t)(x1 - x0)) << 16) / (y1 - y0));
 
     for (;;)
     {
@@ -1120,14 +1148,14 @@ void vm::api_line(opt<fix32> arg0, opt<fix32> arg1, opt<fix32> arg2,
             if (x == xend)
                 break;
             x += dx;
-            y = (int16_t)lol::round(lol::mix((double)y0, (double)y1, (double)(x - x0) / (x1 - x0)));
+            y = y0 + (int16_t)(((int64_t)slope_bits * (x - x0) + 0x8000) >> 16);
         }
         else
         {
             if (y == yend)
                 break;
             y += dy;
-            x = (int16_t)lol::round(lol::mix((double)x0, (double)x1, (double)(y - y0) / (y1 - y0)));
+            x = x0 + (int16_t)(((int64_t)slope_bits * (y - y0) + 0x8000) >> 16);
         }
     }
 }
@@ -1666,11 +1694,31 @@ void vm::api_sspr(int16_t sx, int16_t sy, int16_t sw, int16_t sh,
     int16_t dw = in_dw ? *in_dw : sw;
     int16_t dh = in_dh ? *in_dh : sh;
 
-    // Support negative dw and dh by flipping the target rectangle
-    if (dw < 0) { dw = -dw; dx -= dw - 1; flip_x = !flip_x; }
-    if (dh < 0) { dh = -dh; dy -= dh - 1; flip_y = !flip_y; }
+    // Support negative dw and dh by flipping the target rectangle.
+    // PICO-8 draws the half-open span [d+D, d) — the anchor pixel itself
+    // is EXCLUDED (conformance matrix 2026-07-19: sspr(...,10,2,-4,4)
+    // fills x 6..9, not 7..10).
+    if (dw < 0) { dw = -dw; dx -= dw; flip_x = !flip_x; }
+    if (dh < 0) { dh = -dh; dy -= dh; flip_y = !flip_y; }
+
+    // Zero-size destination draws nothing. MUST bail before the ratio
+    // division below: raycaster-style carts routinely call sspr with
+    // dw/dh scaled to 0 at distance (corpus scan 2026-07-19 caught 26
+    // SIGFPE crashes when the ratio was computed unconditionally — the
+    // old in-loop division never executed for a zero-trip loop).
+    if (dw == 0 || dh == 0) return;
 
     if (dx + dw <= 0 || dx >= 128 || dy + dh <= 0 || dy >= 128) return;
+
+    // Source step ratios as fix32-truncated 16.16 bits. PICO-8 samples the
+    // source at the CENTER of each destination pixel — src = flr((d + 0.5)
+    // * ratio) with the ratio truncated to 16.16 first (conformance matrix
+    // 2026-07-19: 8->3 maps to source rows {1,3,6}, which only center
+    // sampling with the truncated ratio reproduces; start sampling gives
+    // {0,2,5}). Integer-only start sampling matched by accident wherever
+    // the ratio divides evenly. int64 division: INT32_MIN/-1 would trap.
+    int32_t rx_bits = (int32_t)((((int64_t)sw) << 16) / dw);
+    int32_t ry_bits = (int32_t)((((int64_t)sh) << 16) / dh);
 
     // Iterate over destination pixels
     // FIXME: maybe clamp if target area is too big?
@@ -1681,9 +1729,9 @@ void vm::api_sspr(int16_t sx, int16_t sy, int16_t sw, int16_t sh,
         int16_t di = flip_x ? dw - 1 - i : i;
         int16_t dj = flip_y ? dh - 1 - j : j;
 
-        // Find source
-        int16_t x = sx + sw * di / dw;
-        int16_t y = sy + sh * dj / dh;
+        // Find source: fix32 center sampling, arithmetic shift = floor
+        int16_t x = sx + (int16_t)((((int64_t)(((int32_t)di << 16) + 0x8000) * rx_bits) >> 16) >> 16);
+        int16_t y = sy + (int16_t)((((int64_t)(((int32_t)dj << 16) + 0x8000) * ry_bits) >> 16) >> 16);
 
         uint8_t col = gfx.safe_get(x, y);
         if ((ds.draw_palette[col] & 0xf0) == 0)
