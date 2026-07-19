@@ -384,7 +384,6 @@ void vm::private_init_ram()
 
     // also reset timer, maybe should be done in a separate function?
     m_time = 0;
-    m_timer_last = std::chrono::steady_clock::now();
 }
 
 bool vm::private_load(std::string name, opt<std::string> breadcrumb, opt<std::string> params)
@@ -484,14 +483,17 @@ void vm::run()
     }
 }
 
-bool vm::step(float /* seconds */)
+bool vm::step(float seconds)
 {
-    auto time_now = std::chrono::steady_clock::now();
+    // time()/t() advances by the stepped frame time, NOT the wall clock.
+    // PICO-8 manual (time()): "This is not the real-world time, but is
+    // calculated by counting the number of times _UPDATE or _UPDATE60 is
+    // called." The old wall-clock accumulation matched only at real-time
+    // 60 fps; stepped faster (headless harness) or slower (heavy frames)
+    // it diverged from the reference — and made every t()-animated cart
+    // nondeterministic run-to-run.
     if (!m_in_pause)
-    {
-        m_time += std::chrono::duration_cast<std::chrono::duration<double>>(time_now - m_timer_last).count();
-    }
-    m_timer_last = time_now;
+        m_time += (double)seconds;
 
     if (m_exit_requested)
     {
