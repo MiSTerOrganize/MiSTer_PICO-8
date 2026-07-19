@@ -250,3 +250,34 @@ Burger Age 0 -> ~13700 (matches official); Lina (FIX #2) still 16384, no regress
 GENERAL IMPACT: any cart drawing text at a sometimes-negative y (wavy/bobbing text via sin) was
 having its frame wiped on z8. RE-RUN the render-diff after this ships -- expect several other
 black/under-render candidates (and high-residual carts with animated HUD text) to clear.
+
+## RE-RUN vs the July-fixed engine (2026-07-19) -- dumpwin 30-90 + wide-window 5-200 phase test
+Engine = current main (conformance 18/18: line/sspr/format/oval fixes + June trig/stat102/cursor).
+A/B against a June-state build (0cfeed8): z8 dumps BYTE-IDENTICAL across builds for every
+candidate -> the July primitive fixes are boot-window-neutral for these carts (no sweep, no
+regression). NOTE: the June "re-triage cleared Mina/Bomba" note does NOT reproduce with this
+pipeline -- both still diverge at their original residuals; treat them as OPEN.
+
+| cart | residual (5-anchor) | wide-window (5-200) min | verdict |
+|---|---|---|---|
+| Lina (01149) | 1.5% | full 16384/16384 render both engines | FIXED (June stat102) ✓ residue = animation drift |
+| Burger Age (01514) | 0.0% | -- | FIXED (June cursor) ✓ |
+| Aurora Railway (00489) | 0.0% | -- | FIXED ✓ |
+| Skelethrone (00375b) | 83.7% | collapses to 4.7-12.8% (ref f40 ~= z8 f95) | PHASE-FP at boot (title identical incl. bg colour; residue = sparkle anim). No bug visible headless. |
+| Froggo plain (01586c) | 8.0% | full scene renders both | REVIEW-low (traffic-position drift) |
+| Froggo Hop (01586b) | -- | srand(stat(95)) | ENTROPY-FP (June class) -- excluded |
+| REM (00344) | 94.4% | -- | ENTROPY-FP (June hardware-confirmed fine) -- excluded |
+| Mina (01174) | 58.9% | IRREDUCIBLE (~58.9% vs every frame) | REAL -- border/bg tiles missing (visual: flat green vs flower tiling; sprites+text identical) |
+| Bomba (00923) | 44.0% | IRREDUCIBLE | REAL -- bg tiles missing (flat orange vs brick pattern) |
+| Coiled (01531) | 53.6% | IRREDUCIBLE (z8 static from ~f7) | REAL -- big character art missing (z8 shows level layout instead) |
+| Medusa (01662) | 28.8% | z8 avg 147 non-black vs ref 4867 | REAL -- all scenery missing, only text renders |
+| On A Roll (02139) | 90.6% | z8 724 vs ref 15604 | REAL -- board/map missing, sprites+text render |
+| Skelethrone 2022 (00375a) | NO-DUMP both engines | -- | harness doesn't engage this cart shape; inconclusive |
+| Froggo1k (01586a) | NO-DUMP on z8 (ref dumps fine) | -- | z8 never reaches the flip hook -- investigate separately |
+
+SHARED SIGNATURE (hypothesis, not yet verified): all 5 REAL carts render sprites+text correctly
+but lose a LARGE background/tile/art layer (Mina/Bomba borders, Medusa scenery, On A Roll board,
+Coiled character art). Suggests ONE shared zepto8 path (map()/large-blit under some parameter
+class the conformance matrix doesn't cover). Next: bisect one _draw (On A Roll or Mina) per the
+proven June method to identify the failing op, then extend the conformance matrix with it.
+Work dir: scratchpad rd19 (win_wrap/win_off/win_z8/win_z8june/wide_z8/png).
