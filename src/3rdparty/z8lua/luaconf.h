@@ -589,8 +589,17 @@
 #define luai_numpeek2(L,a)	(luaV_peek(L,a,2))
 #define luai_numpeek4(L,a)	(luaV_peek(L,a,4))
 
+/* PICO-8 formats numbers by TRUNCATING toward zero at 4 decimals, sign
+ * kept even when the digits truncate away (conformance matrix 2026-07-19:
+ * -0.0001 -> "-0", -1.0001 -> "-1", 0x0.0001 -> "0", 1/3 -> "0.3333").
+ * printf %.4f ROUNDS to nearest, so format from the fix32 bits directly:
+ * frac4 = floor(|frac bits| * 10000 / 65536). Trailing zeros + dot are
+ * stripped as before. */
 #define lua_number2str(s,n) [&]() { \
-  int i = sprintf(s, "%1.4f", (double)n); \
+  int32_t b_ = (n).bits(); \
+  uint32_t ub_ = b_ < 0 ? (uint32_t)(-(int64_t)b_) : (uint32_t)b_; \
+  uint32_t f4_ = (uint32_t)(((uint64_t)(ub_ & 0xffffu) * 10000u) >> 16); \
+  int i = sprintf(s, "%s%u.%04u", b_ < 0 ? "-" : "", ub_ >> 16, f4_); \
   while (i > 0 && s[i - 1] == '0') s[--i] = '\0'; \
   if (i > 0 && s[i - 1] == '.') s[--i] = '\0'; \
   return i; }()
