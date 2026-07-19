@@ -20,6 +20,7 @@
 #include <cmath>     // std::min, std::max
 
 #include "pico8/vm.h"
+#include "bindings/lua.h" // nilopt
 #include "bios.h"
 
 namespace z8::pico8
@@ -1297,7 +1298,7 @@ int16_t vm::get_map_size_y(int16_t map_size_x)
 
 // Tested on PICO-8 1.1.12c: fractional part of all arguments is ignored.
 void vm::api_map(int16_t cel_x, int16_t cel_y, int16_t sx, int16_t sy,
-                 opt<int16_t> in_cel_w, opt<int16_t> in_cel_h, int16_t layer)
+                 nilopt<int16_t> in_cel_w, nilopt<int16_t> in_cel_h, int16_t layer)
 {
     auto &ds = m_ram.draw_state;
 
@@ -1306,13 +1307,13 @@ void vm::api_map(int16_t cel_x, int16_t cel_y, int16_t sx, int16_t sy,
 
     int16_t map_size_x = get_map_size_x();
     int16_t map_size_y = get_map_size_y(map_size_x);
-    int16_t map_max_y = m_ram.hw_state.mapping_map >= 0x80 ? map_size_y : map_size_y / 2;
 
-    // PICO-8 documentation: “If cel_w and cel_h are not specified,
-    // defaults to 128,32”.
-    bool no_size = !in_cel_w && !in_cel_h;
-    int16_t src_w = (no_size ? map_size_x : *in_cel_w) * 8;
-    int16_t src_h = (no_size ? map_max_y : *in_cel_h) * 8;
+    // Measured on PICO-8 0.2.7: when cel_w / cel_h are omitted (or nil), each
+    // independently defaults to the FULL map dimension — including the shared
+    // gfx/map rows (32..63). The old “defaults to 128,32” documentation is
+    // wrong; carts that scroll a no-arg map() past row 31 rely on this.
+    int16_t src_w = (in_cel_w ? *in_cel_w : map_size_x) * 8;
+    int16_t src_h = (in_cel_h ? *in_cel_h : map_size_y) * 8;
     int16_t src_x = cel_x * 8;
     int16_t src_y = cel_y * 8;
 

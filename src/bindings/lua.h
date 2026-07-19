@@ -96,10 +96,27 @@ template<> void lua_get(lua_State *l, int n, std::string &arg)
     }
 }
 
-// Unboxing to std::optional checks for lua_isnone() first
+// Unboxing to std::optional checks for lua_isnone() first. An explicit Lua
+// nil stays "present" and coerces to 0/false — measured PICO-8 0.2.7
+// behavior for rnd(nil), btn(nil), peek(addr,nil), pal(nil,nil).
 template<typename T> void lua_get(lua_State *l, int i, std::optional<T> &arg)
 {
     if (!lua_isnone(l, i))
+        arg = lua_get<T>(l, i);
+}
+
+// An optional that ALSO treats an explicit Lua nil as absent. Most PICO-8
+// APIs coerce nil to 0 (see above), but map()'s celw/celh treat nil like a
+// missing argument (full-map default) while an explicit 0 draws nothing —
+// measured PICO-8 0.2.7. Use only where that distinction is measured.
+template<typename T> struct nilopt : std::optional<T>
+{
+    using std::optional<T>::optional;
+};
+
+template<typename T> void lua_get(lua_State *l, int i, nilopt<T> &arg)
+{
+    if (!lua_isnoneornil(l, i))
         arg = lua_get<T>(l, i);
 }
 

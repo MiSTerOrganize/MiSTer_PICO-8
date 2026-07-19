@@ -28,11 +28,15 @@
 #include "textfile.h"
 
 namespace z8 { class player; }
+namespace z8::bindings { template<typename T> struct nilopt; }
 
 namespace z8::pico8
 {
 
 template<typename T> using opt = std::optional<T>;
+// Optional that treats an explicit Lua nil as absent (see bindings/lua.h);
+// only for measured cases like map() celw/celh where nil != 0.
+template<typename T> using nilopt = z8::bindings::nilopt<T>;
 template<typename... T> using var = std::variant<T...>;
 template<typename... T> using tup = std::tuple<T...>;
 
@@ -269,7 +273,7 @@ private:
     void api_line(opt<fix32> arg0, opt<fix32> arg1, opt<fix32> arg2,
                   opt<fix32> arg3, opt<fix32> arg4);
     void api_map(int16_t cel_x, int16_t cel_y, int16_t sx, int16_t sy,
-                 opt<int16_t> in_cel_w, opt<int16_t> in_cel_h, int16_t layer);
+                 nilopt<int16_t> in_cel_w, nilopt<int16_t> in_cel_h, int16_t layer);
     fix32 api_mget(int16_t x, int16_t y);
     void api_mset(int16_t x, int16_t y, uint8_t n);
     void api_oval(int16_t x0, int16_t y0, int16_t x1, int16_t y1, opt<fix32> c);

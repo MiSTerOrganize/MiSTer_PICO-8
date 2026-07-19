@@ -224,3 +224,26 @@ CONFVAL inbounds_px=0x0005.0000
 CONFVAL mget00=0x0001.0000
 CONFVAL mget10=0x0002.0000
 CONFVAL neg_oob_px=0x0005.0000
+
+[m_map_size]
+CONFVAL mget20=1
+CONFVAL mget40=1
+CONFVAL mget50=1
+CONFVAL a_row20_noargs=8
+CONFVAL b_row40_noargs=8
+CONFVAL c_row50_noargs=8
+CONFVAL d_row50_celh64=8
+CONFVAL e_row40_celxy=8
+CONFVAL f_row40_celwonly=8
+CONFVAL h_row40_nilcelw=8
+CONFVAL g_row40_celw16=8
+CONFVAL i_celw0=0
+CONFVAL j_celh0=0
+CONFVAL k_celwneg=0
+CONFVAL l_celhneg=0
+CONFVAL n_celh21_row20=8
+CONFVAL rnd_nil_eq_absent=false
+CONFVAL rnd_nil=0
+CONFVAL pal_nilnil_no_reset=9
+CONFVAL peek_nilcount=true
+CONFVAL btn_nil=false
