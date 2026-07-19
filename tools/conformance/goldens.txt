@@ -299,3 +299,13 @@ CONFVAL c0800=z0.0313
 CONFVAL cffff=z1
 CONFVAL c97e2neg=z-0.5933
 CONFVAL cdeclit=z-0
+
+[m_ifdo]
+CONFVAL ifdo=ok
+CONFVAL elseifdo=ok
+CONFVAL mixed=ok
+CONFVAL parendo=ok
+CONFVAL short=ok
+CONFVAL then=ok
+CONFVAL nested=ok
+CONFVAL while_do=3

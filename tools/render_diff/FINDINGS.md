@@ -332,3 +332,18 @@ July golden was fit to values where the two rules agree, and all stay valid. Sui
 corpus 3,302/3,302 DET; 12 goldens changed (score/HUD digits). Commit c1442db.
 Process note: a PowerShell Set-Content golden append left a lone trailing CR that made two
 visually identical lines diff -- strip CRs when appending goldens from Windows captures.
+
+## FIX #8 (2026-07-19): DO accepted in place of THEN for if/elseif -- 22 silently-broken carts + user report
+Community report (Tempest 2000 alpha, shrinko8-minified): "syntax error at startup" on the core,
+fine on PC. Root cause: PICO-8 accepts `if cond do ... end` / `elseif cond do` (measured, m_ifdo
+conformance cart: block form, paren form `if (c) do..end`, per-clause then/do mixing, nesting all
+accepted; `while cond then` is STILL a syntax error -- the shorthand is if/elseif-only) and
+shrinko8's minifier emits it heavily; z8lua only knew THEN -> "'then' expected near 'do'" ->
+black screen. Fix: lparser.c accepts TK_DO where TK_THEN is expected (never triggers short-if).
+Suite 23/23. Corpus blast radius: **22 library carts changed goldens = all previously
+black-screening on this same syntax** (Infinitroid, Domain Conflict, Zombie Horde, RogueRis x2,
+Berzerk Realm, Town Simulator, ...) -- spot-verified Infinitroid now boots to title. 3,302/3,302
+DET. NOTE: these 22 were invisible to the render-diff campaign because a syntax-error screen is
+deterministic + the June candidate list came from divergence-vs-reference sampling, not load
+success -- a "cart loads at all" differential (error-text detector on frame dumps) would have
+caught them; the golden-trace blast-radius diff is what finally surfaced them.
