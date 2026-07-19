@@ -9,12 +9,16 @@
 # run_conformance.sh runs each cart through z8headless (zepto8) and diffs its
 # output against these goldens. ANY difference = a zepto8 conformance bug,
 # pinned to the exact API the cart exercises. Regenerate after intentional
-# changes via gen_goldens (PICO-8, local) -- see README.md.
+# changes via gen_goldens.ps1 (PICO-8, local) -- see README.md.
 #
-# Captured 2026-06-18, all carts MATCH z8headless (zero divergences).
-
-[mech_check]
-CONFHASH=0xac47.c84b
+# Captured 2026-07-19 (matrix expansion: 10 generated m_* carts via
+# gen_matrix.py + the 8 hand-written carts). Status at capture:
+# 15/18 conformant; KNOWN zepto8 divergences (bug-tracked, goldens below
+# are the reference truth to converge on):
+#   m_shapes  -- line rasterization (OOB-endpoint clipping + trig endpoints)
+#   m_sprites -- sspr anisotropic scale rounding + negative dw/dh flips
+#   m_strings -- fix32->string formatting (PICO-8 truncates at 4 decimals,
+#                zepto8 rounds: "z"..-0.0001 -> "z-0" vs "z-0.0001")
 
 [fix32_math]
 CONFVAL absmin=0x7fff.ffff
@@ -43,6 +47,143 @@ CONFVAL sqrt0=0x0000.0000
 CONFVAL sqrt2=0x0001.6a09
 CONFVAL tostr_neg=0xfffe.8000
 
+[m_fillp_cam_clip]
+CONFVAL camera=0x03fb.c000
+CONFVAL clip=0x3041.2004
+CONFVAL combo=0x0000.0000
+CONFVAL fillp=0xc3ce.cee4
+
+[m_map_tline]
+CONFVAL map=0x0049.6db2
+CONFVAL tline=0x2df7.d6d2
+
+[m_math]
+CONFVAL abs1=0x7fff.ffff
+CONFVAL atan1=0x0000.e000
+CONFVAL atan2=0x0000.92e4
+CONFVAL atan3=0x0000.4000
+CONFVAL atan4=0x0000.4000
+CONFVAL ceil1=0xfffd.0000
+CONFVAL cos1=0x0000.cf22
+CONFVAL div0a=0x7fff.ffff
+CONFVAL div0b=0x8000.0001
+CONFVAL div0c=0x7fff.ffff
+CONFVAL flr1=0xfffc.0000
+CONFVAL flr2=0x7fff.0000
+CONFVAL idiv1=0xfffc.0000
+CONFVAL idiv2=0xfffc.0000
+CONFVAL lshr1=0x0800.0000
+CONFVAL max1=0x7fff.ffff
+CONFVAL mid1=0x0002.0000
+CONFVAL mod1=0x0001.0000
+CONFVAL mod2=0x0002.0000
+CONFVAL mod3=0x0000.0011
+CONFVAL neg1=0x8000.0000
+CONFVAL ovf1=0x8000.0000
+CONFVAL ovf2=0x7fff.0000
+CONFVAL rot1=0x0000.0001
+CONFVAL rot2=0x8000.0000
+CONFVAL rot3=0x5678.1234
+CONFVAL sgn0=0x0001.0000
+CONFVAL shl1=0x8000.0000
+CONFVAL shl2=0x8000.0000
+CONFVAL shl3=0x0000.0000
+CONFVAL shr1=0xf800.0000
+CONFVAL shr2=0x0012.3456
+CONFVAL sin1=0xffff.0000
+CONFVAL sin2=0xffff.0c86
+CONFVAL sqrt1=0x0001.6a09
+CONFVAL sqrt2=0x00b5.043e
+CONFVAL sqrt3=0x0000.0000
+CONFVAL sqrt4=0x0000.0100
+CONFVAL tonum1=0x8000.0000
+CONFVAL tonum2=0x0001.8000
+CONFVAL tonum3=nil
+CONFVAL tostr1=-32768
+CONFVAL tostr2=0
+CONFVAL tostr3=0.3333
+
+[m_memory]
+CONFVAL ext1=0x00ab.0000
+CONFVAL ext2=0x1234.5678
+CONFVAL ext3=0x5a5a.5a5a
+CONFVAL ext4=0x0007.0000
+CONFVAL ms0=0x0000.0000
+CONFVAL ovl1=0x150e.0700
+CONFVAL ovl2=0xd9d2.cbc4
+CONFVAL ovl3=0x4d46.3f38
+CONFVAL p2=0x4d46.0000
+CONFVAL p4=0x544d.463f
+CONFVAL pk2=0x0000.ffff
+CONFVAL reload1=0x0000.0000
+
+[m_p8scii]
+CONFVAL p8scii=0x5015.f1b1
+
+[m_pal]
+CONFVAL drawpal=0x0000.0000
+CONFVAL paltable=0x0000.0000
+CONFVAL pokescreenpal=0xfa06.7632
+CONFVAL screenpal=0x7578.52a0
+
+[m_print]
+CONFVAL curx2=0x0032.0000
+CONFVAL curx=0x000c.0000
+CONFVAL cx=0x0000.0000
+CONFVAL cy=0x0046.0000
+CONFVAL print=0x9b0c.19d2
+
+[m_shapes]
+CONFVAL circ=0xca24.882a
+CONFVAL line=0x398c.bf76
+CONFVAL oval=0xd3e3.37b7
+CONFVAL pget1=0x0000.0000
+CONFVAL pget2=0x0000.0000
+CONFVAL pgetoob=0x0000.0000
+CONFVAL pset=0xf8a9.0f77
+CONFVAL rect=0xdb27.8db6
+CONFVAL rectfill=0x5519.ffe6
+
+[m_sprites]
+CONFVAL palt=0xe71e.480d
+CONFVAL spr=0x9481.0990
+CONFVAL sspr=0x5c00.8189
+
+[m_strings]
+CONFVAL cat1=x5
+CONFVAL cat2=y1.5
+CONFVAL cat3=z-0
+CONFVAL chr1=ABC
+CONFVAL len1=0x0005.0000
+CONFVAL ord1=0x0062.0000
+CONFVAL ord2=120,121
+CONFVAL spl1=0x0004.0000
+CONFVAL spl2=empty
+CONFVAL spl3=0x0002.0000
+CONFVAL spl4=b
+CONFVAL sub1=ell
+CONFVAL sub2=llo
+CONFVAL sub3=lo
+CONFVAL sub4=
+CONFVAL typ1=nil
+CONFVAL typ2=function
+CONFVAL typ3=string
+CONFVAL typ4=number
+
+[mech_check]
+CONFHASH=0xac47.c84b
+
+[p4rb]
+CONFVAL p4bytes=1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,
+
+[pal_secret]
+CONFVAL drawpal_px=0x000a.0000
+CONFVAL fillp_reg=0x35a3.0000
+CONFVAL palt_default=0x0010.0000
+CONFVAL screenpal_px=0x0007.0000
+CONFVAL secret_5f10=0x008a.0000
+CONFVAL secret_5f11=0x0003.0000
+
 [peek_extmem]
 CONFVAL at4300=0x0055.0000
 CONFVAL at8000=0x0012.0000
@@ -55,20 +196,11 @@ CONFVAL peek2_8010=0x1234.0000
 CONFVAL peek4_8020=0x1234.5678
 CONFVAL peek8000=0x0012.0000
 
-[pal_secret]
-CONFVAL drawpal_px=0x000a.0000
-CONFVAL fillp_reg=0x35a3.0000
-CONFVAL palt_default=0x0010.0000
-CONFVAL screenpal_px=0x0007.0000
-CONFVAL secret_5f10=0x008a.0000
-CONFVAL secret_5f11=0x0003.0000
-
-[tline_map]
-CONFVAL hi_oob_px=0x0005.0000
-CONFVAL inbounds_px=0x0005.0000
-CONFVAL mget00=0x0001.0000
-CONFVAL mget10=0x0002.0000
-CONFVAL neg_oob_px=0x0005.0000
+[pokepal]
+CONFVAL base=8
+CONFVAL pal_set=12
+CONFVAL poke4_set=0
+CONFVAL poke_set=12
 
 [rnd_seq]
 CONFVAL a1=0x0010.ec81
@@ -89,3 +221,10 @@ CONFVAL r7=0x0000.6e56
 CONFVAL r8=0x0000.dade
 CONFVAL z1=0x0000.8474
 CONFVAL z2=0x0000.5724
+
+[tline_map]
+CONFVAL hi_oob_px=0x0005.0000
+CONFVAL inbounds_px=0x0005.0000
+CONFVAL mget00=0x0001.0000
+CONFVAL mget10=0x0002.0000
+CONFVAL neg_oob_px=0x0005.0000

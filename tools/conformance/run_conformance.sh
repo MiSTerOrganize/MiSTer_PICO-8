@@ -15,11 +15,18 @@
 Z8="${Z8:-./z8headless}"
 DATADIR="${DATADIR:-.}"
 GOLD="${GOLD:-goldens.txt}"
-CARTS="mech_check fix32_math peek_extmem pal_secret tline_map rnd_seq"
+# Auto-discover carts (hand-written + gen_matrix.py m_* carts). Override
+# with CARTS="a b c" to scope a run.
+CARTS="${CARTS:-$(ls *.p8 2>/dev/null | sed 's/\.p8$//' | tr '\n' ' ')}"
 
 fail=0; total=0
 for cart in $CARTS; do
-  got=$("$Z8" --cart "$cart.p8" --frames 1 --datadir "$DATADIR" --out /tmp 2>&1 \
+  # --frames 60: cart boot code is budget-suspended across frames when it
+  # exceeds the per-frame CPU budget (the matrix carts' screen-hash loops
+  # do). One frame truncates heavy carts' output mid-cart; 60 is ample.
+  # Absolute cart path: a relative one resolves through the --datadir
+  # prefix first and silently fails to load when DATADIR != cwd.
+  got=$("$Z8" --cart "$PWD/$cart.p8" --frames 60 --datadir "$DATADIR" --out /tmp 2>&1 \
         | grep -E '^CONF(HASH|VAL)' | sort -u)
   # extract this cart's golden block ([cart] .. next [ or EOF), drop comments/blanks
   want=$(awk -v c="[$cart]" '$0==c{f=1;next} /^\[/{f=0} f && /^CONF/{print}' "$GOLD" | sort -u)

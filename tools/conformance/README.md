@@ -18,7 +18,28 @@ Both PICO-8 engines run the **same cart** and print the **same** lines if confor
 
 The official outputs are frozen into `goldens.txt` (license-safe — our carts' numbers,
 NOT the PICO-8 binary), so `run_conformance.sh` diffs z8headless against the goldens
-**without needing PICO-8** (CI-able). Status 2026-06-18: **5/5 carts conformant.**
+**without needing PICO-8** (CI-able).
+
+## Conformance matrix (gen_matrix.py, 2026-07-19)
+
+`gen_matrix.py` generates the `m_*.p8` cart families that sweep the API surface
+(shapes incl. OOB/inverted/degenerate coords, fillp/clip/camera combos, spr/sspr/
+palt, map/tline + mask registers, palette pipeline, print/cursor, P8SCII escapes
+(isolated — a lexer gap can't mask other carts), fix32 math edges, memory ops,
+strings). Rationale: carts can only misbehave through engine primitives, so
+pinning the primitive surface protects carts nobody has played. Regenerate carts
+with `python3 gen_matrix.py`, goldens with `gen_goldens.ps1` (local, Windows).
+
+Cart boot code that exceeds one frame's CPU budget is suspended and resumed on
+later frames — `run_conformance.sh` therefore runs `--frames 60` (one frame
+truncates the matrix carts' screen-hash loops mid-cart).
+
+**Status 2026-07-19: 15/18 carts conformant.** 3 known zepto8 divergences
+(bug-tracked; goldens carry the reference truth to converge on):
+- `m_shapes` — line rasterization (OOB-endpoint clipping + trig endpoints)
+- `m_sprites` — sspr anisotropic scale rounding + negative dw/dh flips
+- `m_strings` — fix32→string formatting (PICO-8 truncates at 4 decimals,
+  zepto8 rounds: `"z"..-0.0001` → `z-0` vs `z-0.0001`)
 
 ## 🛑 License (PICO-8 is a LOCAL reference only)
 PICO-8 (`#PICO-8_Official/`) is **never** committed/shipped/CI'd — it runs
