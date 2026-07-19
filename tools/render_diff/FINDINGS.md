@@ -320,3 +320,15 @@ false NONDET. Fix: both runs write to SAME-LENGTH mktemp paths, mv into the gold
 Verified 2 rounds DET; full corpus 3,302/3,302 DET. Inherent cart sensitivity (the reference's
 object-key iteration is address-dependent too) -- a harness-discipline rule, not an engine bug.
 Component-4 hardware runs must use consistent -test path lengths for the same reason.
+
+## FIX #7 (2026-07-19): decimal formatting = round-half-up with zero-digit suppression
+Task #19 measurement round (34 probe values, m_tostr conformance cart): the reference's
+lua_number2str-equivalent is d4 = |frac|*10000 >> 16, ROUND HALF-UP on the low 16 bits, but
+ONLY when d4 > 0 -- a round that would manufacture a digit out of ".0000" is suppressed
+regardless of the integer part (0x0.0006 -> "0", 0x0005.0006 -> "5", yet 0x0.000a -> "0.0002",
+0x0.97e2 -> "0.5933"); carries into the integer (0x0.ffff -> "1"); sign kept ("-0"); tostr and
+concat share one path (measured equal). SUPERSEDES the July pure-truncation reading -- every
+July golden was fit to values where the two rules agree, and all stay valid. Suite 22/22;
+corpus 3,302/3,302 DET; 12 goldens changed (score/HUD digits). Commit c1442db.
+Process note: a PowerShell Set-Content golden append left a lone trailing CR that made two
+visually identical lines diff -- strip CRs when appending goldens from Windows captures.
