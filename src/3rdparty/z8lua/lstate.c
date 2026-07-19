@@ -6,6 +6,7 @@
 
 
 #include <stddef.h>
+#include <stdlib.h>  /* getenv, atoi (Z8_TEST_SEED deterministic-trace seed) */
 #include <string.h>
 
 #define lstate_c
@@ -88,8 +89,17 @@ typedef struct LG {
 
 static unsigned int makeseed (lua_State *L) {
   char buff[4 * sizeof(size_t)];
-  unsigned int h = luai_makeseed();
+  unsigned int h;
   int p = 0;
+  /* Golden-master test-trace mode (Z8_TEST_SEED env, set by the harness
+  ** --test / -test flags): FIXED string-hash seed so string-keyed table
+  ** iteration order (pairs/next) is identical across runs. The default
+  ** seed mixes time(NULL) + stack/heap addresses, which made carts that
+  ** iterate string-keyed tables in draw-order-affecting ways trace
+  ** nondeterministically. Default (no env) behavior is unchanged. */
+  const char *z8ts = getenv("Z8_TEST_SEED");
+  if (z8ts) return cast(unsigned int, 0x5EED0000u + (unsigned int)atoi(z8ts));
+  h = luai_makeseed();
   addbuff(buff, p, L);  /* heap variable */
   addbuff(buff, p, &h);  /* local variable */
   addbuff(buff, p, luaO_nilobject);  /* global variable */
