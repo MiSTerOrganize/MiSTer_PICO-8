@@ -1734,6 +1734,20 @@ var<bool, int16_t, fix32, std::string, std::nullptr_t> vm::api_stat(int16_t id)
 
     if ((id >= 80 && id <= 85) || (id >= 90 && id <= 95))
     {
+        // Golden-master test-trace mode (Z8_TEST_SEED, set by the --test /
+        // -test harness flags): the real clock would make any date/time-
+        // reading cart trace nondeterministically, so serve a FIXED
+        // timestamp (2026-01-01 00:00:00). Ship behavior unchanged.
+        if (std::getenv("Z8_TEST_SEED"))
+        {
+            switch (id % 10)
+            {
+                case 0: return int16_t(2026);
+                case 1: return int16_t(1);
+                case 2: return int16_t(1);
+                default: return int16_t(0);
+            }
+        }
         time_t t;
         time(&t);
         auto const *tm = (id <= 85 ? std::gmtime : std::localtime)(&t);

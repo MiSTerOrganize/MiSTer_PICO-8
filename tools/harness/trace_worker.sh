@@ -15,11 +15,16 @@ run() {
   # per run so cartdata written by run A can't leak into run B (or across
   # parallel workers). Corpus mount is ro — user carts are never written.
   local h; h="$(mktemp -d)"
+  # Per-run isolated saves via Z8_SAVES_DIR: zepto8 otherwise writes
+  # cartdata to the shared hardcoded /media/fat/saves/PICO-8/ path even
+  # headless -- run A's save file changes run B's boot state, and carts
+  # SHARING a cartdata id (CluePix / CluePix Halloween) interleave files
+  # across parallel workers (2026-07-19: the last-NONDET root cause).
   # setarch -R disables ASLR: z8lua hashes table/function KEYS by pointer,
   # so pairs() order over object-keyed tables needs stable addresses to be
   # reproducible (string-keyed order is covered by Z8_TEST_SEED). Container
   # must run with a seccomp profile that allows personality(ADDR_NO_RANDOMIZE).
-  ( cd "$(dirname "$cart")" && HOME="$h" timeout 20 setarch "$(uname -m)" -R /z8/z8headless --cart "$cart" --frames 120 --datadir /z8/ --test "$1" >/dev/null 2>&1 )
+  ( cd "$(dirname "$cart")" && HOME="$h" Z8_SAVES_DIR="$h/saves" timeout 20 setarch "$(uname -m)" -R /z8/z8headless --cart "$cart" --frames 120 --datadir /z8/ --test "$1" >/dev/null 2>&1 )
   local ec=$?
   rm -rf "$h"
   return $ec
