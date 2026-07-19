@@ -12,13 +12,9 @@
 # changes via gen_goldens.ps1 (PICO-8, local) -- see README.md.
 #
 # Captured 2026-07-19 (matrix expansion: 10 generated m_* carts via
-# gen_matrix.py + the 8 hand-written carts). Status at capture:
-# 15/18 conformant; KNOWN zepto8 divergences (bug-tracked, goldens below
-# are the reference truth to converge on):
-#   m_shapes  -- line rasterization (OOB-endpoint clipping + trig endpoints)
-#   m_sprites -- sspr anisotropic scale rounding + negative dw/dh flips
-#   m_strings -- fix32->string formatting (PICO-8 truncates at 4 decimals,
-#                zepto8 rounds: "z"..-0.0001 -> "z-0" vs "z-0.0001")
+# gen_matrix.py + the 8 hand-written carts). Status: 18/18 conformant --
+# the 4 divergences the matrix found (line raster, sspr, number
+# formatting, oval) were all fixed same-day; see tools/conformance/README.
 
 [fix32_math]
 CONFVAL absmin=0x7fff.ffff

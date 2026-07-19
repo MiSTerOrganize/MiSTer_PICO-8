@@ -34,12 +34,17 @@ Cart boot code that exceeds one frame's CPU budget is suspended and resumed on
 later frames — `run_conformance.sh` therefore runs `--frames 60` (one frame
 truncates the matrix carts' screen-hash loops mid-cart).
 
-**Status 2026-07-19: 15/18 carts conformant.** 3 known zepto8 divergences
-(bug-tracked; goldens carry the reference truth to converge on):
-- `m_shapes` — line rasterization (OOB-endpoint clipping + trig endpoints)
-- `m_sprites` — sspr anisotropic scale rounding + negative dw/dh flips
-- `m_strings` — fix32→string formatting (PICO-8 truncates at 4 decimals,
-  zepto8 rounds: `"z"..-0.0001` → `z-0` vs `z-0.0001`)
+**Status 2026-07-19: 18/18 carts conformant — zero divergence.** The matrix
+found 4 real zepto8 divergences on its first runs, all fixed the same day:
+- line rasterization (fix32 slope + direction-normalized; was double
+  `round(mix())`)
+- sspr (center sampling with the fix32-truncated ratio + half-open
+  negative-dim spans + zero-size-dest FPE guard)
+- fix32→string formatting (truncate toward zero at 4 decimals; was
+  rounding)
+- oval/ovalfill (reference-exact two-pass rounded-curve in folded integer
+  space, derived from 266 reference pixel maps — 266/266 sizes now
+  pixel-identical; replaced the float approximation)
 
 ## 🛑 License (PICO-8 is a LOCAL reference only)
 PICO-8 (`#PICO-8_Official/`) is **never** committed/shipped/CI'd — it runs
