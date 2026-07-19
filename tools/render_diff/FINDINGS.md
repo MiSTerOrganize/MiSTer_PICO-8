@@ -281,3 +281,42 @@ Coiled character art). Suggests ONE shared zepto8 path (map()/large-blit under s
 class the conformance matrix doesn't cover). Next: bisect one _draw (On A Roll or Mina) per the
 proven June method to identify the failing op, then extend the conformance matrix with it.
 Work dir: scratchpad rd19 (win_wrap/win_off/win_z8/win_z8june/wide_z8/png).
+
+## FIX #5 (2026-07-19): map() celw/celh full-map defaults -- ALL FOUR missing-layer carts + 8 silent victims
+The shared missing-layer signature WAS one bug. Measured (m_map_size conformance cart, 21 checks):
+omitted or NIL celw/celh each independently default to the FULL map incl. shared rows 32..63
+(old "defaults to 128,32" doc is wrong); explicit 0/negative draws nothing; nil stays present-0
+for other opt args (rnd/btn/peek/pal) so only map() got a nil-aware binding (nilopt<>).
+Cleared to pixel-exact: On A Roll 90.6%->0, Mina 58.9%->0, Bomba 44%->0, Medusa 28.8%->0.
+Corpus: exactly 12 goldens changed = those 4 + 8 silent victims (Halloween Cavern, Rest In
+Pyrite, Aconcagua Hack, Time For Lunch, visje, Slimeblast, Timmy's Return, snowfight.io);
+7 of 8 verified pixel-exact vs reference (Halloween Cavern = WRAP-OVERSIZE, verified statically:
+bare map(0,0)); other 3,290 goldens byte-identical. Commit 7bed5c7.
+
+## FIX #6 (2026-07-19): rnd(table) element selection + ord(nil) -- Coiled pixel-exact
+Coiled's title character art (str2image RLE) is gated on title_cnt=rnd({0,1})%2==0. z8's BIOS
+used t[flr(rnd(#t))+1]; the reference picks 0-based index (prng_a >> 8) % #t after ONE update
+(pinned via bit-slice scan on n=16 + verified on 38 draws x 2 seeds; m_rnd_ord conformance cart).
+Same stream, different slice -> wrong element under the same seed. New __rndi private binding.
+Also measured: ord(nil)/ord()/ord("")/oob return NO values (z8's "nil -> N zeros" guess removed).
+Coiled 53.6% -> 0.0%. Commit 3069c8f. OPEN (task #19): tostr decimal ROUNDING-vs-truncation
+divergence found en route (ref prints 0.5933 for 0x.97e2; July truncation finding was measured
+on non-discriminating cases) -- display-only, needs its own probe round.
+
+RENDER-DIFF LIST STATUS after fixes #5+#6: every confirmed-real cart from the June campaign is
+now pixel-exact (Lina, Burger, Aurora, Mina, Bomba, Medusa, On A Roll, Coiled) or reclassified
+(REM + Froggo entropy-FP, Skelethrone phase-FP). Remaining REVIEW-low: Froggo-plain 8% traffic
+drift, Lina 1.5% animation residue.
+
+## HARNESS FIX (2026-07-19): --test path LENGTH selects a behavior mode on layout-sensitive carts
+Snak + CluePix Halloween went NONDET after the rnd/ord rebuild -- but each invocation style was
+internally deterministic: trace paths <=15 chars (std::string SSO, no heap alloc) gave mode M,
+longer paths mode W, reproduced on pure tmpfs (9p mount latency was a red herring; the trace
+FILE is fully buffered). Chain: path length -> one extra heap allocation -> every later address
+shifts -> pointer-keyed pairs() order changes (ASLR-off makes layout deterministic, NOT
+path-invariant) -> these carts' object-key iteration diverges (audio-only from f92, video static).
+trace_worker.sh compared run A (long golden path) vs run B (short mktemp) = two modes = permanent
+false NONDET. Fix: both runs write to SAME-LENGTH mktemp paths, mv into the golden slot after.
+Verified 2 rounds DET; full corpus 3,302/3,302 DET. Inherent cart sensitivity (the reference's
+object-key iteration is address-dependent too) -- a harness-discipline rule, not an engine bug.
+Component-4 hardware runs must use consistent -test path lengths for the same reason.

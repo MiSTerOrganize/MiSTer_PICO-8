@@ -9,6 +9,15 @@ OUT=/work
 rel="${cart#$ROOT/}"
 g="$OUT/goldens/$rel.trace"
 mkdir -p "$(dirname "$g")"
+# Both runs write to SAME-LENGTH tmpfs paths (mv into the golden slot after).
+# The --test path's LENGTH changes the process heap layout (std::string SSO
+# boundary at 15 chars -> one extra allocation -> every later address shifts),
+# and carts iterating object-keyed tables see a different pairs() order per
+# layout (address-hashed keys; ASLR-off makes layout deterministic, not
+# path-invariant). Writing run A to the long golden path and run B to a short
+# mktemp path made such carts (Snak, CluePix Halloween) compare two different
+# deterministic modes -> permanent false NONDET (found 2026-07-19).
+ta="$(mktemp /tmp/ta.XXXXXX)"
 tb="$(mktemp /tmp/tb.XXXXXX)"
 run() {
   # cwd = the cart's own dir so multicart sibling load() resolves; fresh HOME
@@ -29,14 +38,14 @@ run() {
   rm -rf "$h"
   return $ec
 }
-run "$g";  eca=$?
+run "$ta"; eca=$?
 run "$tb"; ecb=$?
 if   [ $eca -eq 124 ] || [ $ecb -eq 124 ]; then cls=HANG
 elif [ $eca -ne 0 ]  || [ $ecb -ne 0 ];  then cls="CRASH$eca"
-elif cmp -s "$g" "$tb"; then cls=DET
+elif cmp -s "$ta" "$tb"; then cls=DET
 else cls=NONDET
 fi
-lines=0; [ -f "$g" ] && lines=$(wc -l < "$g")
+lines=0; [ -f "$ta" ] && lines=$(wc -l < "$ta")
 echo "$cls|$eca|$ecb|$lines|$rel" >> "$OUT/results.txt"
 rm -f "$tb"
-case "$cls" in DET|NONDET) ;; *) rm -f "$g" ;; esac
+case "$cls" in DET|NONDET) mv -f "$ta" "$g" ;; *) rm -f "$ta" ;; esac
