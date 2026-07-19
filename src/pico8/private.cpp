@@ -26,6 +26,7 @@
 #include <string>
 #include <codecvt>
 #include <cstring>
+#include <cstdlib>  // getenv (Z8_SAVES_DIR harness override)
 
 #include "pico8/pico8.h"
 #include "pico8/vm.h"
@@ -197,7 +198,13 @@ std::string vm::get_path_cstore(std::string cart_name)
     }
 
 #if defined(__MISTER__)
-    std::string file_path = "/media/fat/saves/PICO-8/";
+    // Z8_SAVES_DIR: harness/test override so trace runs never touch the
+    // real user saves and parallel scan workers get isolated save dirs
+    // (carts sharing a cartdata id -- e.g. CluePix / CluePix Halloween --
+    // otherwise interleave save files across workers and break golden
+    // determinism, 2026-07-19). Unset (normal MiSTer boot) = unchanged.
+    char const *sd = std::getenv("Z8_SAVES_DIR");
+    std::string file_path = sd ? std::string(sd) + "/" : "/media/fat/saves/PICO-8/";
 #elif __NX__
     std::string file_path = "save:/";
 #else
@@ -224,7 +231,13 @@ std::string vm::get_path_save(std::string cart_name)
         save_directory_name = save_directory_name + "_" + std::to_string(m_save_slot);
     }
 #if defined(__MISTER__)
-    std::string file_path = "/media/fat/saves/PICO-8/";
+    // Z8_SAVES_DIR: harness/test override so trace runs never touch the
+    // real user saves and parallel scan workers get isolated save dirs
+    // (carts sharing a cartdata id -- e.g. CluePix / CluePix Halloween --
+    // otherwise interleave save files across workers and break golden
+    // determinism, 2026-07-19). Unset (normal MiSTer boot) = unchanged.
+    char const *sd = std::getenv("Z8_SAVES_DIR");
+    std::string file_path = sd ? std::string(sd) + "/" : "/media/fat/saves/PICO-8/";
 #elif __NX__
     std::string file_path = "save:/";
 #else
