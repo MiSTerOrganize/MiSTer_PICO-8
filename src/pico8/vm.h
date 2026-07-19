@@ -242,6 +242,7 @@ private:
     void api_memcpy(int16_t dst, int16_t src, int16_t size);
     void api_memset(int16_t dst, uint8_t val, int16_t size);
     fix32 api_private_rnd(opt<fix32>);
+    fix32 api_private_rnd_index(int16_t count);
     void api_srand(fix32);
     var<bool, int16_t, fix32, std::string, std::nullptr_t> api_stat(int16_t id);
     void api_printh(rich_string str, opt<std::string> filename, opt<bool> overwrite);
@@ -323,6 +324,7 @@ public:
             { "memcpy",   bind<&vm::api_memcpy>() },
             { "memset",   bind<&vm::api_memset>() },
             { "__rnd",    bind<&vm::api_private_rnd>() },
+            { "__rndi",   bind<&vm::api_private_rnd_index>() },
             { "srand",    bind<&vm::api_srand>() },
             { "stat",     bind<&vm::api_stat>() },
             { "printh",   bind<&vm::api_printh>() },

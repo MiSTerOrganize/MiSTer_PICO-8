@@ -1520,6 +1520,18 @@ fix32 vm::api_private_rnd(opt<fix32> in_range)
     return fix32::frombits(range > 0 ? a % range : 0);
 }
 
+// Index picker for rnd(table): measured on PICO-8 0.2.7 (m_rnd_ord probe,
+// 38 draws across 5 sequences x 2 seeds), the 0-based element index is
+// (a >> 8) % n after ONE prng update -- a different bit slice than rnd(n)
+// (which uses a >> 16 for its integer part), so it cannot be derived from
+// __rnd()'s return value. Exposed to the BIOS as __rndi.
+fix32 vm::api_private_rnd_index(int16_t count)
+{
+    if (count <= 0) return fix32(0);
+    update_prng();
+    return fix32(int16_t((m_ram.hw_state.prng.a >> 8) % uint32_t(count)));
+}
+
 void vm::api_srand(fix32 seed)
 {
     // PICO-8 removes the seed’s MSB

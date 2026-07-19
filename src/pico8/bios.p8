@@ -156,7 +156,9 @@ function rnd_one_arg(c)
         if #c==0 then
             return nil
         end
-        return c[flr(__rnd(#c))+1]
+        -- measured pico-8 behavior: index = (prng_a >> 8) % #c after one
+        -- update (NOT flr(rnd(#c)) -- that reads a different bit slice)
+        return c[__rndi(#c)+1]
     end
     return __rnd(c)
 end

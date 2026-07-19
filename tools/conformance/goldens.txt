@@ -247,3 +247,19 @@ CONFVAL rnd_nil=0
 CONFVAL pal_nilnil_no_reset=9
 CONFVAL peek_nilcount=true
 CONFVAL btn_nil=false
+
+[m_rnd_ord]
+CONFVAL tbl10_s1=3,10,8,7,9,3,3,3,
+CONFVAL tbl10_s42=3,1,6,4,1,4,9,8,
+CONFVAL tbl16_s1=4,13,7,0,4,12,14,10,
+CONFVAL tbl2_s1=1,2,2,1,1,1,1,1,
+CONFVAL tbl3_s1=10,10,20,20,30,20,
+CONFVAL consumes_one=0x0000.fd18
+CONFVAL tbl_empty=[nil]
+CONFVAL ord_nil=[nil]
+CONFVAL ord_nil13=[nil] [nil] [nil]
+CONFVAL ord_noargs=[nil]
+CONFVAL ord_empty=[nil]
+CONFVAL ord_oob=[nil]
+CONFVAL ord_clamp=97 98
+CONFVAL ord_num=54

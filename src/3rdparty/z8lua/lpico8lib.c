@@ -297,15 +297,12 @@ static int pico8_ord(lua_State *l) {
     int n = 0;
     int count = 1;
     char const *s = NULL;
-    // Cart-compat: carts in the wild use ord(nil, 1, N) as an idiom for
-    // "produce N zero bytes", typically piped into poke(addr, ord(nil, 1, N))
-    // to clear N bytes of memory (cartdata workspace, sprite scratch, etc.).
-    // Without nil-tolerance the first cart-init call errors with "bad
-    // argument #1 to 'ord'". Inferred from cart-author usage patterns —
-    // not verified against a specific PICO-8 doc.
-    if (!lua_isnil(l, 1)) {
-        s = luaL_checklstring(l, 1, &len);
-    }
+    // Measured on PICO-8 0.2.7: ord(nil)/ord() return NO values (nil to the
+    // caller) -- same for ord("") and out-of-range n. The old "nil -> N zero
+    // bytes" guess is wrong; nil-tolerance means returning nothing, not zeros.
+    if (lua_isnoneornil(l, 1))
+        return 0;
+    s = luaL_checklstring(l, 1, &len);
     if (!lua_isnone(l, 3)) {
         if (!lua_isnumber(l, 3)) return 0;
         count = int(lua_tonumber(l, 3));
@@ -318,12 +315,6 @@ static int pico8_ord(lua_State *l) {
         return 0;
     // min stack is only 20. This could be a much longer string
     lua_checkstack(l, count);
-    if (s == NULL) {
-        // ord(nil, ...) -> count zeros
-        for (int i = 0; i < count; ++i)
-            lua_pushnumber(l, 0);
-        return count;
-    }
     if (n < 0 || size_t(n) >= len)
         return 0;
     if (size_t(n + count) > len)
