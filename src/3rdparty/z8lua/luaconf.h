@@ -589,17 +589,25 @@
 #define luai_numpeek2(L,a)	(luaV_peek(L,a,2))
 #define luai_numpeek4(L,a)	(luaV_peek(L,a,4))
 
-/* PICO-8 formats numbers by TRUNCATING toward zero at 4 decimals, sign
- * kept even when the digits truncate away (conformance matrix 2026-07-19:
- * -0.0001 -> "-0", -1.0001 -> "-1", 0x0.0001 -> "0", 1/3 -> "0.3333").
- * printf %.4f ROUNDS to nearest, so format from the fix32 bits directly:
- * frac4 = floor(|frac bits| * 10000 / 65536). Trailing zeros + dot are
- * stripped as before. */
+/* PICO-8 decimal formatting, measured on 0.2.7 over 26 probe values
+ * (m_tostr conformance cart, 2026-07-19): d4 = |frac bits|*10000 >> 16,
+ * then ROUND HALF-UP on the low 16 bits -- but ONLY when d4 > 0: a round
+ * that would manufacture a digit out of ".0000" is suppressed regardless
+ * of the integer part (0x0.0006 -> "0", 0x0005.0006 -> "5", yet
+ * 0x0.000a -> "0.0002" and 0x0.97e2 -> "0.5933"). d4 carries into the
+ * integer (0x0.ffff -> "1", 0x7fff.ffff -> "32768"). Sign kept even when
+ * all digits vanish ("-0"). This SUPERSEDES the earlier pure-truncation
+ * reading, which was fit to values that cannot distinguish the two.
+ * Trailing zeros + dot are stripped as before. */
 #define lua_number2str(s,n) [&]() { \
   int32_t b_ = (n).bits(); \
   uint32_t ub_ = b_ < 0 ? (uint32_t)(-(int64_t)b_) : (uint32_t)b_; \
-  uint32_t f4_ = (uint32_t)(((uint64_t)(ub_ & 0xffffu) * 10000u) >> 16); \
-  int i = sprintf(s, "%s%u.%04u", b_ < 0 ? "-" : "", ub_ >> 16, f4_); \
+  uint32_t ip_ = ub_ >> 16; \
+  uint32_t d_ = (ub_ & 0xffffu) * 10000u; \
+  uint32_t f4_ = d_ >> 16; \
+  if (f4_ > 0 && (d_ & 0xffffu) >= 0x8000u) ++f4_; \
+  if (f4_ >= 10000u) { f4_ = 0; ++ip_; } \
+  int i = sprintf(s, "%s%u.%04u", b_ < 0 ? "-" : "", ip_, f4_); \
   while (i > 0 && s[i - 1] == '0') s[--i] = '\0'; \
   if (i > 0 && s[i - 1] == '.') s[--i] = '\0'; \
   return i; }()
