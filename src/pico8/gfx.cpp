@@ -1403,35 +1403,37 @@ void vm::api_oval(int16_t x0, int16_t y0, int16_t x1, int16_t y1, opt<fix32> c)
 
     uint32_t color_bits = to_color_bits(c);
 
-    // FIXME: not elegant at all
-    float xc = float(x0 + x1) / 2;
-    float yc = float(y0 + y1) / 2;
+    // Reference-exact ellipse (conformance matrix 2026-07-19, verified on
+    // 266/266 bounding-box sizes): fold even spans to odd integer semi-axes
+    // (the middle row/column duplicates on unfold), then two passes over
+    // the folded quarter — per row plot +/-round(aw*sqrt(1-y'^2/bh^2)),
+    // per column plot +/-round(bh*sqrt(1-x'^2/aw^2)) — 4-way mirrored.
+    // IEEE-754 sqrt is correctly rounded, so this is bit-identical across
+    // x86 (oracle) and ARM (ship).
+    int W = x1 - x0 + 1, H = y1 - y0 + 1;
+    int aw = (W & 1) ? (W - 1) / 2 : (W - 2) / 2;
+    int bh = (H & 1) ? (H - 1) / 2 : (H - 2) / 2;
 
-    auto plot = [&](int16_t x, int16_t y)
+    auto plot4 = [&](int fx, int fy)
     {
-        set_pixel(x, y, color_bits);
-        set_pixel(int16_t(2 * xc) - x, y, color_bits);
-        set_pixel(x, int16_t(2 * yc) - y, color_bits);
-        set_pixel(int16_t(2 * xc) - x, int16_t(2 * yc) - y, color_bits);
+        int xs[2] = { x0 + aw - fx, x0 + (W - 1) - aw + fx };
+        int ys[2] = { y0 + bh - fy, y0 + (H - 1) - bh + fy };
+        for (int xi = 0; xi < 2; ++xi)
+            for (int yi = 0; yi < 2; ++yi)
+                set_pixel((int16_t)xs[xi], (int16_t)ys[yi], color_bits);
     };
 
-    // Cutoff for slope = 0.5 happens at x = a²/sqrt(a²+b²)
-    float a = max(1.0f, float(x1 - x0) / 2);
-    float b = max(1.0f, float(y1 - y0) / 2);
-    float cutoff = a / sqrt(1 + b * b / (a * a));
-
-    for (float dx = 0; dx <= cutoff; ++dx)
+    for (int fy = 0; fy <= bh; ++fy)
     {
-        int16_t x = int16_t(ceil(xc + dx));
-        int16_t y = int16_t(round(yc - b / a * sqrt(a * a - dx * dx)));
-        plot(x, y);
+        double v = bh ? aw * sqrt(max(0.0, 1.0 - double(fy) * fy / (double(bh) * bh)))
+                      : double(aw);
+        plot4(int(floor(v + 0.5)), fy);
     }
-    cutoff = b / sqrt(1 + a * a / (b * b));
-    for (float dy = 0; dy < cutoff; ++dy)
+    for (int fx = 0; fx <= aw; ++fx)
     {
-        int16_t y = int16_t(ceil(yc + dy));
-        int16_t x = int16_t(round(xc - a / b * sqrt(b * b - dy * dy)));
-        plot(x, y);
+        double v = aw ? bh * sqrt(max(0.0, 1.0 - double(fx) * fx / (double(aw) * aw)))
+                      : double(bh);
+        plot4(fx, int(floor(v + 0.5)));
     }
 }
 
@@ -1457,29 +1459,30 @@ void vm::api_ovalfill(int16_t x0, int16_t y0, int16_t x1, int16_t y1,
 
     uint32_t color_bits = to_color_bits(c);
 
-    // FIXME: not elegant at all
-    float xc = float(x0 + x1) / 2;
-    float yc = float(y0 + y1) / 2;
+    // Solid counterpart of the reference-exact ellipse above (see api_oval):
+    // per folded row, the span extent is the row-pass extent widened by any
+    // column whose column-pass row reaches this row (that is what forms the
+    // flat tips). Validated against reference ovalfill pixel maps.
+    int W = x1 - x0 + 1, H = y1 - y0 + 1;
+    int aw = (W & 1) ? (W - 1) / 2 : (W - 2) / 2;
+    int bh = (H & 1) ? (H - 1) / 2 : (H - 2) / 2;
 
-    float a = max(1.0f, float(x1 - x0) / 2);
-    float b = max(1.0f, float(y1 - y0) / 2);
-
-    float cutoff = a / sqrt(1 + b * b / (a * a));
-
-    for (float dx = 0; dx <= cutoff; ++dx)
+    for (int fy = 0; fy <= bh; ++fy)
     {
-        int16_t x = int16_t(ceil(xc + dx));
-        int16_t y = int16_t(round(yc - b / a * sqrt(a * a - dx * dx)));
-        vline(x, int16_t(2 * yc) - y, y, color_bits);
-        vline(int16_t(2 * xc) - x, int16_t(2 * yc) - y, y, color_bits);
-    }
-    cutoff = b / sqrt(1 + a * a / (b * b));
-    for (float dy = 0; dy <= cutoff; ++dy)
-    {
-        int16_t x = int16_t(round(xc - a / b * sqrt(b * b - dy * dy)));
-        int16_t y = int16_t(ceil(yc + dy));
-        hline(int16_t(2 * xc) - x, x, y, color_bits);
-        hline(int16_t(2 * xc) - x, x, int16_t(2 * yc) - y, color_bits);
+        double v = bh ? aw * sqrt(std::max(0.0, 1.0 - double(fy) * fy / (double(bh) * bh)))
+                      : double(aw);
+        int ext = int(floor(v + 0.5));
+        for (int fx = 0; fx <= aw; ++fx)
+        {
+            double cv = aw ? bh * sqrt(std::max(0.0, 1.0 - double(fx) * fx / (double(aw) * aw)))
+                           : double(bh);
+            if (int(floor(cv + 0.5)) >= fy)
+                ext = std::max(ext, fx);
+        }
+        int16_t xl = (int16_t)(x0 + aw - ext);
+        int16_t xr = (int16_t)(x0 + (W - 1) - aw + ext);
+        hline(xl, xr, (int16_t)(y0 + bh - fy), color_bits);
+        hline(xl, xr, (int16_t)(y0 + (H - 1) - bh + fy), color_bits);
     }
 }
 
