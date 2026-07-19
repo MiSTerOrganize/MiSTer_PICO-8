@@ -1132,11 +1132,12 @@ void vm::api_line(opt<fix32> arg0, opt<fix32> arg1, opt<fix32> arg2,
     // A slope*int product is exact in fix32, so closed form == the
     // accumulated form. Denominator 0 only for single-point lines, whose
     // loop breaks before the slope is used.
+    // (int64 division: INT32_MIN/-1 would trap with 32-bit operands.)
     int32_t slope_bits = 0;
     if (horiz && x1 != x0)
-        slope_bits = (((int32_t)(y1 - y0)) << 16) / (x1 - x0);
+        slope_bits = (int32_t)((((int64_t)(y1 - y0)) << 16) / (x1 - x0));
     else if (!horiz && y1 != y0)
-        slope_bits = (((int32_t)(x1 - x0)) << 16) / (y1 - y0);
+        slope_bits = (int32_t)((((int64_t)(x1 - x0)) << 16) / (y1 - y0));
 
     for (;;)
     {
@@ -1700,6 +1701,13 @@ void vm::api_sspr(int16_t sx, int16_t sy, int16_t sw, int16_t sh,
     if (dw < 0) { dw = -dw; dx -= dw; flip_x = !flip_x; }
     if (dh < 0) { dh = -dh; dy -= dh; flip_y = !flip_y; }
 
+    // Zero-size destination draws nothing. MUST bail before the ratio
+    // division below: raycaster-style carts routinely call sspr with
+    // dw/dh scaled to 0 at distance (corpus scan 2026-07-19 caught 26
+    // SIGFPE crashes when the ratio was computed unconditionally — the
+    // old in-loop division never executed for a zero-trip loop).
+    if (dw == 0 || dh == 0) return;
+
     if (dx + dw <= 0 || dx >= 128 || dy + dh <= 0 || dy >= 128) return;
 
     // Source step ratios as fix32-truncated 16.16 bits. PICO-8 samples the
@@ -1708,9 +1716,9 @@ void vm::api_sspr(int16_t sx, int16_t sy, int16_t sw, int16_t sh,
     // 2026-07-19: 8->3 maps to source rows {1,3,6}, which only center
     // sampling with the truncated ratio reproduces; start sampling gives
     // {0,2,5}). Integer-only start sampling matched by accident wherever
-    // the ratio divides evenly.
-    int32_t rx_bits = (((int32_t)sw) << 16) / dw;
-    int32_t ry_bits = (((int32_t)sh) << 16) / dh;
+    // the ratio divides evenly. int64 division: INT32_MIN/-1 would trap.
+    int32_t rx_bits = (int32_t)((((int64_t)sw) << 16) / dw);
+    int32_t ry_bits = (int32_t)((((int64_t)sh) << 16) / dh);
 
     // Iterate over destination pixels
     // FIXME: maybe clamp if target area is too big?
