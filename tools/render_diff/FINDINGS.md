@@ -347,3 +347,23 @@ DET. NOTE: these 22 were invisible to the render-diff campaign because a syntax-
 deterministic + the June candidate list came from divergence-vs-reference sampling, not load
 success -- a "cart loads at all" differential (error-text detector on frame dumps) would have
 caught them; the golden-trace blast-radius diff is what finally surfaced them.
+
+## VIRTUA RACING RE-RUN (2026-07-19, task #9): track corruption NOT reproducible on current engine
+First-ever VR GAMEPLAY differential (June's "VR-class gap" -- deterministic input to reach racing).
+Method: wrap the 15-cart multicart in a throwaway copy -- title gets an INPUT-ONLY harness
+(srand/frame-t/btn-mask, no dump), vracing_main gets dumpwin+play; numbered carts are pure
+reload() data, untouched. z8headless runs it directly (cwd = cart dir). REFERENCE GOTCHAS
+discovered: (1) **`-x` mode silently NO-OPs `load()`** (minimal 2-cart probe: cart B never
+boots, execution falls through) -- headless reference CANNOT run multicarts at all; (2) the
+workaround is **windowed `-run` mode** (load() works; printh still captured via redirected
+stdout; wrapper input-override neutralizes the real keyboard; carts must sit in `{home}/carts`).
+RESULT: splash window (main f30-120): 70/91 frames PIXEL-EXACT, residue = clock offset once
+animation starts. Race window (f200-320): both engines render CLEAN, structurally-correct
+tracks (road/striping/scenery/HUD verified by eyeball at f250 + f312) -- NO corruption on z8.
+Residual divergence = accumulating car-STATE drift, best-offset -4 -- attributable to the
+reference's real-time windowed loop dropping/doubling updates under 3D load vs z8's stepped
+execution (the splash matched exactly until motion began), NOT provably an engine divergence;
+this harness cannot separate the two for real-time-only reference runs. VERDICT: the June
+corruption class (fix32/line 3D geometry) appears swept by the July fixes (line raster,
+trig, oval, sspr); awaiting the user's hardware eyeball to close. If hardware still shows
+corruption, next step: savestate-near-corruption + frame-step compare per the methodology doc.
