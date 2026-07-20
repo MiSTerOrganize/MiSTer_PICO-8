@@ -1,0 +1,37 @@
+name: Dispatch DB rebuild
+run-name: "DB dispatch: ${{ github.event.head_commit.message || 'manual' }}"
+
+# Docs/handler/RBF-only pushes never reach build.yml's commit-back step (no
+# new ARM binary is produced), so the DB rebuild dispatch there never fires
+# and db.json lags until the daily cron -- caught by the 4-way currency
+# check (2026-07-19: an updated README reached repo + latest release but
+# not update_all users). This workflow closes the gap: any push touching
+# shipped non-source files triggers the MiSTer_Frontier DB rebuild
+# directly. The ARM-binary commit-back path still dispatches from build.yml
+# (its GITHUB_TOKEN push does not trigger on:push here, so that path
+# cannot double-fire this workflow).
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - 'docs/**'
+      - 'games/**'
+      - '_Other/**'
+      - 'version.txt'
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger MiSTer_Frontier DB rebuild
+        env:
+          GH_TOKEN: ${{ secrets.MISTER_FRONTIER_DISPATCH_TOKEN }}
+        run: |
+          if [ -n "$GH_TOKEN" ]; then
+            echo "Triggering MiSTer_Frontier DB rebuild..."
+            gh workflow run "Build Custom Database" -R MiSTerOrganize/MiSTer_Frontier
+          else
+            echo "WARN: MISTER_FRONTIER_DISPATCH_TOKEN not set - the daily cron will pick up this change instead"
+          fi
