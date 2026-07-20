@@ -182,6 +182,10 @@ PICO-8 ships with **video timing identical to the MiSTer NES core's default outp
 
 The result: PICO-8 games occupy the same physical area on a CRT as NES games, with identical scan timing, identical safe-area margin (38 lines of vertical blanking), and identical CRT lock behavior. Consumer NTSC CRTs that show NES games correctly will show PICO-8 games correctly. PVM/BVM users get the same image size they'd see for a real NES cart.
 
+### A note for cart authors: the 8:7 pixel aspect and geometry
+
+Because each game pixel is slightly wider than tall (8:7), a perfect circle drawn in cart coordinates displays about 12% flatter on a CRT than it does in desktop PICO-8, where pixels are square. Sprite and tile art wears this naturally -- it is the authentic NES/SNES look. But if your cart draws geometry-critical vectors (circles, wireframes, tubes), you can counter-scale: stretch your rendering vertically by 8/7 (about 1.14x), or adjust your camera/projection by the same factor, and shapes will land geometrically true on the CRT. Vector carts can make this a settings toggle; it costs nothing at the engine level and needs no support from the core.
+
 ### Fine-tuning image position
 
 The OSD has **`H Position (CRT)`** and **`V Position (CRT)`** options (±3 pixels) for fine-tuning image centering on individual CRTs. These adjust the timing porches so the picture shifts on the tube without changing refresh rate. No effect on HDMI (the scaler auto-centers).
