@@ -15,6 +15,7 @@
 #include <lol/engine.h> // lol::net
 
 #include <optional>
+#include <chrono>
 #include <variant>
 #include <functional> // std::function
 #include <unordered_map> // std::unordered_map
@@ -513,6 +514,10 @@ private:
     std::string m_entry_cart;
 
     double m_time;
+    // ship path accumulates wall-clock time; trace mode (Z8_TEST_SEED)
+    // steps by the frame quantum instead (see vm::step)
+    bool m_time_frame_stepped = false;
+    std::chrono::steady_clock::time_point m_wall_last {};
     int m_instructions = 0;
     const int m_default_max_instructions = 300000;
     int m_max_instructions = m_default_max_instructions;

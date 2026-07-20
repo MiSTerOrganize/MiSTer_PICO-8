@@ -384,6 +384,8 @@ void vm::private_init_ram()
 
     // also reset timer, maybe should be done in a separate function?
     m_time = 0;
+    m_time_frame_stepped = std::getenv("Z8_TEST_SEED") != nullptr;
+    m_wall_last = {};
 }
 
 bool vm::private_load(std::string name, opt<std::string> breadcrumb, opt<std::string> params)
@@ -485,15 +487,36 @@ void vm::run()
 
 bool vm::step(float seconds)
 {
-    // time()/t() advances by the stepped frame time, NOT the wall clock.
-    // PICO-8 manual (time()): "This is not the real-world time, but is
-    // calculated by counting the number of times _UPDATE or _UPDATE60 is
-    // called." The old wall-clock accumulation matched only at real-time
-    // 60 fps; stepped faster (headless harness) or slower (heavy frames)
-    // it diverged from the reference — and made every t()-animated cart
-    // nondeterministic run-to-run.
+    // time()/t():
+    //  * TRACE/TEST mode (Z8_TEST_SEED set): advance by the stepped frame
+    //    time — deterministic run-to-run, required for golden traces.
+    //  * SHIP path: advance by the WALL CLOCK. PICO-8's scheduler keeps
+    //    _update at 60/sec real-time by skipping _draw when a cart runs
+    //    heavy, so its update-counted t() stays ~= real time. Our MiSTer
+    //    loop instead SLIPS (one step per presented frame, no catch-up),
+    //    so frame-stepped time would slow down with the frame rate —
+    //    2026-07-19 regression: Virtua Racing (sub-60 on the A9) ran in
+    //    slow motion with slowed cart-sequenced music. Wall clock restores
+    //    the reference's OBSERVABLE pacing until the loop gains proper
+    //    update catch-up + draw skip.
     if (!m_in_pause)
-        m_time += (double)seconds;
+    {
+        if (m_time_frame_stepped)
+            m_time += (double)seconds;
+        else
+        {
+            auto now_ = std::chrono::steady_clock::now();
+            if (m_wall_last.time_since_epoch().count() != 0)
+            {
+                double dt_ = std::chrono::duration<double>(now_ - m_wall_last).count();
+                // clamp pathological gaps (debugger stalls, suspend)
+                if (dt_ < 0.0) dt_ = 0.0;
+                if (dt_ > 0.25) dt_ = 0.25;
+                m_time += dt_;
+            }
+            m_wall_last = now_;
+        }
+    }
 
     if (m_exit_requested)
     {
