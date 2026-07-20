@@ -156,7 +156,9 @@ function rnd_one_arg(c)
         if #c==0 then
             return nil
         end
-        return c[flr(__rnd(#c))+1]
+        -- measured pico-8 behavior: index = (prng_a >> 8) % #c after one
+        -- update (NOT flr(rnd(#c)) -- that reads a different bit slice)
+        return c[__rndi(#c)+1]
     end
     return __rnd(c)
 end
@@ -327,7 +329,50 @@ function load(arg, breadcrumb, params)
         end
     end
     if success then
-        print('ok')
+        -- NOTE: removed `print('ok')` (originally at this position).
+        -- The BBS-era visual feedback flashed pink "ok" text in the
+        -- framebuffer right before the yield. Previously (pre-yield-
+        -- forever, commit 5ae97fd) the parent cart's _draw ran after
+        -- load() returned and immediately covered the "ok" — invisible
+        -- to users. With yield-forever, the parent's _draw never runs,
+        -- so the "ok" stays in the framebuffer until the new cart's
+        -- first _draw. Carts that cls() early (oblivion_eve, POOM) hid
+        -- the flash; carts that don't (Virtua Racing track loads) show
+        -- it as a one-frame pink "ok" flash on cart switch. No cart
+        -- depends on this output, so removing is safe.
+        -- Cart switched. PICO-8 doesn't return execution to the
+        -- caller after a successful load() — the current cart's
+        -- coroutine is abandoned and the new cart starts. Try to yield
+        -- forever to match.
+        --
+        -- TWO call-site contexts to handle correctly:
+        --
+        -- (a) Cart code path (parent cart's _update60 calls load()):
+        --     we're inside __z8_loop coroutine. yield() suspends the
+        --     orphan; next __z8_tick coresumes the NEW __z8_loop
+        --     (sub-cart). Without this, the parent's NEXT LINE runs —
+        --     e.g., oblivion_eve's fallback `load("#"..e, ...)` after
+        --     a successful `load(e..".p8", ...)` — pushing a SECOND
+        --     breadcrumb. Each Return-to-Menu pop only removes one,
+        --     so the stack accumulates and the entry lingers on the
+        --     title screen. (Diagnosed via pico8.log 2026-05-21.)
+        --
+        -- (b) Menuitem callback path (cart's pause-menu menuitem fn
+        --     calls load(), e.g., POOM's "main menu" → load(title_cart)):
+        --     the callback is invoked from __z8_pause_menu() which is
+        --     called directly from __z8_tick — NOT via coresume — so
+        --     we're on the main thread. yield() from main thread raises
+        --     "attempt to yield from outside a coroutine"; pcall catches
+        --     the error and we fall through to return true. This is
+        --     correct because in menuitem context the callback's
+        --     continuation is just menu-UI cleanup; the cart has
+        --     already switched (private_load created the new __z8_loop)
+        --     and the next __z8_tick will resume it as soon as the
+        --     menu is closed.
+        --
+        -- Lua GC eventually collects the suspended orphan since
+        -- __z8_loop no longer references it.
+        pcall(function() while true do yield() end end)
         return true
     else
         color(14)
@@ -514,14 +559,14 @@ function __z8_tick()
         _update_buttons()
         if not __z8_pause_menu() then
             __mask_buttons()
-            -- Restore palette state captured at pause entry — see
-            -- __z8_enter_pause for rationale (AW pink-sky-on-unpause bug).
-            local sp = __z8_menu.saved_pal
-            if sp then
-                poke4(0x5f00, sp[1]) poke4(0x5f04, sp[2]) poke4(0x5f08, sp[3]) poke4(0x5f0c, sp[4])
-                poke4(0x5f10, sp[5]) poke4(0x5f14, sp[6]) poke4(0x5f18, sp[7]) poke4(0x5f1c, sp[8])
-                poke4(0x5f60, sp[9]) poke4(0x5f64, sp[10]) poke4(0x5f68, sp[11]) poke4(0x5f6c, sp[12])
-                __z8_menu.saved_pal = nil
+            -- Restore the draw state captured at pause entry — see
+            -- __z8_enter_pause for rationale. Screen/raster palettes are
+            -- intentionally NOT restored (menuitem palette picks persist).
+            local sd = __z8_menu.saved_draw
+            if sd then
+                poke4(0x5f00, sd[1]) poke4(0x5f04, sd[2]) poke4(0x5f08, sd[3]) poke4(0x5f0c, sd[4])
+                poke4(0x5f20, sd[5]) poke4(0x5f24, sd[6]) poke4(0x5f28, sd[7]) poke4(0x5f31, sd[8])
+                __z8_menu.saved_draw = nil
             end
             __z8_paused = false
         end
@@ -605,17 +650,30 @@ end
 
 function __z8_enter_pause()
     __mask_buttons()
-    -- Snapshot palette state so the pause menu's pal() reset on line 656
-    -- doesn't permanently clobber the cart's palette mapping. AW (Another
-    -- World) sets screen_palette[N] = sky_blue at scene transitions only;
-    -- without this save/restore, after unpause the sky reverts to default
-    -- (pink for N=14) and stays wrong until the next scene change.
-    -- Captures: 0x5f00-0x5f1f (draw + screen palette) and 0x5f60-0x5f6f
-    -- (raster palette). 48 bytes = 12 fix32 slots.
-    __z8_menu.saved_pal = {
-        peek4(0x5f00), peek4(0x5f04), peek4(0x5f08), peek4(0x5f0c),
-        peek4(0x5f10), peek4(0x5f14), peek4(0x5f18), peek4(0x5f1c),
-        peek4(0x5f60), peek4(0x5f64), peek4(0x5f68), peek4(0x5f6c),
+    -- Snapshot every piece of DRAW STATE the pause menu disturbs while
+    -- open (draw palette + transparency via its per-frame identity reset;
+    -- clip/color/text-cursor/camera/fillp via their bare resets) so
+    -- unpause returns the cart EXACTLY as it was. Carts that set
+    -- camera()/clip() once per room (not every frame in _draw) would
+    -- otherwise resume with reset state and appear teleported to a
+    -- different area (2026-07-20 Roco Cat pause/unpause report).
+    --
+    -- The SCREEN palette (0x5f10) and raster palette (0x5f60) are
+    -- deliberately NOT captured or restored, and the menu no longer
+    -- resets them (draw-palette-only reset in __z8_pause_menu, replacing
+    -- the old bare pal()): the menu displays through the cart's live
+    -- palette like the reference, and palette changes made by cart
+    -- menuitem() callbacks (e.g. Roco Cat's pico/orange/bubble/green t
+    -- options) persist after unpause instead of being clobbered by the
+    -- old entry-snapshot restore. The AW pink-sky case this snapshot was
+    -- originally added for stays fixed — its screen palette is now simply
+    -- never touched while paused.
+    __z8_menu.saved_draw = {
+        peek4(0x5f00), peek4(0x5f04), peek4(0x5f08), peek4(0x5f0c), -- draw palette + palt
+        peek4(0x5f20),                                              -- clip rect
+        peek4(0x5f24),                                              -- color + text cursor
+        peek4(0x5f28),                                              -- camera
+        peek4(0x5f31),                                              -- fill pattern
     }
     __z8_paused = true
     __z8_menu.cursor = 0
@@ -677,7 +735,13 @@ function __z8_pause_menu()
         cursor = __z8_menu.cursor
     end
 
-    clip() camera() pal() color() fillp()
+    clip() camera() color() fillp()
+    -- Draw-palette-only reset for the menu's own drawing — NOT bare pal(),
+    -- which would also wipe the cart's SCREEN + raster palettes every menu
+    -- frame (killing menuitem palette picks and the cart's live palette).
+    -- All of this is restored from __z8_menu.saved_draw on unpause.
+    for i=0,15 do __pal(i,i,0) end
+    palt()
 
     local px, py, sx, sy = 24, 56 - #entries*4, 79, 16 + #entries*8
     if __z8_menu.inquitmsg != nil then

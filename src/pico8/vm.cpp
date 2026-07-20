@@ -499,23 +499,28 @@ bool vm::step(float seconds)
     //    slow motion with slowed cart-sequenced music. Wall clock restores
     //    the reference's OBSERVABLE pacing until the loop gains proper
     //    update catch-up + draw skip.
-    if (!m_in_pause)
+    if (m_time_frame_stepped)
     {
-        if (m_time_frame_stepped)
+        if (!m_in_pause)
             m_time += (double)seconds;
-        else
+    }
+    else
+    {
+        auto now_ = std::chrono::steady_clock::now();
+        if (!m_in_pause && m_wall_last.time_since_epoch().count() != 0)
         {
-            auto now_ = std::chrono::steady_clock::now();
-            if (m_wall_last.time_since_epoch().count() != 0)
-            {
-                double dt_ = std::chrono::duration<double>(now_ - m_wall_last).count();
-                // clamp pathological gaps (debugger stalls, suspend)
-                if (dt_ < 0.0) dt_ = 0.0;
-                if (dt_ > 0.25) dt_ = 0.25;
-                m_time += dt_;
-            }
-            m_wall_last = now_;
+            double dt_ = std::chrono::duration<double>(now_ - m_wall_last).count();
+            // clamp pathological gaps (debugger stalls, suspend)
+            if (dt_ < 0.0) dt_ = 0.0;
+            if (dt_ > 0.25) dt_ = 0.25;
+            m_time += dt_;
         }
+        // Refresh EVERY step, including while paused. If m_wall_last were
+        // only updated outside pause, the first post-unpause step would
+        // span the whole pause and inject a (clamped) +0.25s t() jump —
+        // carts pacing motion off t() deltas teleport on unpause
+        // (2026-07-20 Roco Cat report).
+        m_wall_last = now_;
     }
 
     if (m_exit_requested)
