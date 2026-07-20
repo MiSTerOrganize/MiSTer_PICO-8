@@ -115,11 +115,19 @@ jobs:
             git reset --hard origin/main
             cp /tmp/ci-binary/PICO-8 games/PICO-8/PICO-8
             chmod +x games/PICO-8/PICO-8
-            if git diff --quiet games/PICO-8/PICO-8; then
-              echo "ARM binary unchanged after sync — nothing to commit."
+            # Keep the SHIPPED bios in lockstep with the source bios.
+            # (2026-07-20 incident: games/PICO-8/bios.p8 sat frozen at its
+            # May-13 manual sync while src/pico8/bios.p8 accumulated the
+            # multicart yield-forever fix, print('ok') removal, and the
+            # rnd(table) fix — update_all shipped the stale copy to every
+            # device. The shipped file is a pure copy of src/pico8/bios.p8;
+            # never edit it directly.)
+            cp src/pico8/bios.p8 games/PICO-8/bios.p8
+            if git diff --quiet games/PICO-8/PICO-8 games/PICO-8/bios.p8; then
+              echo "ARM binary + bios unchanged after sync — nothing to commit."
               break
             fi
-            git add games/PICO-8/PICO-8
+            git add games/PICO-8/PICO-8 games/PICO-8/bios.p8
             git commit -m "CI: rebuild ARM binary for ${{ github.sha }}"
             if git push; then
               echo "Push succeeded on attempt $i."
