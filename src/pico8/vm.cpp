@@ -645,15 +645,6 @@ bool vm::step(float seconds)
 
 void vm::button(int player, int index, int state)
 {
-    // Edge-trigger diagnostic for press-X loop investigation.
-    // Logs only on state transitions, not per-frame holds.
-    static int last_state[4][8] = {{0}};
-    if (player < 4 && index < 8 && state != last_state[player][index]) {
-        fprintf(stderr, "[input] p%d btn%d -> %d (was %d)\n",
-                player, index, state, last_state[player][index]);
-        fflush(stderr);
-        last_state[player][index] = state;
-    }
     m_state.buttons[1][player * 8 + index] += state;
 }
 
