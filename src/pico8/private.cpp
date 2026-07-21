@@ -323,15 +323,5 @@ void vm::private_set_pause(bool pause)
     m_in_pause = pause;
 }
 
-bool vm::private_skip_draw()
-{
-    return m_skip_draw;
-}
-
-void vm::private_set_scheduled(bool scheduled)
-{
-    m_cart_scheduled = scheduled;
-}
-
 } // namespace z8::pico8
 

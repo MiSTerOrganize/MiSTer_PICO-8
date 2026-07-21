@@ -380,8 +380,6 @@ public:
             { "time", bind<&vm::api_time>() },
 
             { "__buttons",  bind<&vm::private_buttons>() },
-            { "__skip_draw", bind<&vm::private_skip_draw>() },
-            { "__set_scheduled", bind<&vm::private_set_scheduled>() },
             { "__mask_buttons",  bind<&vm::private_mask_buttons>() },
             { "__set_pause",  bind<&vm::private_set_pause>() },
             { "__end_render",  bind<&vm::private_end_render>() },
@@ -399,8 +397,6 @@ private:
     uint8_t get_pixel(int16_t x, int16_t y) const;
     uint8_t pixel(int x, int y, u4mat2<128, 128> const& screen) const;
     void private_set_pause(bool pause);
-    bool private_skip_draw();
-    void private_set_scheduled(bool scheduled);
     void private_end_render();
 
     uint32_t to_color_bits(opt<fix32> c);
@@ -469,8 +465,6 @@ private:
     std::vector<std::shared_ptr<u4mat2<128, 128>>> m_multiscreens;
 
     bool m_in_pause = false;
-    bool m_skip_draw = false;
-    bool m_cart_scheduled = false;
 
     // PCM streaming channel (serial(0x808)). Carts doing custom audio mixing
     // (Another World's pure-Lua 4-channel mixer is the only one in our test
@@ -494,17 +488,6 @@ private:
 public:
     bool is_paused() const { return m_in_pause; }
     void close_pause() { private_set_pause(false); }
-    // Catch-up scheduling (MiSTer frame loop): when the platform is behind
-    // real time, it runs extra step()s with skip_draw set — the BIOS glue
-    // then runs _update but skips _draw, matching PICO-8's own
-    // keep-updates-at-speed / drop-draws-under-load scheduler. Never set
-    // in trace mode (goldens are strict one-update-one-draw per frame).
-    void set_skip_draw(bool skip) { m_skip_draw = skip; }
-    // True only for carts running the BIOS _update/_draw scheduler (the
-    // glue sets it). Manual-loop carts never reach the glue, keeping this
-    // false — catch-up must NOT run extra steps for them (each extra step
-    // is a full loop iteration incl. the cart's own rendering).
-    bool is_scheduled_cart() const { return m_cart_scheduled; }
 
     // MiSTer Frontier save states (Phase 1A: m_ram snapshot only;
     // Lua VM state via eris will be added in Phase 1B).

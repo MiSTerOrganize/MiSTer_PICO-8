@@ -469,11 +469,6 @@ bool vm::private_load(std::string name, opt<std::string> breadcrumb, opt<std::st
 {
     save(true);
 
-    // New cart, new scheduler state: the incoming cart's glue re-asserts
-    // this iff it uses _update/_draw. A manual-loop cart loaded after a
-    // scheduled one must not inherit catch-up.
-    m_cart_scheduled = false;
-
     std::string previous_cart = m_cart.get_filename();
 
     name = get_path_active_dir() + "/" + name;

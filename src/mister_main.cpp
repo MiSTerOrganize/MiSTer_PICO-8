@@ -782,27 +782,7 @@ int main(int argc, char **argv)
         }
         next_frame += frame_ns;
 
-        // ── Update catch-up (heavy-cart slow-motion fix, 2026-07-21) ──
-        // PICO-8's scheduler keeps _update at 60/sec REAL TIME and skips
-        // _draw when a cart can't render fast enough. Our loop used to
-        // slip instead (one update per presented frame, debt forgiven
-        // below) — so a cart rendering at 40fps also RAN at 2/3 speed
-        // (Virtua Racing / Pico Sonic user reports). Now: each full frame
-        // of accumulated debt is consumed by an extra step() with
-        // skip_draw set (BIOS glue runs _update, skips _draw), capped at
-        // 3 per presented frame so an update-bound cart degrades
-        // gracefully instead of spiraling. Trace mode stays strictly
-        // one-update-one-draw (goldens unchanged).
-        int catchup = 0;
-        if (!g_test_trace && g_vm->is_scheduled_cart()) {
-            uint64_t nowc = get_time_ns();
-            while (catchup < 3 && nowc > next_frame + frame_ns) {
-                ++catchup;
-                next_frame += frame_ns;
-            }
-        }
-
-        // Debt beyond what catch-up absorbed is forgiven (don't spiral)
+        // Don't fall more than 2 frames behind
         uint64_t actual = get_time_ns();
         if (actual > next_frame + frame_ns * 2)
             next_frame = actual;
@@ -881,13 +861,6 @@ int main(int argc, char **argv)
                 }
             }
         }
-
-        // Catch-up ticks: _update runs, _draw is skipped (see above).
-        for (int s = 0; s < catchup && g_vm->is_running(); ++s) {
-            g_vm->set_skip_draw(true);
-            g_vm->step(1.0f / target_fps);
-        }
-        g_vm->set_skip_draw(false);
 
         g_vm->step(1.0f / target_fps);
 

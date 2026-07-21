@@ -464,10 +464,6 @@ function __z8_run_cart(cart_code)
     local glue_code = [[--
         if (_init) _init()
         if _update or _update60 or _draw then
-            -- tell the platform this cart runs the scheduler (enables
-            -- update catch-up with draw-skip; manual-loop carts never
-            -- reach this line and stay opted out)
-            __set_scheduled(true)
             while true do
                 if _update60 then
                     _update_buttons()
@@ -489,18 +485,11 @@ function __z8_run_cart(cart_code)
                 end
                 if _draw then
                     holdframe()
-                    -- Catch-up scheduling: when the platform is running
-                    -- behind real time it flags __skip_draw() for the
-                    -- catch-up ticks -- _update keeps its 60/sec pace,
-                    -- _draw is skipped (PICO-8's own drop-draws-under-load
-                    -- behavior). The presented tick always draws.
-                    if not __skip_draw() then
-                        _mainloop=_draw
-                        _set_mainloop_exists(true)
-                        _draw()
-                        _mainloop=nil
-                        _set_mainloop_exists(false)
-                    end
+                    _mainloop=_draw
+                    _set_mainloop_exists(true)
+                    _draw()
+                    _mainloop=nil
+                    _set_mainloop_exists(false)
                     flip()
                 else
                     yield()
