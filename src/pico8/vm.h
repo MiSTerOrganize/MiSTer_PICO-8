@@ -275,7 +275,7 @@ private:
     tup<uint8_t, uint8_t, uint8_t, uint8_t> api_clip(int16_t x, int16_t y,
                                                      int16_t w, opt<int16_t> h, bool intersect);
     void api_cls(uint8_t c);
-    uint8_t api_color(opt<uint8_t> c);
+    uint8_t api_color(opt<fix32> c);
     fix32 api_fillp(fix32 fillp);
     opt<var<int16_t, bool>> api_fget(opt<int16_t> n, opt<int16_t> f);
     void api_fset(opt<int16_t> n, opt<int16_t> f, opt<bool> b);

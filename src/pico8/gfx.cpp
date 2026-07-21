@@ -1001,11 +1001,23 @@ void vm::api_cls(uint8_t c)
     ds.clip.x2 = ds.clip.y2 = 128;
 }
 
-uint8_t vm::api_color(opt<uint8_t> c)
+uint8_t vm::api_color(opt<fix32> c)
 {
-    uint8_t col = c ? *c : 6;
-    std::swap(col, m_ram.draw_state.pen);
-    return col;
+    // color() must take the FULL fix32 value, not a truncated uint8_t:
+    // with integrated-fillp mode (0x5f34=1) + the observe bit 0x1000.0000,
+    // a colour like color(0x1021.a5a5) also carries a fill pattern that
+    // must be captured -- exactly like a draw-call colour argument.
+    // Measured on the reference 2026-07-21 (m_fillp_int conformance cart):
+    // color()-then-draw dithers identically to draw-with-arg; the old
+    // uint8_t binding silently dropped the pattern bits, which is why
+    // Virtua Racing's cliffs/bridge (colours set via color()) rendered
+    // SOLID on our engine but DITHERED on the reference.
+    uint8_t prev = m_ram.draw_state.pen;
+    if (c)
+        to_color_bits(c);   // sets pen + captures pattern when observed
+    else
+        m_ram.draw_state.pen = 6;
+    return prev;
 }
 
 fix32 vm::api_fillp(fix32 fillp)
