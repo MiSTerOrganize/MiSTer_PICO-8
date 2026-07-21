@@ -90,9 +90,20 @@ bool cart::load_png(std::string const &filename)
 
     u8vec4 const *pixels = (u8vec4 const *)image.data();
 
-    // Retrieve cartridge data from lower image bits
+    // Retrieve cartridge data from lower image bits. The image carries
+    // width*height stegano bytes (32,800 for the standard 160x205 cart);
+    // the buffer is sized for set_bin (64K rom + 5 version bytes) and the
+    // tail beyond the image's capacity stays ZERO. The old loop read
+    // pixels[n] across the WHOLE buffer — a ~131KB out-of-bounds heap
+    // read on EVERY png cart load (ASan-pinned 2026-07-21; surfaced as a
+    // SIGBUS on "Oust (Demo)" when a heap-layout shift left the decode
+    // buffer flush against an unmapped page). The garbage only ever
+    // landed in rom bytes >= 0x8020, which no cart can observe, so
+    // zeroing them changes no cart behavior — it just makes it
+    // deterministic and in-bounds.
     std::vector<uint8_t> bytes(sizeof(m_rom) + 5);
-    for (int n = 0; n < (int)bytes.size(); ++n)
+    size_t const navail = std::min(bytes.size(), (size_t)width * height);
+    for (size_t n = 0; n < navail; ++n)
     {
         u8vec4 p = pixels[n] * 64;
         bytes[n] = p.a + p.r / 4 + p.g / 16 + p.b / 64;

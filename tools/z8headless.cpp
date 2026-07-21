@@ -163,7 +163,7 @@ int main(int argc, char **argv)
         if (verbose && fr < 8) fprintf(stderr, "[z8headless] frame %d\n", fr);
         if (alarm_secs) alarm(alarm_secs); // re-arm each frame; fires if one step() hangs
         vm->step(1.0f / 60.0f);
-        vm->render(fb.data());
+        vm->render(fb.data(), fb.size());
 
         if (tracef) {
             // Video: CRC32 over R,G,B of the native 128x128 render output

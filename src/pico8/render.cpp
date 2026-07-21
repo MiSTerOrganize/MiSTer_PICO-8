@@ -39,6 +39,11 @@ void vm::private_end_render()
 
 void vm::render(lol::u8vec4 *screen) const
 {
+    render(screen, SIZE_MAX);
+}
+
+void vm::render(lol::u8vec4 *screen, size_t max_pixels) const
+{
     // Cannot use a 256-value LUT because data access will be
     // very random due to rotation, flip, stretch etc.
     lol::u8vec4 lut[128 + 16];
@@ -48,25 +53,37 @@ void vm::render(lol::u8vec4 *screen) const
         lut[128 + c] = palette::get8(16 + c);
     }
 
+    // Multiscreen carts (_map_display) interleave extra 128x128 screens
+    // into the output rows, emitting 128*msx x 128*msy pixels total. If
+    // the caller's buffer only holds a single screen, fall back to
+    // rendering screen 0 alone — the old unbounded write overflowed the
+    // caller's heap buffer on EVERY multiscreen cart (both the MiSTer
+    // present path and z8headless allocate exactly 128x128; ASan-pinned
+    // 2026-07-21 via "Oust (Demo)", which crashed SIGBUS when a heap
+    // layout shift put the buffer against an unmapped page).
+    int msx = m_multiscreens_x, msy = m_multiscreens_y;
+    if ((size_t)(128 * msx) * (size_t)(128 * msy) > max_pixels)
+        msx = msy = 1;
+
     for (int y = 0; y < 128; ++y)
     {
         for (int x = 0; x < 128; ++x)
             *screen++ = lut[pixel(x, y, get_front_screen())];
-        if (m_multiscreens_x > 1)
+        if (msx > 1)
         {
-            for (int sx = 1; sx < m_multiscreens_x; ++sx)
+            for (int sx = 1; sx < msx; ++sx)
                 for (int x = 0; x < 128; ++x)
                     *screen++ = lut[pixel(x, y, *m_multiscreens[sx - 1])];
         }
     }
-    if (m_multiscreens_y > 1)
+    if (msy > 1)
     {
-        for (int sy = 1; sy < m_multiscreens_y; ++sy)
+        for (int sy = 1; sy < msy; ++sy)
             for (int y = 0; y < 128; ++y)
             {
-                for (int sx = 0; sx < m_multiscreens_x; ++sx)
+                for (int sx = 0; sx < msx; ++sx)
                     for (int x = 0; x < 128; ++x)
-                        *screen++ = lut[pixel(x, y, *m_multiscreens[sx + sy * m_multiscreens_x - 1])];
+                        *screen++ = lut[pixel(x, y, *m_multiscreens[sx + sy * msx - 1])];
             }
     }
 }

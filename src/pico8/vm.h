@@ -154,6 +154,12 @@ public:
     virtual int get_ansi_color(uint8_t c) const override;
 
     virtual void render(lol::u8vec4 *screen) const override;
+    // Bounds-aware overload: multiscreen carts (_map_display) make render()
+    // emit 128*msx x 128*msy pixels; a caller whose buffer only holds a
+    // single 128x128 screen passes its size here and gets screen 0 only
+    // (the old unbounded write was a heap overflow on every multiscreen
+    // cart — ASan-pinned 2026-07-21 via "Oust (Demo)").
+    void render(lol::u8vec4 *screen, size_t max_pixels) const;
 
     virtual void get_audio(void* inbuffer, size_t in_bytes) override;
 

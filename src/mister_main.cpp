@@ -865,7 +865,7 @@ int main(int argc, char **argv)
         g_vm->step(1.0f / target_fps);
 
         // Render video
-        g_vm->render(rgba_buf);
+        g_vm->render(rgba_buf, (size_t)128 * 128);
 
         // ── Golden-master hash trace (-test) ─────────────────────────
         // Hash points mirror tools/z8headless.cpp exactly: video = CRC32
