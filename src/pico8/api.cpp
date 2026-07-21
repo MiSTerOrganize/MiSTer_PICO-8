@@ -46,7 +46,7 @@ std::unordered_set<std::string> api::functions =
     "rotl", "rotr", "tostr", "tonum", "srand", "rnd", "ord", "chr",
     "split", "sub", "inext", "select",
     // Implemented in the ZEPTO-8 VM
-    "run", "reload", "cstore", "dget", "dset", "peek", "peek2", "peek4",
+    "run", "reload", "reset", "cstore", "dget", "dset", "peek", "peek2", "peek4",
     "poke", "poke2", "poke4", "memcpy", "memset", "stat", "printh", "extcmd",
     "btn", "btnp", "cursor", "camera", "circ", "circfill",
     "clip", "cls", "color", "fillp", "fget", "fset", "line", "map", "mget",

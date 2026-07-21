@@ -388,6 +388,83 @@ void vm::private_init_ram()
     m_wall_last = {};
 }
 
+void vm::api_reset()
+{
+    // reset() — reset the draw state + hardware draw registers to their
+    // boot defaults. Byte semantics MEASURED on the reference binary
+    // (0.2.7a6 headless, 2026-07-21: poke marker patterns across
+    // 0x5f00..0x5f7f, call reset(), dump — two marker sets to separate
+    // "reset to value" from "untouched"):
+    //  * draw palette -> identity with transparency on colour 0 (0x10);
+    //    screen palette -> identity; clip -> full screen; pen -> 6;
+    //    camera/fillp/screen mode/mouse flags/preserve flags/audio fx/
+    //    btnp params/print attrs -> 0; memory mapping -> 00/60/20/80;
+    //    bitplane mask -> 0xff; raster mode+bits -> 0; raster palette ->
+    //    default gradient table.
+    //  * 0x5f24 (print_start_x) and 0x5f26-27 (text cursor) are LEFT
+    //    UNTOUCHED (measured: marker bytes survive).
+    //  * PRNG (0x5f44-4b) is RESEEDED from time entropy — measured
+    //    marker-independent (two different poked states -> same post-reset
+    //    state within a run) but varying across runs, i.e. the boot
+    //    seeding policy. Trace mode (Z8_TEST_SEED) uses the fixed seed so
+    //    golden traces stay deterministic.
+    // First hit: Run Run Rudolph's init_tutorial() calls reset(); with no
+    // implementation the cart died on "attempt to call a nil value" and
+    // the title froze (2026-07-20 hardware report).
+    auto &ds = m_ram.draw_state;
+    auto &hw = m_ram.hw_state;
+
+    for (int i = 0; i < 16; ++i)
+    {
+        ds.draw_palette[i] = i | (i ? 0x00 : 0x10);
+        ds.screen_palette[i] = i;
+    }
+    ds.clip.x1 = ds.clip.y1 = 0;
+    ds.clip.x2 = ds.clip.y2 = 128;
+    ds.pen = 6;
+    ds.camera.x = ds.camera.y = 0;
+    ds.screen_mode = 0;
+    ::memset(&ds.mouse_flags, 0, sizeof(ds.mouse_flags));
+    ::memset(&ds.preserve_flags, 0, sizeof(ds.preserve_flags));
+    ds.pause_music = 0;
+    ds.pause_flag = 0;
+    ds.fillp[0] = ds.fillp[1] = 0;
+    ds.fillp_trans = 0;
+    ds.fillp_flag = 0;
+    ds.polyline_flag = 0;
+    ::memset(&ds.misc_features, 0, sizeof(ds.misc_features));
+    ds.disable_editor_reload = 0;
+    ds.tline.mask.x = ds.tline.mask.y = 0;
+    ds.tline.offset.x = ds.tline.offset.y = 0;
+    ds.polyline.x = ds.polyline.y = 0;
+
+    hw.half_rate = hw.reverb = hw.distort = hw.lowpass = 0;
+    ::memset(hw.btn_state, 0, sizeof(hw.btn_state));
+    hw.mapping_spritesheet = 0x00;
+    hw.mapping_screen = 0x60;
+    hw.mapping_map = 0x20;
+    hw.mapping_map_width = 0x80;
+    ::memset(&hw.print_state, 0, sizeof(hw.print_state));
+    hw.btnp_delay = hw.btnp_rate = 0;
+    hw.bit_mask = 0xff;
+    hw.raster.mode = 0;
+    static uint8_t const default_raster[16] =
+    {
+        0x00, 0x01, 0x12, 0x13, 0x24, 0x15, 0xd6, 0x67,
+        0x48, 0x49, 0x9a, 0x3b, 0xdc, 0x5d, 0x8e, 0xef,
+    };
+    ::memcpy(hw.raster.palette, default_raster, sizeof(default_raster));
+    hw.raster.bits.reset();
+
+    if (const char *ts = std::getenv("Z8_TEST_SEED")) {
+        int32_t s = std::atoi(ts);
+        api_srand(fix32::frombits(s ? s : 0x5EED));
+    } else {
+        auto now = std::chrono::high_resolution_clock::now();
+        api_srand(fix32::frombits((int32_t)now.time_since_epoch().count()));
+    }
+}
+
 bool vm::private_load(std::string name, opt<std::string> breadcrumb, opt<std::string> params)
 {
     save(true);

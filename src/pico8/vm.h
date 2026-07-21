@@ -245,6 +245,7 @@ private:
     fix32 api_private_rnd(opt<fix32>);
     fix32 api_private_rnd_index(int16_t count);
     void api_srand(fix32);
+    void api_reset();
     var<bool, int16_t, fix32, std::string, std::nullptr_t> api_stat(int16_t id);
     void api_printh(rich_string str, opt<std::string> filename, opt<bool> overwrite);
     void api_extcmd(std::string cmdline);
@@ -327,6 +328,7 @@ public:
             { "__rnd",    bind<&vm::api_private_rnd>() },
             { "__rndi",   bind<&vm::api_private_rnd_index>() },
             { "srand",    bind<&vm::api_srand>() },
+            { "reset",    bind<&vm::api_reset>() },
             { "stat",     bind<&vm::api_stat>() },
             { "printh",   bind<&vm::api_printh>() },
             { "extcmd",   bind<&vm::api_extcmd>() },
