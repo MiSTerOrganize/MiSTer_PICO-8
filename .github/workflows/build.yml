@@ -90,6 +90,13 @@ jobs:
           # state main is in.
           mkdir -p /tmp/ci-binary
           cp build-arm/PICO-8 /tmp/ci-binary/PICO-8
+          # Snapshot the bios FROM THIS BUILD'S COMMIT alongside the binary.
+          # (2026-07-21 race: the commit-back loop resets to origin/main,
+          # which may have MOVED past this build's commit -- syncing the
+          # bios from the post-reset tree shipped a mismatched pair:
+          # commit d638496 carried the 1f23bc6 binary with the 0d07d88
+          # scheduler bios. Binary + bios must come from the same commit.)
+          cp src/pico8/bios.p8 /tmp/ci-binary/bios.p8
           git config user.email "ci@misterorganize"
           git config user.name "MiSTer Organize CI"
           # Diagnostic-marker gate (added 2026-05-25 per feedback_no_diagnostic_binaries_in_db.md):
@@ -115,14 +122,14 @@ jobs:
             git reset --hard origin/main
             cp /tmp/ci-binary/PICO-8 games/PICO-8/PICO-8
             chmod +x games/PICO-8/PICO-8
-            # Keep the SHIPPED bios in lockstep with the source bios.
+            # Keep the SHIPPED bios in lockstep with THIS BUILD'S source bios.
             # (2026-07-20 incident: games/PICO-8/bios.p8 sat frozen at its
             # May-13 manual sync while src/pico8/bios.p8 accumulated the
             # multicart yield-forever fix, print('ok') removal, and the
             # rnd(table) fix — update_all shipped the stale copy to every
             # device. The shipped file is a pure copy of src/pico8/bios.p8;
             # never edit it directly.)
-            cp src/pico8/bios.p8 games/PICO-8/bios.p8
+            cp /tmp/ci-binary/bios.p8 games/PICO-8/bios.p8
             if git diff --quiet games/PICO-8/PICO-8 games/PICO-8/bios.p8; then
               echo "ARM binary + bios unchanged after sync — nothing to commit."
               break
