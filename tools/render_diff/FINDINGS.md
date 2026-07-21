@@ -367,3 +367,37 @@ this harness cannot separate the two for real-time-only reference runs. VERDICT:
 corruption class (fix32/line 3D geometry) appears swept by the July fixes (line raster,
 trig, oval, sspr); awaiting the user's hardware eyeball to close. If hardware still shows
 corruption, next step: savestate-near-corruption + frame-step compare per the methodology doc.
+
+## 2026-07-21: reset() implemented + TWO latent memory-safety bugs + VR bridge differential
+User report: Run Run Rudolph froze at title with tutorial ON. Cause: init_tutorial()
+calls the built-in reset() -- zepto8 had NO reset() at all (not implemented, bound,
+or stubbed) -> "attempt to call a nil value" -> cart coroutine dead -> frozen title.
+Implemented from a reference marker-poke probe (m_reset conformance cart, suite 23/23):
+resets 0x5f00..0x5f7f draw state EXCEPT 0x5f24 + cursor 0x5f26-27 (measured untouched);
+PRNG reseeded from entropy (Z8_TEST_SEED-deterministic in trace mode). Corpus scan of
+built-in-reset() callers: 18 library carts were silently dying wherever that path fired.
+
+The post-fix corpus scan then caught "Oust (Demo)" SIGBUS (heap-layout shift from the
+new sandbox key) -> ASan pinned TWO PRE-EXISTING bugs: (1) cart::load_png read the
+whole 64K+5 set_bin buffer from a 32,800-pixel image = ~131KB OOB heap READ on every
+.p8.png load (garbage only ever landed in rom >= 0x8020, unobservable; now clamped +
+zero-filled); (2) vm::render honored multiscreen (_map_display) by writing 128*msx x
+128*msy pixels into callers' 128x128 buffers = heap WRITE overflow on every multiscreen
+cart, on hardware too (render() now bounds-aware; single-screen buffer -> screen 0 only).
+Corpus after: 3,302/3,302 DET, 0 crashes. Goldens re-archived (23 changed: boot-reachable
+reset() callers + Snak/CluePix _ENV-layout pair).
+
+## 2026-07-21: VR yellow-bridge differential -- headless engine renders the section CLEAN
+User hardware retest: track corruption persists "before the yellow bridge" (big forest,
+first track). The July race differential only covered f200-320 (~2-5s); the bridge is
+23-42s in -- never reached. New harness: input-script through title menu (O, O; NOTE
+buttons must be RELEASED after starting the race -- the load() button-mask eats a
+held button forever, headless-only artifact), then the player's control() swapped for
+the cart's own NPC AI driver in a throwaway copy -> full clean AI lap. RESULT: the
+whole lap incl. the canyon approach + yellow truss bridge renders COHERENT geometry
+on x86 headless at the exact race-clock times of the user's corruption photos.
+=> The corruption is MiSTer-side only. Note: VR maps SECRET palette colors at _init
+(pal(14,128,1) / pal(15,131,1)) -- the photos' purple/white patchwork may be correct
+geometry in scrambled colors, not shattered vertices. NEXT: live DDR3 framebuffer
+capture on the MiSTer while the corruption is on screen (devmem dump of the ARM-written
+RGB565 buffer) to split engine-render-side vs present/FPGA-side.
