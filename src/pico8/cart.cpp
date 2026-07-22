@@ -833,9 +833,20 @@ bool cart::save_p8(std::string const &filename) const
         for (int j = 0; j < 64; j += 2)
         {
             int pitch = data[j] & 0x3f;
-            int instrument = ((data[j + 1] << 2) & 0x4) | (data[j] >> 6);
+            // Waveform digit = instrument | custom<<3 (digits 8-f are the
+            // custom-instrument flag in the .p8 text format). This
+            // serializer used to DROP the custom bit (bit 7 of the note's
+            // high byte) and instead leak it into the effect digit, where
+            // the loader ignores it -- so any cstore() round-trip of a
+            // cart stripped every custom flag. Virtua Racing packs track
+            // DATA into the sfx region of its data carts; one cstore save
+            // on the MiSTer (saves/PICO-8/vracing_0.p8, 2026-05-21)
+            // permanently corrupted 1231 notes and shattered the crest
+            // terrain on every later run (root-caused 2026-07-22).
+            int instrument = ((data[j + 1] << 2) & 0x4) | (data[j] >> 6)
+                           | ((data[j + 1] >> 4) & 0x8);
             int volume = (data[j + 1] >> 1) & 0x7;
-            int effect = (data[j + 1] >> 4) & 0xf;
+            int effect = (data[j + 1] >> 4) & 0x7;
             ret += std::format("{:02x}{:1x}{:1x}{:1x}", pitch, instrument, volume, effect);
         }
 
