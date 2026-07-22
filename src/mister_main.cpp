@@ -864,8 +864,20 @@ int main(int argc, char **argv)
 
         g_vm->step(1.0f / target_fps);
 
+        // Present ONLY completed frames. When a heavy scene exhausts the
+        // instruction budget, the cart coroutine is suspended mid-_draw;
+        // displaying that state ships a half-drawn frame (new sky + far
+        // geometry over the previous frame's near geometry = the Virtua
+        // Racing "shattered track", 2026-07-22). PICO-8 never shows a
+        // partial draw — over-budget carts just present late — so on a
+        // budget-yield tick we skip render+present and let the FPGA
+        // keepalive hold the last completed frame. Trace mode still
+        // hashes every step (determinism tool — goldens unchanged).
+        bool presentable = g_vm->last_tick_presentable();
+
         // Render video
-        g_vm->render(rgba_buf, (size_t)128 * 128);
+        if (presentable || g_test_trace)
+            g_vm->render(rgba_buf, (size_t)128 * 128);
 
         // ── Golden-master hash trace (-test) ─────────────────────────
         // Hash points mirror tools/z8headless.cpp exactly: video = CRC32
@@ -903,7 +915,11 @@ int main(int argc, char **argv)
             }
         }
 
-        if (have_native_video) {
+        if (!presentable) {
+            // Mid-_draw budget yield: hold the last completed frame
+            // (keepalive keeps the FPGA fed). Skipping render+present
+            // also returns this tick's CPU to the cart.
+        } else if (have_native_video) {
             // FPGA native path: write 128×128 RGBA8 → DDR3 as RGB565
             // The FPGA reader polls DDR3 and outputs scaled native video
             NativeVideoWriter_WriteFrame(rgba_buf, PICO8_W, PICO8_H);

@@ -243,7 +243,13 @@ void vm::instruction_hook(lua_State *l, lua_Debug *)
         lua_pop(l, 1);
 
         if (!is_main_thread)
+        {
+            // The cart coroutine is being suspended at an ARBITRARY point
+            // (possibly mid-_draw). Mark the tick non-presentable so the
+            // platform layer doesn't display a half-drawn framebuffer.
+            that->m_budget_yield = true;
             lua_yield(l, 0);
+        }
         if (!is_inside_loop)
         {
             // should only handle buttons if we are outside _draw or _update
@@ -609,6 +615,7 @@ bool vm::step(float seconds)
     }
 
     m_watchdog_instr = 0; // reset per-step runaway counter (watchdog, default off)
+    m_budget_yield = false; // assume frame boundary until the hook says otherwise
 
     bool ret = false;
     lua_getglobal(m_lua, "__z8_tick");

@@ -141,6 +141,15 @@ public:
         return api_time();
     };
 
+    // True when the last step() ended at a frame boundary (flip()/pause),
+    // false when it ended on an instruction-budget yield with the cart
+    // suspended mid-_update/_draw. PICO-8 never displays a partially
+    // drawn frame — an over-budget cart just runs late — so the platform
+    // layer must present ONLY when this is true (2026-07-22 Virtua
+    // Racing "shattered track": sustained over-budget scenes shipped
+    // mid-_draw framebuffers = whole-scene displaced plates).
+    bool last_tick_presentable() const { return !m_budget_yield; }
+
     virtual std::string const &get_code() const override;
     // Code after #include expansion (what the engine actually runs via
     // preprocess_code()). Used by the z8headless harness so the decode
@@ -527,6 +536,10 @@ private:
     bool m_time_frame_stepped = false;
     std::chrono::steady_clock::time_point m_wall_last {};
     int m_instructions = 0;
+    // Set by instruction_hook when it force-yields the cart coroutine on
+    // budget exhaustion; cleared at the top of each step(). See
+    // last_tick_presentable().
+    bool m_budget_yield = false;
     const int m_default_max_instructions = 300000;
     int m_max_instructions = m_default_max_instructions;
     uint64_t m_watchdog_max = 0; // 0 = off; diagnostic runaway-loop guard
