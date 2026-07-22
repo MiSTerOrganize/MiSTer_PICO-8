@@ -532,11 +532,28 @@ bool cart::load_p8(std::string const& filename)
             // We read unaligned data; must realign it if j is odd
             ins = (j & 1) ? ins & 0xfffff : ins >> 4;
 
-            m_rom.sfx[i].notes[j].key = (ins & 0x3f000) >> 12;
-            m_rom.sfx[i].notes[j].instrument = (ins & 0x700) >> 8;
-            m_rom.sfx[i].notes[j].volume = (ins & 0x70) >> 4;
-            m_rom.sfx[i].notes[j].effect = ins & 0x7;
-            m_rom.sfx[i].notes[j].custom = (ins & 0x800) >> 11;
+            uint8_t const key        = (ins & 0x3f000) >> 12;
+            uint8_t const instrument = (ins & 0x700) >> 8;
+            uint8_t const volume     = (ins & 0x70) >> 4;
+            uint8_t const effect     = ins & 0x7;
+            uint8_t const custom     = (ins & 0x800) >> 11;
+
+            // Serialize to PICO-8's canonical note layout with explicit
+            // byte writes (bits 0-5 key, 6-8 instrument, 9-11 volume,
+            // 12-14 effect, 15 custom). Writing through the note_t
+            // bitfields here silently LOST the custom bit on the arm32
+            // build (bitfield stores through the overlapping memory
+            // union miscompile there), so raw sfx bytes differed from
+            // x86/PICO-8 — corrupting any cart that packs DATA into the
+            // sfx region of a .p8 text cart and reads it back with
+            // peek() (Virtua Racing's track data -> "shattered track"
+            // on MiSTer only, 2026-07-22). Explicit bytes are ABI- and
+            // compiler-proof; the synth's bitfield READS are unaffected
+            // because this IS the layout both platforms read.
+            uint8_t *nb = reinterpret_cast<uint8_t *>(&m_rom.sfx[i].notes[j]);
+            nb[0] = uint8_t(key | (instrument << 6));
+            nb[1] = uint8_t((instrument >> 2) | (volume << 1)
+                            | (effect << 4) | (custom << 7));
         }
 
         m_rom.sfx[i].filters     = sfx[i * (4 + 32 * 5 / 2) + 0];
