@@ -117,6 +117,7 @@ jobs:
           # commit, push. Avoid `git pull --rebase` because the binary
           # merge conflict cannot be auto-resolved.
           PUSH_OK=0
+          NOTHING_TO_DO=0
           for i in 1 2 3 4 5; do
             git fetch origin main
             git reset --hard origin/main
@@ -132,6 +133,7 @@ jobs:
             cp /tmp/ci-binary/bios.p8 games/PICO-8/bios.p8
             if git diff --quiet games/PICO-8/PICO-8 games/PICO-8/bios.p8; then
               echo "ARM binary + bios unchanged after sync — nothing to commit."
+              NOTHING_TO_DO=1
               break
             fi
             git add games/PICO-8/PICO-8 games/PICO-8/bios.p8
@@ -144,6 +146,12 @@ jobs:
             echo "Push failed (attempt $i), resyncing and retrying..."
             sleep 2
           done
+          # Exhausting the loop used to leave the job GREEN with no binary on
+          # main -- a silently stale ship chain. Fail loudly instead.
+          if [ "$PUSH_OK" != "1" ] && [ "$NOTHING_TO_DO" != "1" ]; then
+            echo "::error::Binary commit-back failed after 5 attempts. The binary is still available as a workflow artifact; deploy manually or re-run."
+            exit 1
+          fi
           # Trigger MiSTer_Frontier DB rebuild on successful binary push so
           # db.json reflects the new hash promptly (prevents update_all hash-
           # mismatch failures in the window between binary push and daily cron).
