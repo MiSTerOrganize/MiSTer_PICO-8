@@ -775,16 +775,12 @@ function __z8_pause_menu()
         sy += 16
     end
     --rectfill(px - 1, py - 1, px + sx + 1, py + sy + 1, 0)
-    local palpause={0,0,0,0,0,0,1,1,0,1,1,0,0,0,0,1}
-    for y = py - 1, py + sy + 1 do
-        for x = px - 1, px + sx + 1 do
-            -- we use peek as it reads from screen memory, while pset will write to the
-            -- front buffer since we are paused
-            local v1 = peek(0x6000+flr(x/2) + 0x40 * y)
-            local v2 = x%2==0 and band(v1,0xf) or band(lshr(v1,4),0xf)
-            pset(x,y,palpause[v2%16+1])
-        end
-    end
+    -- Background darkening. This was a per-pixel Lua loop (peek + band/lshr +
+    -- pset for each of 4,182-7,462 pixels, EVERY frame the menu is open) which
+    -- cost ~25ms/frame on MiSTer's A9 and pinned the pause menu at ~40fps.
+    -- Moved into C++ as a byte-identical port -- same raw_peek, same
+    -- to_color_bits/set_pixel, same palpause LUT, same dimmed see-through look.
+    __z8_pause_darken(px - 1, py - 1, px + sx + 1, py + sy + 1)
 
     rect(px, py, px + sx, py + sy, 7)
     local bx, by = px + 5, py + 14

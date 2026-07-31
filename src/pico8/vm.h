@@ -300,6 +300,7 @@ private:
     var<int16_t, bool> api_palt(opt<int16_t> c, opt<bool> t);
     fix32 api_pget(int16_t x, int16_t y);
     void api_pset(int16_t x, int16_t y, opt<fix32> c);
+    void private_pause_darken(int16_t x0, int16_t y0, int16_t x1, int16_t y1);
     void api_rect(int16_t x0, int16_t y0, int16_t x1, int16_t y1, opt<fix32> c);
     void api_rectfill(int16_t x0, int16_t y0, int16_t x1, int16_t y1, opt<fix32> c);
     int16_t api_sget(int16_t x, int16_t y);
@@ -371,6 +372,7 @@ public:
             { "oval",     bind<&vm::api_oval>() },
             { "ovalfill", bind<&vm::api_ovalfill>() },
             { "__pal",    bind<&vm::api_private_pal>() },
+            { "__z8_pause_darken", bind<&vm::private_pause_darken>() },
             { "palt",     bind<&vm::api_palt>() },
             { "pget",     bind<&vm::api_pget>() },
             { "pset",     bind<&vm::api_pset>() },

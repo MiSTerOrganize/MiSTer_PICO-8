@@ -1596,6 +1596,49 @@ void vm::api_pset(int16_t x, int16_t y, opt<fix32> c)
     set_pixel(x, y, color_bits);
 }
 
+/* Pause-menu background darkening, moved out of bios.p8.
+ *
+ * The bios drew this as a per-pixel Lua loop over the menu rectangle, EVERY
+ * frame the menu was open: peek() + band()/lshr() + pset() per pixel, which is
+ * 4,182-7,462 pixels and ~12,500-22,400 Lua->C calls per frame depending on
+ * entry count. On MiSTer's 800 MHz Cortex-A9 that cost ~25 ms against a 16.7 ms
+ * budget and pinned the pause menu at ~40 fps (user-reported 2026-07-31).
+ * On desktop, where zepto8 originates, it is free -- which is presumably why
+ * it was never an issue upstream.
+ *
+ * This is a faithful port, not a reimplementation: it uses the same raw_peek()
+ * that api_peek() uses and the same to_color_bits()/set_pixel() pair that
+ * api_pset() uses, including the camera offset, so the output is byte-identical
+ * to the Lua it replaces. The look is preserved deliberately -- palpause maps
+ * most colours to black but 6/7/9/10 to dark blue, giving a dimmed see-through
+ * backdrop rather than the opaque box of the rectfill() that sits commented out
+ * above it upstream.
+ *
+ * (x & 1) rather than (x % 2): C's % on a negative operand does not match
+ * Lua's floored %, and this must hold for every x the caller passes.
+ */
+void vm::private_pause_darken(int16_t x0, int16_t y0, int16_t x1, int16_t y1)
+{
+    static uint8_t const palpause[16] =
+        { 0,0,0,0,0,0,1,1,0,1,1,0,0,0,0,1 };
+
+    auto &ds = m_ram.draw_state;
+
+    for (int16_t y = y0; y <= y1; ++y)
+        for (int16_t x = x0; x <= x1; ++x)
+        {
+            int16_t addr = (int16_t)(0x6000 + (x >> 1) + 0x40 * y);
+            uint8_t v1 = raw_peek(addr);
+            uint8_t v2 = ((x & 1) == 0) ? (uint8_t)(v1 & 0xf)
+                                        : (uint8_t)((v1 >> 4) & 0xf);
+            /* explicit int16_t: fix32 has int8_t/int16_t/int32_t/templated
+             * overloads, so a bare uint8_t is ambiguous. */
+            uint32_t color_bits = to_color_bits(fix32((int16_t)palpause[v2]));
+            set_pixel((int16_t)(x - ds.camera.x),
+                      (int16_t)(y - ds.camera.y), color_bits);
+        }
+}
+
 void vm::api_rect(int16_t x0, int16_t y0, int16_t x1, int16_t y1, opt<fix32> c)
 {
     auto &ds = m_ram.draw_state;
