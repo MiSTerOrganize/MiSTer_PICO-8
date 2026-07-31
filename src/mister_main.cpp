@@ -581,8 +581,20 @@ int main(int argc, char **argv)
                 // `feedback_clear_framebuffer_on_wait.md`. PICO-8 native
                 // is 128x128 RGBA8888 (4 bytes per pixel).
                 {
-                    static unsigned char _pico8_black[PICO8_W * PICO8_H * 4] = {0};
-                    NativeVideoWriter_WriteFrame(_pico8_black, PICO8_W, PICO8_H);
+                    /* Returning to wait-for-cart is a session boundary: the
+                     * FPS overlay resets to OFF, exactly as it does on launch.
+                     * Without this it survives a pause-menu Quit -- which goes
+                     * through z8_app_requestexit -> request_exit(), an
+                     * IN-PROCESS return to this loop rather than the _exit(0)
+                     * that z8_cart_browser takes -- and the number would then
+                     * be drawn straight onto the black wait frame. */
+                    NativeVideoWriter_SetFpsOverlay(0);
+
+                    /* ClearScreen rather than WriteFrame(black): it zeroes
+                     * BOTH buffers, so the departing cart's last frame cannot
+                     * linger in the one we are not about to publish, and it
+                     * bypasses WriteFrame's overlay draw entirely. */
+                    NativeVideoWriter_ClearScreen();
                 }
 
                 fprintf(stderr, "Waiting for OSD cart selection (.s0)...\n");
