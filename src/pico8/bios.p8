@@ -566,7 +566,7 @@ function __z8_tick()
             if sd then
                 poke4(0x5f00, sd[1]) poke4(0x5f04, sd[2]) poke4(0x5f08, sd[3]) poke4(0x5f0c, sd[4])
                 poke4(0x5f20, sd[5]) poke4(0x5f24, sd[6]) poke4(0x5f28, sd[7]) poke4(0x5f31, sd[8])
-                poke(0x5f2c, sd[9])   -- screen mode
+                __z8_pause_screen_mode(sd[9])   -- screen mode (live + front)
                 __z8_menu.saved_draw = nil
             end
             __z8_paused = false
@@ -765,7 +765,7 @@ function __z8_pause_menu()
     -- against Alex Kidd in Pico World, whose _init() does poke(0x5f2c,3);
     -- affects ANY cart using a non-default screen mode. A cart that never set
     -- one has 0 here, so this is a no-op for it.
-    poke(0x5f2c, 0)
+    __z8_pause_screen_mode(0)
     -- Draw-palette-only reset for the menu's own drawing — NOT bare pal(),
     -- which would also wipe the cart's SCREEN + raster palettes every menu
     -- frame (killing menuitem palette picks and the cart's live palette).

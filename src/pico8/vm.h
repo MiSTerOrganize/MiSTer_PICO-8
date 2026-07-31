@@ -301,6 +301,7 @@ private:
     fix32 api_pget(int16_t x, int16_t y);
     void api_pset(int16_t x, int16_t y, opt<fix32> c);
     void private_pause_darken(int16_t x0, int16_t y0, int16_t x1, int16_t y1);
+    void private_pause_screen_mode(int16_t mode);
     void api_rect(int16_t x0, int16_t y0, int16_t x1, int16_t y1, opt<fix32> c);
     void api_rectfill(int16_t x0, int16_t y0, int16_t x1, int16_t y1, opt<fix32> c);
     int16_t api_sget(int16_t x, int16_t y);
@@ -373,6 +374,7 @@ public:
             { "ovalfill", bind<&vm::api_ovalfill>() },
             { "__pal",    bind<&vm::api_private_pal>() },
             { "__z8_pause_darken", bind<&vm::private_pause_darken>() },
+            { "__z8_pause_screen_mode", bind<&vm::private_pause_screen_mode>() },
             { "palt",     bind<&vm::api_palt>() },
             { "pget",     bind<&vm::api_pget>() },
             { "pset",     bind<&vm::api_pset>() },

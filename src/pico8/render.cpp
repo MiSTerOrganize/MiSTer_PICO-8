@@ -37,6 +37,28 @@ void vm::private_end_render()
     m_front_hw_state = m_ram.hw_state;
 }
 
+/* Set the screen mode for BOTH the live and the front draw state.
+ *
+ * The pause menu needs mode 0 while it is open: it draws at fixed coordinates
+ * (x=24..103, y~36..92) and a cart in a stretch mode -- e.g. Alex Kidd in Pico
+ * World, whose _init() does poke(0x5f2c,3) -- only displays coords 0..63, which
+ * clips the menu to its bottom-right corner.
+ *
+ * A plain poke(0x5f2c, 0) from the bios CANNOT do this. render() reads
+ * m_front_draw_state (see below), and private_end_render() early-returns while
+ * m_in_pause, so the front state stays frozen at whatever the cart last had.
+ * The live state the poke touches is never consulted. Hence this pair-setter.
+ *
+ * Restoring on unpause also sets both: the next private_end_render() would
+ * refresh the front state anyway, but setting it here closes the one-frame
+ * window before that happens.
+ */
+void vm::private_pause_screen_mode(int16_t mode)
+{
+    m_ram.draw_state.screen_mode = (uint8_t)mode;
+    m_front_draw_state.screen_mode = (uint8_t)mode;
+}
+
 void vm::render(lol::u8vec4 *screen) const
 {
     render(screen, SIZE_MAX);
