@@ -561,7 +561,11 @@ private:
                                             ,"windowed"      // 210
                                             ,"full"          // 211
                                             ,"cart browser"  // 212
-                                            ,"fps display"   // 213
+                                            ,"fps"           // 213 -- MUST be <= 7 chars:
+                                            //  the options submenu draws each row's VALUE at
+                                            //  x+30 and the font advances 4px/char, so a
+                                            //  longer label overlaps it and renders garbled.
+                                            //  "fps display" (11 ch) did exactly that.
                                             ,"off"           // 214
                                             ,"on"            // 215
                                             };
