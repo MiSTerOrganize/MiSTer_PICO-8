@@ -566,6 +566,7 @@ function __z8_tick()
             if sd then
                 poke4(0x5f00, sd[1]) poke4(0x5f04, sd[2]) poke4(0x5f08, sd[3]) poke4(0x5f0c, sd[4])
                 poke4(0x5f20, sd[5]) poke4(0x5f24, sd[6]) poke4(0x5f28, sd[7]) poke4(0x5f31, sd[8])
+                poke(0x5f2c, sd[9])   -- screen mode
                 __z8_menu.saved_draw = nil
             end
             __z8_paused = false
@@ -689,6 +690,7 @@ function __z8_enter_pause()
         peek4(0x5f24),                                              -- color + text cursor
         peek4(0x5f28),                                              -- camera
         peek4(0x5f31),                                              -- fill pattern
+        peek(0x5f2c),                                               -- SCREEN MODE (1 byte)
     }
     __z8_paused = true
     __z8_menu.cursor = 0
@@ -752,6 +754,14 @@ function __z8_pause_menu()
     end
 
     clip() camera() color() fillp()
+    -- Screen mode MUST be reset too, or the menu inherits the cart's. A cart
+    -- in mode 3 (64x64, stretched 2x) only shows coords 0..63, so this menu --
+    -- drawn at a fixed x=24..103, y~36..92 -- lands in the bottom-right of the
+    -- visible area with everything past the first entry clipped off. Reported
+    -- against Alex Kidd in Pico World, whose _init() does poke(0x5f2c,3);
+    -- affects ANY cart using a non-default screen mode. A cart that never set
+    -- one has 0 here, so this is a no-op for it.
+    poke(0x5f2c, 0)
     -- Draw-palette-only reset for the menu's own drawing — NOT bare pal(),
     -- which would also wipe the cart's SCREEN + raster palettes every menu
     -- frame (killing menuitem palette picks and the cart's live palette).
