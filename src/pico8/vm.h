@@ -563,11 +563,14 @@ private:
                                             ,"windowed"      // 210
                                             ,"full"          // 211
                                             ,"cart browser"  // 212
-                                            ,"fps"           // 213 -- MUST be <= 7 chars:
-                                            //  the options submenu draws each row's VALUE at
-                                            //  x+30 and the font advances 4px/char, so a
-                                            //  longer label overlaps it and renders garbled.
-                                            //  "fps display" (11 ch) did exactly that.
+                                            ,"fps display"   // 213 -- see __z8_draw_fps:
+                                            //  its value is drawn at x+48, not the x+30 the
+                                            //  other option rows use, because at 4px/char an
+                                            //  11-char label reaches x+44 and would overlap.
+                                            //  Box is 74px usable, so x+48 + "off" ends at
+                                            //  x+60 -- fits, and sits inside the gauges' own
+                                            //  x+30..x+62 span so it still reads as aligned.
+                                            //  A label for an x+30 row must be <= 7 chars.
                                             ,"off"           // 214
                                             ,"on"            // 215
                                             };

@@ -661,7 +661,11 @@ function __z8_update_fps(e)
 end
 
 function __z8_draw_fps(st,x,y)
-    print((__z8_menu.fps or 0)==0 and stat(214) or stat(215),x+30,y)
+    -- x+48, not the x+30 the other rows use: "fps display" is 11 chars = 44px
+    -- at 4px/char, so it would run into a value drawn at x+30 (that produced
+    -- garbled overlap when first shipped). x+48 + "off" ends at x+60, inside
+    -- the box's 74px usable width.
+    print((__z8_menu.fps or 0)==0 and stat(214) or stat(215),x+48,y)
 end
 
 function __z8_enter_pause()
