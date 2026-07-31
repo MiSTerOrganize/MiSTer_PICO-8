@@ -108,6 +108,14 @@ uint32_t NativeVideoWriter_AudioSpace(void);
 /// @param num_samples     Number of stereo sample PAIRS to write
 void NativeVideoWriter_WriteAudio(const int16_t *stereo_samples, uint32_t num_samples);
 
+/// FPS overlay (pause menu -> Options -> "fps display"). Required on every
+/// hybrid core: bottom-right, red <30 / yellow 30-59 / green >=60. Defaults
+/// OFF and resets to OFF each launch, so it can never silently contaminate a
+/// screenshot or a frame-hash comparison. Safe to leave on while recording or
+/// replaying -- it lives in the framebuffer, not in the input stream.
+void NativeVideoWriter_SetFpsOverlay(int on);
+int  NativeVideoWriter_GetFpsOverlay(void);
+
 #ifdef __cplusplus
 }
 #endif

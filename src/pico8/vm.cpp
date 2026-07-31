@@ -1722,7 +1722,7 @@ var<bool, int16_t, fix32, std::string, std::nullptr_t> vm::api_stat(int16_t id)
     //  150..153 Gamepads axes values
     //  160..169 Physical sensors - gyro, magneto,etc.
 
-    //  200..250 ZEPTO UI texts
+    //  200..250 ZEPTO UI texts (213 "fps display", 214 "off", 215 "on")
 
     // Registered user functions have priority
     if (auto it = m_stats.find(id); it != m_stats.end())

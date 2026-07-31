@@ -648,6 +648,21 @@ function __z8_draw_fullscreen(st,x,y)
     print(stat(143)==0 and stat(210) or stat(211),x+30,y)
 end
 
+-- FPS overlay toggle. Required on every hybrid core: bottom-right read-out,
+-- red <30 / yellow 30-59 / green 60+. The number itself is drawn C-side in
+-- native_video_writer.c (into the 128x128 buffer, which the FPGA then scales
+-- like the game pixels); this only flips the flag. State is kept here because
+-- the bios is its only writer, and reset exits the process so both sides
+-- start at 0 together.
+function __z8_update_fps(e)
+    __z8_menu.fps = 1 - (__z8_menu.fps or 0)
+    extcmd("z8_fps_overlay "..tostr(__z8_menu.fps))
+end
+
+function __z8_draw_fps(st,x,y)
+    print((__z8_menu.fps or 0)==0 and stat(214) or stat(215),x+30,y)
+end
+
 function __z8_enter_pause()
     __mask_buttons()
     -- Snapshot every piece of DRAW STATE the pause menu disturbs while
@@ -705,6 +720,7 @@ function __z8_pause_menu()
         if is_pc then
             add(entries, { l = stat(204), c = __z8_update_fullscreen, d = __z8_draw_fullscreen})
         end
+        add(entries, { l = stat(213), c = __z8_update_fps, d = __z8_draw_fps})
         -- add(entries, { l = stat(205), c = __z8_update_filter, d = __z8_draw_filter})
         add(entries, { l = stat(206), c = function (e) if e == 112 then __z8_menu.inoption = false end end })
 

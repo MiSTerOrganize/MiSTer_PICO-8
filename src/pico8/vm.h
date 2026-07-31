@@ -561,6 +561,9 @@ private:
                                             ,"windowed"      // 210
                                             ,"full"          // 211
                                             ,"cart browser"  // 212
+                                            ,"fps display"   // 213
+                                            ,"off"           // 214
+                                            ,"on"            // 215
                                             };
 
     std::unordered_map<std::string, std::function<void(std::string const&)>> m_extcmds;

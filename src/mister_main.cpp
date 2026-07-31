@@ -701,6 +701,13 @@ int main(int argc, char **argv)
         // here as a user extcmd takes priority over vm.cpp's switch
         // (m_extcmds checked first per api_extcmd:1837) and routes
         // shutdown to the same exit path as the system menu Quit.
+        /* FPS overlay toggle, driven from bios.p8's Options submenu.
+         * add_extcmd is already how this file registers MiSTer-specific verbs,
+         * so this needs no change to vm.cpp/vm.h. */
+        g_vm->add_extcmd("z8_fps_overlay", [](std::string const &args) {
+            NativeVideoWriter_SetFpsOverlay(args.empty() ? 0 : std::atoi(args.c_str()));
+        });
+
         g_vm->add_extcmd("shutdown", [](std::string const &) {
             unlink("/media/fat/config/PICO-8.s0");
             fprintf(stderr, "Shutdown (cart-initiated): cleared .s0, _exit(0) — Master_Daemon will respawn\n");
