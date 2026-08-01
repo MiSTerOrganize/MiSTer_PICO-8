@@ -575,6 +575,11 @@ private:
                                             //  A label for an x+30 row must be <= 7 chars.
                                             ,"off"           // 214
                                             ,"on"            // 215
+                                            ,"recording"     // 216
+                                            ,"record"        // 217
+                                            ,"stop recording"// 218
+                                            ,"play recording"// 219
+                                            ,"stop playback" // 220
                                             };
 
     std::unordered_map<std::string, std::function<void(std::string const&)>> m_extcmds;

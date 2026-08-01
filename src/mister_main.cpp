@@ -14,6 +14,7 @@
 #include <csignal>
 #include <cmath>
 #include <string>
+#include <vector>
 #include <memory>
 #include <thread>
 #include <atomic>
@@ -52,6 +53,182 @@ static const int DEFAULT_FPS    = 60;   // PICO-8 BIOS expects 60 ticks/sec
 
 static volatile bool g_running = true;
 static volatile bool g_return_to_browser = false;
+
+// -- Input recorder / replay (phase 1: pause-menu only, no .s1 OSD slot) ----
+//
+// Records per-frame controller state and replays it deterministically. Same
+// shape as OpenBOR_7533's .inp recorder, and one of the canonical pause-menu
+// options every hybrid core must ship.
+//
+// WHY THIS IS SIMPLER THAN OPENBOR'S: OpenBOR's getinterval() returns a
+// VARIABLE number of logic steps per input sample, so its recorder has to
+// record that interval and force it back on playback, or gameplay desyncs
+// while menus stay in sync. PICO-8 has a FIXED timestep -- mister_main runs
+// exactly one g_vm->step() per frame -- so frame N is always frame N and that
+// whole class of desync does not exist here.
+//
+// The three things determinism needs, and where each comes from:
+//   1. identical start state -- title-anchor via extcmd("reset")'s _exit(0),
+//      which respawns and re-mounts the same cart from scratch.
+//   2. identical RNG -- Z8_TEST_SEED, set before g_vm->load(). It feeds
+//      vm::private_init_ram()'s api_srand(). Reusing the seeding path the
+//      golden-trace harness already proves deterministic beats inventing a
+//      second one.
+//   3. identical input -- captured and injected at the single choke point
+//      where joystick bits become g_vm->button() calls.
+//
+// A recording is an INPUT STREAM, not video, so the FPS overlay can never
+// contaminate one -- which is why leaving it on during record/replay is safe
+// and is in fact the intended debugging pairing.
+
+#define P8REC_MAGIC      "P8REC1"
+#define P8REC_MAGIC_LEN  6
+// Bump ONLY on a shipped game-LOGIC change that would desync existing
+// recordings (VM semantics, RNG, timestep, input mapping). NOT for
+// render/audio/UI/perf changes -- the fixed timestep makes replay independent
+// of frame cost, so those can never desync a recording.
+#define P8REC_ENGINE_VER 1u
+#define P8REC_MAX_FRAMES 2000000u   /* ~9.2 h at 60 fps; caps a runaway file */
+#define P8REC_CART_LEN   128
+
+static int         g_rec_mode = 0;   /* 0 = idle, 1 = recording, 2 = playing */
+static std::vector<uint32_t> g_rec_frames;
+static size_t      g_rec_pos  = 0;
+static int32_t     g_rec_seed = 0;
+/* The extcmd lambdas are converted to std::function and cannot capture,
+ * so the cart path the writer needs lives here. Set at cart load. */
+static std::string g_cart_path_for_rec;
+
+static const char *P8REC_DIR = "/media/fat/games/PICO-8/Replays";
+
+static std::string p8rec_cart_base(std::string const &path)
+{
+    size_t a = path.find_last_of('/');
+    std::string b = (a == std::string::npos) ? path : path.substr(a + 1);
+    /* strip .p8.png / .p8 so <cart>_3.inp pairs with <cart>.p8.png */
+    static const char *exts[] = { ".p8.png", ".p8" };
+    for (int i = 0; i < 2; i++)
+    {
+        size_t n = strlen(exts[i]);
+        if (b.size() > n && b.compare(b.size() - n, n, exts[i]) == 0)
+        { b = b.substr(0, b.size() - n); break; }
+    }
+    return b;
+}
+
+/* Highest existing index for <base>_N.inp, or 0 if there are none. */
+static int p8rec_highest(std::string const &base)
+{
+    int best = 0;
+    DIR *d = opendir(P8REC_DIR);
+    if (!d) return 0;
+    std::string pre = base + "_";
+    struct dirent *e;
+    while ((e = readdir(d)) != NULL)
+    {
+        std::string n = e->d_name;
+        if (n.size() <= pre.size() + 4) continue;
+        if (n.compare(0, pre.size(), pre) != 0) continue;
+        if (n.compare(n.size() - 4, 4, ".inp") != 0) continue;
+        int k = atoi(n.substr(pre.size(), n.size() - pre.size() - 4).c_str());
+        if (k > best) best = k;
+    }
+    closedir(d);
+    return best;
+}
+
+/* Numbered library, like OpenBOR's: each Stop writes <cart>_<N+1>.inp, so a
+ * new recording never overwrites an older one. */
+static void p8rec_write(std::string const &cart_path)
+{
+    if (g_rec_frames.empty())
+    {
+        fprintf(stderr, "[REC] nothing captured -- not writing a file\n");
+        return;
+    }
+    std::string base = p8rec_cart_base(cart_path);
+    std::string out  = std::string(P8REC_DIR) + "/" + base + "_"
+                     + std::to_string(p8rec_highest(base) + 1) + ".inp";
+
+    mkdir(P8REC_DIR, 0777);   /* handler makes it, but never lose a take to a missing dir */
+    FILE *f = fopen(out.c_str(), "wb");
+    if (!f) { fprintf(stderr, "[REC] cannot write %s\n", out.c_str()); return; }
+
+    char cart[P8REC_CART_LEN];
+    memset(cart, 0, sizeof(cart));
+    snprintf(cart, sizeof(cart), "%s", base.c_str());
+    uint32_t ver = P8REC_ENGINE_VER;
+    uint32_t n   = (uint32_t)g_rec_frames.size();
+
+    fwrite(P8REC_MAGIC, 1, P8REC_MAGIC_LEN, f);
+    fwrite(&ver, sizeof(ver), 1, f);
+    fwrite(cart, 1, sizeof(cart), f);
+    fwrite(&g_rec_seed, sizeof(g_rec_seed), 1, f);
+    fwrite(&n, sizeof(n), 1, f);
+    fwrite(&g_rec_frames[0], sizeof(uint32_t), n, f);
+    fclose(f);
+    fprintf(stderr, "[REC] wrote %s (%u frames, seed %d)\n", out.c_str(), n, g_rec_seed);
+}
+
+/* Load the newest recording for this cart. Returns false -- leaving the mode
+ * idle -- on any mismatch, so a wrong-cart or corrupt file is REFUSED rather
+ * than played into a guaranteed desync. */
+static bool p8rec_load(std::string const &cart_path)
+{
+    std::string base = p8rec_cart_base(cart_path);
+    int hi = p8rec_highest(base);
+    if (!hi) { fprintf(stderr, "[REC] no recording for '%s'\n", base.c_str()); return false; }
+    std::string in = std::string(P8REC_DIR) + "/" + base + "_" + std::to_string(hi) + ".inp";
+
+    FILE *f = fopen(in.c_str(), "rb");
+    if (!f) { fprintf(stderr, "[REC] cannot read %s\n", in.c_str()); return false; }
+
+    char magic[P8REC_MAGIC_LEN];
+    char cart[P8REC_CART_LEN];
+    uint32_t ver = 0, n = 0;
+    int32_t seed = 0;
+    bool ok = fread(magic, 1, P8REC_MAGIC_LEN, f) == (size_t)P8REC_MAGIC_LEN
+           && memcmp(magic, P8REC_MAGIC, P8REC_MAGIC_LEN) == 0
+           && fread(&ver,  sizeof(ver),  1, f) == 1
+           && fread(cart,  1, sizeof(cart), f) == sizeof(cart)
+           && fread(&seed, sizeof(seed), 1, f) == 1
+           && fread(&n,    sizeof(n),    1, f) == 1
+           && n > 0 && n <= P8REC_MAX_FRAMES;
+    if (!ok)
+    {
+        fclose(f);
+        fprintf(stderr, "[REC] %s is not a valid recording\n", in.c_str());
+        return false;
+    }
+
+    cart[P8REC_CART_LEN - 1] = 0;
+    if (base != cart)
+    {
+        fclose(f);
+        fprintf(stderr, "[REC] this recording is for cart '%s' but '%s' is loaded"
+                        " -- not playing\n", cart, base.c_str());
+        return false;
+    }
+    if (ver != P8REC_ENGINE_VER)
+        fprintf(stderr, "[REC] recorded on engine v%u (this build is v%u) -- may"
+                        " desync; press any button to take over\n", ver, P8REC_ENGINE_VER);
+
+    g_rec_frames.assign(n, 0u);
+    size_t got = fread(&g_rec_frames[0], sizeof(uint32_t), n, f);
+    fclose(f);
+    if (got != n)
+    {
+        g_rec_frames.clear();
+        fprintf(stderr, "[REC] %s is truncated\n", in.c_str());
+        return false;
+    }
+
+    g_rec_seed = seed;
+    g_rec_pos  = 0;
+    fprintf(stderr, "[REC] playing %s (%u frames, seed %d)\n", in.c_str(), n, seed);
+    return true;
+}
+
 
 // ── Golden-master hash trace (-test flag) ─────────────────────────────
 // When enabled, each gameplay frame emits FRAME:VIDEOCRC:AUDIOCRC to the
@@ -716,6 +893,43 @@ int main(int argc, char **argv)
         /* FPS overlay toggle, driven from bios.p8's Options submenu.
          * add_extcmd is already how this file registers MiSTer-specific verbs,
          * so this needs no change to vm.cpp/vm.h. */
+        /* Recorder, driven from bios.p8's Recording submenu. Record and Play
+         * both title-anchor: write the marker, then take extcmd("reset")'s
+         * exact path (marker + _exit(0), .s0 preserved) so the cart re-mounts
+         * from scratch and the run begins from an identical state. Stop needs
+         * no reset -- it just flushes and resumes. */
+        /* stat(148) = recorder mode (0 idle / 1 recording / 2 playing) so the
+         * bios can render a state-aware Recording submenu. add_stat is the
+         * registration path vm.cpp already provides -- no vm change needed. */
+        g_vm->add_stat(148, []() -> std::any { return g_rec_mode; });
+
+        g_vm->add_extcmd("z8_rec_record", [](std::string const &) {
+            FILE *m = fopen("/tmp/pico8_recmode", "w");
+            if (m) { fputs("REC", m); fclose(m); }
+            FILE *r = fopen("/tmp/pico8_reset_marker", "w");
+            if (r) fclose(r);
+            fprintf(stderr, "[REC] arming record -- resetting to the cart start\n");
+            fflush(stderr);
+            _exit(0);
+        });
+
+        g_vm->add_extcmd("z8_rec_play", [](std::string const &) {
+            FILE *m = fopen("/tmp/pico8_recmode", "w");
+            if (m) { fputs("PLAY", m); fclose(m); }
+            FILE *r = fopen("/tmp/pico8_reset_marker", "w");
+            if (r) fclose(r);
+            fprintf(stderr, "[REC] arming playback -- resetting to the cart start\n");
+            fflush(stderr);
+            _exit(0);
+        });
+
+        g_vm->add_extcmd("z8_rec_stop", [](std::string const &) {
+            if (g_rec_mode == 1) p8rec_write(g_cart_path_for_rec);
+            g_rec_mode = 0;
+            g_rec_frames.clear();
+            g_rec_pos = 0;
+        });
+
         g_vm->add_extcmd("z8_fps_overlay", [](std::string const &args) {
             NativeVideoWriter_SetFpsOverlay(args.empty() ? 0 : std::atoi(args.c_str()));
         });
@@ -727,6 +941,51 @@ int main(int argc, char **argv)
             _exit(0);
         });
 
+        /* Recorder arm-on-startup. extcmd("reset")'s _exit(0) respawned us and
+         * .s0 re-mounted the same cart, so this is the title-anchor: whatever
+         * mode the marker asks for begins from an identical starting state.
+         *
+         * The seed MUST be set before load() -- vm::private_init_ram() reads
+         * Z8_TEST_SEED and feeds it to api_srand(). Recording picks a seed and
+         * stores it; playback restores the one from the file. Either way the
+         * RNG stream is identical across the two runs. */
+        {
+            FILE *mk = fopen("/tmp/pico8_recmode", "r");
+            if (mk)
+            {
+                char want[16];
+                memset(want, 0, sizeof(want));
+                if (!fgets(want, sizeof(want), mk)) want[0] = 0;
+                fclose(mk);
+                unlink("/tmp/pico8_recmode");
+
+                char *nl = strchr(want, '\n'); if (nl) *nl = 0;
+                char *cr = strchr(want, '\r'); if (cr) *cr = 0;
+
+                if (strcmp(want, "REC") == 0)
+                {
+                    g_rec_seed = (int32_t)(getpid() * 2654435761u) | 1;
+                    g_rec_frames.clear();
+                    g_rec_pos  = 0;
+                    g_rec_mode = 1;
+                    fprintf(stderr, "[REC] recording armed (seed %d)\n", g_rec_seed);
+                }
+                else if (strcmp(want, "PLAY") == 0)
+                {
+                    /* load() before the cart so the seed is known; it also
+                     * validates cart + version and refuses on mismatch. */
+                    if (p8rec_load(cart_path)) g_rec_mode = 2;
+                }
+            }
+        }
+        if (g_rec_mode)
+        {
+            char sbuf[24];
+            snprintf(sbuf, sizeof(sbuf), "%d", (int)g_rec_seed);
+            setenv("Z8_TEST_SEED", sbuf, 1);
+        }
+
+        g_cart_path_for_rec = cart_path;
         g_vm->load(cart_path);
         g_vm->run();
         fprintf(stderr, "=== Game started: %s (PID=%d) ===\n", cart_path.c_str(), getpid());
@@ -823,15 +1082,64 @@ int main(int argc, char **argv)
         // CONF_STR: "J1,O,X,Pause;" / "jn,B,Y,Start;" (SNES: B=Xbox A, Y=Xbox X)
         // joystick_N bits: 0=R 1=L 2=D 3=U 4=Xbox A(O) 5=Xbox X(X) 6=Start(Pause)
         if (have_native_video) {
+            /* Pack the frame as 4 players x 7 buttons. This is the recorder's
+             * choke point: everything the VM ever sees as input passes through
+             * here exactly once per frame, so capturing here is complete by
+             * construction and injecting here is indistinguishable from a
+             * human playing. */
+            uint32_t live = 0;
             for (int p = 0; p < 4; p++) {
                 uint32_t joy = NativeVideoWriter_ReadJoystick(p);
-                g_vm->button(p, 0, (joy >> 1) & 1);  // Left
-                g_vm->button(p, 1, (joy >> 0) & 1);  // Right
-                g_vm->button(p, 2, (joy >> 3) & 1);  // Up
-                g_vm->button(p, 3, (joy >> 2) & 1);  // Down
-                g_vm->button(p, 4, (joy >> 4) & 1);  // O     ← Xbox A
-                g_vm->button(p, 5, (joy >> 5) & 1);  // X     ← Xbox X
-                g_vm->button(p, 6, (joy >> 6) & 1);  // Pause ← Start (per-player)
+                uint32_t b = ((joy >> 1) & 1)        /* Left  */
+                           | (((joy >> 0) & 1) << 1) /* Right */
+                           | (((joy >> 3) & 1) << 2) /* Up    */
+                           | (((joy >> 2) & 1) << 3) /* Down  */
+                           | (((joy >> 4) & 1) << 4) /* O     <- Xbox A */
+                           | (((joy >> 5) & 1) << 5) /* X     <- Xbox X */
+                           | (((joy >> 6) & 1) << 6);/* Pause <- Start  */
+                live |= b << (p * 7);
+            }
+
+            uint32_t use = live;
+
+            if (g_rec_mode == 1) {
+                if (g_rec_frames.size() < P8REC_MAX_FRAMES)
+                    g_rec_frames.push_back(live);
+            }
+            else if (g_rec_mode == 2) {
+                if (g_rec_pos < g_rec_frames.size()) {
+                    /* Take-over: any button the human presses that the
+                     * recording is not already holding hands control back.
+                     * Deliberately edge-based, so resting on a button the
+                     * recording also holds does not end playback. */
+                    static uint32_t prev_live = 0;
+                    uint32_t pressed = live & ~prev_live;
+                    prev_live = live;
+                    if (pressed) {
+                        fprintf(stderr, "[REC] take-over at frame %u -- playback stopped\n",
+                                (unsigned)g_rec_pos);
+                        g_rec_mode = 0;
+                        g_rec_frames.clear();
+                    } else {
+                        use = g_rec_frames[g_rec_pos++];
+                    }
+                } else {
+                    fprintf(stderr, "[REC] playback finished (%u frames)\n",
+                            (unsigned)g_rec_frames.size());
+                    g_rec_mode = 0;
+                    g_rec_frames.clear();
+                }
+            }
+
+            for (int p = 0; p < 4; p++) {
+                uint32_t b = (use >> (p * 7)) & 0x7f;
+                g_vm->button(p, 0, (b >> 0) & 1);  // Left
+                g_vm->button(p, 1, (b >> 1) & 1);  // Right
+                g_vm->button(p, 2, (b >> 2) & 1);  // Up
+                g_vm->button(p, 3, (b >> 3) & 1);  // Down
+                g_vm->button(p, 4, (b >> 4) & 1);  // O     ← Xbox A
+                g_vm->button(p, 5, (b >> 5) & 1);  // X     ← Xbox X
+                g_vm->button(p, 6, (b >> 6) & 1);  // Pause ← Start (per-player)
             }
         }
 

@@ -602,7 +602,7 @@ end
 -- pause menu
 --
 
-__z8_menu = { cursor=0, optioncursor=0, quitcursor=0, items={}, inoption=false, inquitmsg=nil, pause_btn=false, pause_act=false, in_menu_item=-1 }
+__z8_menu = { cursor=0, optioncursor=0, quitcursor=0, reccursor=0, items={}, inoption=false, inrec=false, inquitmsg=nil, pause_btn=false, pause_act=false, in_menu_item=-1 }
 function menuitem(index, label, callback)
     if (__z8_menu.in_menu_item > 0 and index==nil) index = __z8_menu.in_menu_item -- calling from inside menuitem callback
     if index < 1 or index > 5 then return end
@@ -718,6 +718,29 @@ function __z8_pause_menu()
         if (#entries>0) __z8_menu.quitcursor = (__z8_menu.quitcursor + #entries) % #entries
 
         cursor = __z8_menu.quitcursor
+    elseif __z8_menu.inrec then -- recording sub menu
+        -- State-aware, like OpenBOR_7533's. stat(148) is the recorder mode
+        -- registered from mister_main.cpp: 0 idle / 1 recording / 2 playing.
+        -- Record and Play both reset the cart first so the run is title-
+        -- anchored; Stop just flushes and resumes.
+        wintitle = stat(216)
+        forcestay = true
+        local m = stat(148)
+        if m == 1 then
+            add(entries, { l = stat(218), c = function (e) if e == 112 then extcmd("z8_rec_stop") __z8_menu.inrec = false end end })
+        elseif m == 2 then
+            add(entries, { l = stat(220), c = function (e) if e == 112 then extcmd("z8_rec_stop") __z8_menu.inrec = false end end })
+        else
+            add(entries, { l = stat(217), c = function (e) if e == 112 then extcmd("z8_rec_record") end end })
+            add(entries, { l = stat(219), c = function (e) if e == 112 then extcmd("z8_rec_play") end end })
+        end
+        add(entries, { l = stat(206), c = function (e) if e == 112 then __z8_menu.inrec = false end end })
+
+        if (btnp(2)) __z8_menu.reccursor -= 1
+        if (btnp(3)) __z8_menu.reccursor += 1
+        if (#entries>0) __z8_menu.reccursor = (__z8_menu.reccursor + #entries) % #entries
+
+        cursor = __z8_menu.reccursor
     elseif __z8_menu.inoption then -- option sub menu
         wintitle = stat(201) -- options
         forcestay = true -- option sub menu cannot close the menu
@@ -743,6 +766,7 @@ function __z8_pause_menu()
             end
         end
         add(entries, { l = stat(201), c = function (e) if e == 112 then __z8_menu.inoption = true __z8_menu.optioncursor = 0 end return true end })
+        add(entries, { l = stat(216), c = function (e) if e == 112 then __z8_menu.inrec = true __z8_menu.reccursor = 0 end return true end })
         add(entries, { l = stat(208), c = function (e) if e == 112 then extcmd("reset") end end, ask = true})
         local bread = stat(100)
         if bread then

@@ -11,7 +11,7 @@ LOGDIR="/media/fat/logs/PICO-8"
 
 cd "$GAMEDIR" || exit 1
 
-mkdir -p "$LOGDIR" "$GAMEDIR/Carts"
+mkdir -p "$LOGDIR" "$GAMEDIR/Carts" "$GAMEDIR/Replays"
 
 # Rotate ARM-binary stdout/stderr log
 mv -f "$LOGDIR/PICO-8.log" "$LOGDIR/PICO-8.prev.log" 2>/dev/null
