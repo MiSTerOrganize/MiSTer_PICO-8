@@ -105,6 +105,77 @@ static std::string g_cart_path_for_rec;
 
 static const char *P8REC_DIR = "/media/fat/games/PICO-8/Replays";
 
+/* --- Save-state snapshot, so a recording can start from YOUR progress --------
+ *
+ * Isolating the save dir to EMPTY made recordings deterministic but also made
+ * it impossible to record from anywhere except a fresh game: Record resets to
+ * the title, and with no save data there was nothing to continue from.
+ *
+ * So the scratch is SEEDED from the real saves instead, and a copy of that
+ * seed is stored beside the .inp. Record boots with your progress, you load it
+ * through the cart's own menus (that navigation is recorded, since the take is
+ * title-anchored), and playback restores the same seed before booting -- so the
+ * same presses land on the same menu with the same contents.
+ *
+ * The snapshot is what makes it exact rather than merely convenient. A cart's
+ * load/continue menu changes SHAPE with which slots exist, so replaying against
+ * different save data would send the recorded D-pad presses to a different slot
+ * and desync from the first second.
+ *
+ * Real saves are only ever READ. */
+static const char *P8REC_SCRATCH = "/media/fat/games/PICO-8/Replays/.state";
+static const char *P8REC_ARMSNAP = "/media/fat/games/PICO-8/Replays/.armsnap";
+static const char *P8_REAL_SAVES = "/media/fat/saves/PICO-8";
+static std::string g_rec_file;   /* the .inp actually opened; pairs it with its .state */
+
+static bool p8_copy_file(std::string const &src, std::string const &dst)
+{
+    FILE *s = fopen(src.c_str(), "rb");
+    if (!s) return false;
+    FILE *d = fopen(dst.c_str(), "wb");
+    if (!d) { fclose(s); return false; }
+    char buf[8192];
+    size_t n;
+    bool ok = true;
+    while ((n = fread(buf, 1, sizeof(buf), s)) > 0)
+        if (fwrite(buf, 1, n, d) != n) { ok = false; break; }
+    if (fclose(d) != 0) ok = false;
+    fclose(s);
+    if (!ok) remove(dst.c_str());
+    return ok;
+}
+
+/* Flat dirs only -- saves and snapshots have no subdirectories. */
+static void p8_wipe_dir(std::string const &dir)
+{
+    DIR *d = opendir(dir.c_str());
+    if (!d) return;
+    struct dirent *e;
+    while ((e = readdir(d)) != NULL) {
+        std::string n = e->d_name;
+        if (n == "." || n == "..") continue;
+        remove((dir + "/" + n).c_str());
+    }
+    closedir(d);
+}
+
+static int p8_copy_dir(std::string const &src, std::string const &dst)
+{
+    mkdir(dst.c_str(), 0777);
+    p8_wipe_dir(dst);
+    DIR *d = opendir(src.c_str());
+    if (!d) return 0;
+    int n = 0;
+    struct dirent *e;
+    while ((e = readdir(d)) != NULL) {
+        std::string f = e->d_name;
+        if (f == "." || f == "..") continue;
+        if (p8_copy_file(src + "/" + f, dst + "/" + f)) n++;
+    }
+    closedir(d);
+    return n;
+}
+
 /* Cart IDENTITY, used as BOTH the header's match field and the filename stem.
  *
  * This was the basename alone, which made two carts indistinguishable whenever
@@ -230,6 +301,15 @@ static bool p8rec_write(std::string const &cart_path)
         return false;
     }
 
+    /* Pair the take with the save state it STARTED from. Without this the replay
+     * would boot against whatever the saves happen to be later, and the cart's
+     * load/continue menu would have a different shape -- the recorded D-pad
+     * presses would land on a different slot and desync immediately. */
+    {
+        std::string snap = out.substr(0, out.size() - 4) + ".state";
+        int c = p8_copy_dir(P8REC_ARMSNAP, snap);
+        fprintf(stderr, "[REC] stored %d save file(s) alongside the take\n", c);
+    }
     fprintf(stderr, "[REC] wrote %s (%u frames, seed %d)\n", out.c_str(), n, g_rec_seed);
     return true;
 }
@@ -289,6 +369,7 @@ static bool p8rec_load(std::string const &cart_path)
 
     g_rec_seed = seed;
     g_rec_pos  = 0;
+    g_rec_file = in;   /* pairs this take with its <name>.state snapshot */
     fprintf(stderr, "[REC] playing %s (%u frames, seed %d)\n", in.c_str(), n, seed);
     return true;
 }
@@ -1137,12 +1218,32 @@ int main(int argc, char **argv)
              * which already restarts the cart from its beginning -- and because
              * the RECORD run is isolated too, the replay shows exactly what the
              * user saw while recording. */
-            std::string sd = std::string(P8REC_DIR) + "/.state";
-            std::string rm = "rm -rf '" + sd + "'";
-            if (system(rm.c_str()) != 0) { /* best effort; mkdir below is what matters */ }
             mkdir(P8REC_DIR, 0777);
-            mkdir(sd.c_str(), 0777);
-            setenv("Z8_SAVES_DIR", sd.c_str(), 1);
+            mkdir(P8REC_SCRATCH, 0777);
+
+            if (g_rec_mode == 1) {
+                /* RECORD: seed the scratch from your REAL saves, and keep a
+                 * pristine copy of exactly that seed. You therefore boot with
+                 * your progress and load it through the cart's own menus --
+                 * which is what gets recorded. The pristine copy is written
+                 * beside the .inp on Stop so playback can reproduce it. */
+                int c = p8_copy_dir(P8_REAL_SAVES, P8REC_ARMSNAP);
+                p8_copy_dir(P8REC_ARMSNAP, P8REC_SCRATCH);
+                fprintf(stderr, "[REC] seeded %d save file(s) from your real saves\n", c);
+            } else {
+                /* PLAYBACK: restore the snapshot this take was recorded against,
+                 * NOT the current saves -- otherwise the cart's load menu has a
+                 * different shape and the recorded navigation picks a different
+                 * slot. Falls back to empty if the take predates snapshots. */
+                std::string snap = g_rec_file.substr(0, g_rec_file.size() - 4) + ".state";
+                int c = p8_copy_dir(snap, P8REC_SCRATCH);
+                if (c > 0)
+                    fprintf(stderr, "[REC] restored %d save file(s) recorded with this take\n", c);
+                else
+                    fprintf(stderr, "[REC] no save snapshot for this take -- starting empty"
+                                    " (recorded before snapshots, or none existed)\n");
+            }
+            setenv("Z8_SAVES_DIR", P8REC_SCRATCH, 1);
 
             /* KNOWN LIMITATION, deliberately not "fixed": music/sfx position is
              * not part of the deterministic state.
