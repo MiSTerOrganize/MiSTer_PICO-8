@@ -166,7 +166,10 @@ static int p8rec_highest(std::string const &base)
 
 /* Numbered library, like OpenBOR's: each Stop writes <cart>_<N+1>.inp, so a
  * new recording never overwrites an older one. */
-static void p8rec_write(std::string const &cart_path)
+/* Returns true if the session can be torn down: the file was written, or there
+ * was nothing to write. False means the take is STILL IN MEMORY and the caller
+ * must leave the recorder armed so Stop can be retried. */
+static bool p8rec_write(std::string const &cart_path)
 {
     if (g_rec_frames.empty())
     {
