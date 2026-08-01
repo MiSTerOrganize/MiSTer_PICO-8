@@ -900,8 +900,15 @@ int main(int argc, char **argv)
          * no reset -- it just flushes and resumes. */
         /* stat(148) = recorder mode (0 idle / 1 recording / 2 playing) so the
          * bios can render a state-aware Recording submenu. add_stat is the
-         * registration path vm.cpp already provides -- no vm change needed. */
-        g_vm->add_stat(148, []() -> std::any { return g_rec_mode; });
+         * registration path vm.cpp already provides -- no vm change needed.
+         *
+         * The (int16_t) cast is LOAD-BEARING, not cosmetic. api_stat funnels the
+         * std::any through any_to_variant<bool, int16_t, fix32, std::string,
+         * std::nullptr_t>, which matches on `a.type() == typeid(T)` -- an EXACT
+         * type test. A plain `int` matches none of those, so it silently returns
+         * nullptr and stat(148) reads as NIL in Lua: `m == 1` and `m == 2` are
+         * both false and the submenu is stuck on its idle branch forever. */
+        g_vm->add_stat(148, []() -> std::any { return (int16_t)g_rec_mode; });
 
         g_vm->add_extcmd("z8_rec_record", [](std::string const &) {
             FILE *m = fopen("/tmp/pico8_recmode", "w");
