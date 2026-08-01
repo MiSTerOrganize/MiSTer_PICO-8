@@ -152,8 +152,26 @@ static int p8rec_highest(std::string const &base)
         if (n.size() <= pre.size() + 4) continue;
         if (n.compare(0, pre.size(), pre) != 0) continue;
         if (n.compare(n.size() - 4, 4, ".inp") != 0) continue;
-        int k = atoi(n.substr(pre.size(), n.size() - pre.size() - 4).c_str());
-        if (k > best) best = k;
+
+        /* The middle must be ALL digits, and the index is then accepted only if
+         * the name we would RECONSTRUCT from it matches the one on disk.
+         *
+         * The scan accepts any <base>_<middle>.inp but p8rec_load rebuilds the
+         * name as base + "_" + to_string(hi) + ".inp" -- so anything the two
+         * disagree about breaks Play permanently, because load only ever opens
+         * the highest. A zero-padded copy (maze_007) parsed to 7 and then
+         * opened a maze_7 that does not exist. Worse, a sibling cart whose stem
+         * is <base>_<digits> aliased in: cart "maze_12" writing maze_12_1.inp
+         * made p8rec_highest("maze") parse "12_1" as 12, so Play opened a
+         * maze_12 that never existed -- and every later take for "maze" was
+         * pushed to _13. Requiring an exact round-trip rejects both. */
+        std::string mid = n.substr(pre.size(), n.size() - pre.size() - 4);
+        if (mid.empty() || mid.find_first_not_of("0123456789") != std::string::npos)
+            continue;
+        long k = strtol(mid.c_str(), NULL, 10);
+        if (k <= 0 || k > 999999) continue;                 /* also kills atoi overflow */
+        if (pre + std::to_string(k) + ".inp" != n) continue; /* e.g. zero-padded */
+        if ((int)k > best) best = (int)k;
     }
     closedir(d);
     return best;
@@ -1283,8 +1301,22 @@ int main(int argc, char **argv)
             uint32_t use = live;
 
             if (g_rec_mode == 1) {
-                if (g_rec_frames.size() < P8REC_MAX_FRAMES)
+                if (g_rec_frames.size() < P8REC_MAX_FRAMES) {
                     g_rec_frames.push_back(live);
+                } else {
+                    /* At the cap, STOP and flush rather than silently dropping
+                     * frames while the menu still reads "Stop Recording" -- the
+                     * player would carry on believing it was still capturing,
+                     * and the file would just end mid-session with nothing
+                     * recording that it had been truncated. */
+                    fprintf(stderr, "[REC] frame cap reached (%u frames)"
+                                    " -- stopping and saving\n",
+                            (unsigned)g_rec_frames.size());
+                    if (p8rec_write(g_cart_path_for_rec))
+                        p8rec_reset();
+                    else
+                        g_rec_mode = 0;   /* write failed; do not spin on the cap */
+                }
             }
             else if (g_rec_mode == 2) {
                 if (g_rec_pos < g_rec_frames.size()) {
