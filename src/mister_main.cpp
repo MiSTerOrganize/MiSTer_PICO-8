@@ -96,11 +96,6 @@ static int         g_rec_mode = 0;   /* 0 = idle, 1 = recording, 2 = playing */
  * mode, so the recorder must never unset it. Declared here (not beside
  * g_test_trace, which is defined further down) so p8rec_reset can see it. */
 static bool        g_test_trace_enabled = false;
-/* Armed once a record/playback session starts: keeps the free-running audio
- * thread OFF so music state advances per-FRAME instead of per-wall-clock.
- * Never cleared -- switching audio models mid-run would be worse than
- * keeping the frame-locked one for the rest of the process. */
-static bool        g_audio_deterministic = false;
 static std::vector<uint32_t> g_rec_frames;
 static size_t      g_rec_pos  = 0;
 static int32_t     g_rec_seed = 0;
@@ -1094,18 +1089,30 @@ int main(int argc, char **argv)
             mkdir(sd.c_str(), 0777);
             setenv("Z8_SAVES_DIR", sd.c_str(), 1);
 
-            /* Deterministic audio. The free-running audio thread drains the
-             * DDR3 ring in real time, and get_audio() advances
-             * m_state.music.offset/pattern/count and the per-channel sfx
-             * fields -- which carts read back through stat(16..26), stat(46..56)
-             * and stat(57). How far the music has advanced at game-frame N is
-             * therefore wall-clock dependent, so a cart that gates on music
-             * position (rhythm timing, "wait until this sfx ends") branches
-             * differently on replay. -test already avoids this by keeping the
-             * thread off and pulling frame-locked from the main loop; the
-             * recorder needs the same. Set for the process lifetime, not per
-             * session: switching audio models mid-run would be worse. */
-            g_audio_deterministic = true;
+            /* KNOWN LIMITATION, deliberately not "fixed": music/sfx position is
+             * not part of the deterministic state.
+             *
+             * get_audio() advances m_state.music.offset/pattern/count and the
+             * per-channel sfx fields, and carts can read those back through
+             * stat(16..26), stat(46..56) and stat(57). The audio thread drains
+             * the DDR3 ring in real time, so how far the music has advanced at
+             * game-frame N is wall-clock dependent -- meaning a cart that gates
+             * logic on music position (rhythm timing, "wait until this sfx
+             * ends") can branch differently on replay.
+             *
+             * Frame-locking the pull from the main loop -- what -test does --
+             * was tried and REVERTED (2026-08-01): it made title-screen music
+             * audibly slow. The thread paces on RING SPACE, a closed loop
+             * against the FPGA's own 48 kHz clock; a frame-locked pull is OPEN
+             * loop, producing audio at the main loop's wall-clock rate while
+             * the FPGA consumes at its crystal rate, so the mismatch
+             * accumulates with nothing to correct it. -test gets away with it
+             * because a trace run is short and its audio is incidental.
+             *
+             * Do NOT reintroduce it without closing that loop. The right shape,
+             * if this is ever worth doing, is to keep the thread and make the
+             * cart-visible stat() values a function of the frame counter rather
+             * than of the ring -- not to move the pull. */
         }
 
         g_cart_path_for_rec = cart_path;
@@ -1119,7 +1126,7 @@ int main(int argc, char **argv)
         // audio hash. The trace block below pulls, hashes, and (when the
         // ring has space) still plays the audio from the main loop.
         bool audio_started = false;
-        if (have_audio && !g_test_trace && !g_audio_deterministic) {
+        if (have_audio && !g_test_trace) {
             audio_started = audio_thread_start();
         }
 
@@ -1388,25 +1395,6 @@ int main(int argc, char **argv)
         // ── Golden-master hash trace (-test) ─────────────────────────
         // Hash points mirror tools/z8headless.cpp exactly: video = CRC32
         // over R,G,B of the native 128x128 render output (pre-upscale);
-        /* Frame-locked audio pull for record/replay. Same shape as the -test
-         * block below, minus the hashing: draw exactly this frame's worth of
-         * engine audio so get_audio()'s advance of the music/sfx state (which
-         * carts read via stat(16..26)/stat(46..56)/stat(57)) is a function of
-         * the FRAME NUMBER and not of wall-clock ring drain. Upsample and write
-         * when the ring has room, drop when it is full -- the engine-side state
-         * has already advanced by then, so playback pressure can never feed
-         * back into determinism. -test owns this path when both are active. */
-        if (g_audio_deterministic && !g_test_trace && have_audio && have_native_video) {
-            static long long det_frame = 0;
-            int ns = tt_audio_samples_for_frame(det_frame++, SRC_RATE, DEFAULT_FPS);
-            static int16_t dmono[512];
-            static int16_t dstereo[2400];
-            g_vm->get_audio(dmono, (size_t)ns * sizeof(int16_t));
-            int out = upsample_mono_to_stereo(dmono, ns, dstereo, 1200);
-            if (NativeVideoWriter_AudioSpace() >= (uint32_t)out)
-                NativeVideoWriter_WriteAudio(dstereo, out);
-        }
-
         // audio = CRC32 over this frame's 22050 Hz mono engine output
         // (367/368-sample pacing, hashed pre-upsample so the platform
         // upsampler/ring cannot affect the trace).
