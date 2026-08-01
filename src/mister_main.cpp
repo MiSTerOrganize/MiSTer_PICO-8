@@ -92,6 +92,10 @@ static volatile bool g_return_to_browser = false;
 #define P8REC_CART_LEN   128
 
 static int         g_rec_mode = 0;   /* 0 = idle, 1 = recording, 2 = playing */
+/* Set when -test is passed. The golden-trace harness owns Z8_TEST_SEED in that
+ * mode, so the recorder must never unset it. Declared here (not beside
+ * g_test_trace, which is defined further down) so p8rec_reset can see it. */
+static bool        g_test_trace_enabled = false;
 static std::vector<uint32_t> g_rec_frames;
 static size_t      g_rec_pos  = 0;
 static int32_t     g_rec_seed = 0;
@@ -143,16 +147,27 @@ static void p8rec_write(std::string const &cart_path)
 {
     if (g_rec_frames.empty())
     {
+        /* Never create an empty file: it would take the highest index and then
+         * shadow every real take, since playback only ever opens the highest. */
         fprintf(stderr, "[REC] nothing captured -- not writing a file\n");
-        return;
+        return true;   /* nothing to save, but the session is legitimately over */
     }
     std::string base = p8rec_cart_base(cart_path);
     std::string out  = std::string(P8REC_DIR) + "/" + base + "_"
                      + std::to_string(p8rec_highest(base) + 1) + ".inp";
 
     mkdir(P8REC_DIR, 0777);   /* handler makes it, but never lose a take to a missing dir */
-    FILE *f = fopen(out.c_str(), "wb");
-    if (!f) { fprintf(stderr, "[REC] cannot write %s\n", out.c_str()); return; }
+
+    /* Write to a temp name and rename into place only once every byte is
+     * committed. Without this, a full SD leaves a SHORT file that still claims
+     * the highest index -- and since playback can only ever open the highest,
+     * one failed write permanently shadows every good take for this cart, with
+     * no way back except deleting the file over the network. Every fwrite and
+     * the fclose are checked, because the bulk payload is buffered and most of
+     * a full-disk failure surfaces at close. */
+    std::string tmp = out + ".part";
+    FILE *f = fopen(tmp.c_str(), "wb");
+    if (!f) { fprintf(stderr, "[REC] cannot write %s\n", tmp.c_str()); return false; }
 
     char cart[P8REC_CART_LEN];
     memset(cart, 0, sizeof(cart));
@@ -160,14 +175,24 @@ static void p8rec_write(std::string const &cart_path)
     uint32_t ver = P8REC_ENGINE_VER;
     uint32_t n   = (uint32_t)g_rec_frames.size();
 
-    fwrite(P8REC_MAGIC, 1, P8REC_MAGIC_LEN, f);
-    fwrite(&ver, sizeof(ver), 1, f);
-    fwrite(cart, 1, sizeof(cart), f);
-    fwrite(&g_rec_seed, sizeof(g_rec_seed), 1, f);
-    fwrite(&n, sizeof(n), 1, f);
-    fwrite(&g_rec_frames[0], sizeof(uint32_t), n, f);
-    fclose(f);
+    bool ok = fwrite(P8REC_MAGIC, 1, P8REC_MAGIC_LEN, f) == (size_t)P8REC_MAGIC_LEN
+           && fwrite(&ver, sizeof(ver), 1, f) == 1
+           && fwrite(cart, 1, sizeof(cart), f) == sizeof(cart)
+           && fwrite(&g_rec_seed, sizeof(g_rec_seed), 1, f) == 1
+           && fwrite(&n, sizeof(n), 1, f) == 1
+           && fwrite(&g_rec_frames[0], sizeof(uint32_t), n, f) == (size_t)n;
+    if (fclose(f) != 0) ok = false;          /* buffered payload lands here */
+
+    if (!ok || rename(tmp.c_str(), out.c_str()) != 0)
+    {
+        remove(tmp.c_str());                 /* never leave a file holding the index */
+        fprintf(stderr, "[REC] FAILED to write %s -- the recording is still in memory,"
+                        " free some space and pick Stop Recording again\n", out.c_str());
+        return false;
+    }
+
     fprintf(stderr, "[REC] wrote %s (%u frames, seed %d)\n", out.c_str(), n, g_rec_seed);
+    return true;
 }
 
 /* Load the newest recording for this cart. Returns false -- leaving the mode
@@ -227,6 +252,30 @@ static bool p8rec_load(std::string const &cart_path)
     g_rec_pos  = 0;
     fprintf(stderr, "[REC] playing %s (%u frames, seed %d)\n", in.c_str(), n, seed);
     return true;
+}
+
+/* Single teardown for EVERY path that ends a recorder session, so none of them
+ * can forget a piece. There are five: Stop, take-over, buffer exhausted, OSD
+ * hot-swap, and Quit/cart-shutdown.
+ *
+ * The unsetenv is the part that is easy to miss and has the widest blast
+ * radius. Z8_TEST_SEED does not merely seed the PRNG -- vm.cpp also keys
+ * m_time_frame_stepped on it (t() switches from wall-clock to a fixed 1/60 per
+ * step), makes the cart-facing reset() re-seed to a fixed value, and pins
+ * stat(80..95) to a hardcoded date. Leaving it set after a session means every
+ * later cart loaded IN THIS PROCESS -- via hot-swap or Quit-then-pick -- runs
+ * with a frozen PRNG and a fake clock. A cart with "random" level generation
+ * would produce the identical layout every launch, silently.
+ *
+ * -test mode sets it deliberately at startup, so never clear it there. */
+static void p8rec_reset()
+{
+    g_rec_mode = 0;
+    g_rec_frames.clear();
+    g_rec_frames.shrink_to_fit();   /* clear() alone keeps the capacity forever */
+    g_rec_pos  = 0;
+    if (!g_test_trace_enabled)
+        unsetenv("Z8_TEST_SEED");
 }
 
 
@@ -557,6 +606,7 @@ int main(int argc, char **argv)
     if (g_test_trace) {
         target_fps = DEFAULT_FPS;
         setenv("Z8_TEST_SEED", "1", 0);
+        g_test_trace_enabled = true;   /* p8rec_reset must not unset it here */
     }
 
     if (cart_path.empty()) {
@@ -931,10 +981,13 @@ int main(int argc, char **argv)
         });
 
         g_vm->add_extcmd("z8_rec_stop", [](std::string const &) {
-            if (g_rec_mode == 1) p8rec_write(g_cart_path_for_rec);
-            g_rec_mode = 0;
-            g_rec_frames.clear();
-            g_rec_pos = 0;
+            /* Keep the buffer when the write FAILS, so the user can fix the
+             * problem (a full SD) and pick Stop Recording again instead of
+             * silently losing the take. Only a successful write -- or stopping
+             * a playback, which has nothing to save -- ends the session. */
+            if (g_rec_mode == 1 && !p8rec_write(g_cart_path_for_rec))
+                return;
+            p8rec_reset();
         });
 
         g_vm->add_extcmd("z8_fps_overlay", [](std::string const &args) {
@@ -1050,6 +1103,19 @@ int main(int argc, char **argv)
         if (g_savestate_load_request >= 0) {
             int slot = g_savestate_load_request;
             g_savestate_load_request = -1;
+            /* A savestate load is a total world warp -- it restores m_ram
+             * (including the PRNG) and m_state behind the recorder's back, and
+             * it is reachable from the OSD pause menu and F1-F4 at any time.
+             * It is INVISIBLE to the input stream, so a replay that hits one
+             * desyncs completely, and a recording that contains one can never
+             * be replayed. Same out-of-band-state-change class as the hot-swap:
+             * end the session rather than produce a recording that cannot work. */
+            if (g_rec_mode) {
+                fprintf(stderr, "[REC] savestate load -- %s discarded"
+                                " (a savestate is not part of the input stream)\n",
+                        g_rec_mode == 1 ? "recording" : "playback");
+                p8rec_reset();
+            }
             if (g_vm) g_vm->savestate_load(slot);
         }
 
@@ -1119,22 +1185,29 @@ int main(int argc, char **argv)
                      * recording is not already holding hands control back.
                      * Deliberately edge-based, so resting on a button the
                      * recording also holds does not end playback. */
+                    /* Seed the baseline from the FIRST replayed frame rather than
+                     * from 0. With a 0 baseline, frame 0 computes
+                     * pressed = live & ~0 == live, so ANY bit already held when
+                     * the cart mounts reads as a fresh press and kills playback at
+                     * frame 0. A resting finger, a second connected pad, or an
+                     * off-centre analog stick mapped to a direction would make
+                     * Play Recording fail EVERY time, after a full cart reload,
+                     * with no visible cause. */
                     static uint32_t prev_live = 0;
+                    if (g_rec_pos == 0) prev_live = live;
                     uint32_t pressed = live & ~prev_live;
                     prev_live = live;
                     if (pressed) {
                         fprintf(stderr, "[REC] take-over at frame %u -- playback stopped\n",
                                 (unsigned)g_rec_pos);
-                        g_rec_mode = 0;
-                        g_rec_frames.clear();
+                        p8rec_reset();
                     } else {
                         use = g_rec_frames[g_rec_pos++];
                     }
                 } else {
                     fprintf(stderr, "[REC] playback finished (%u frames)\n",
                             (unsigned)g_rec_frames.size());
-                    g_rec_mode = 0;
-                    g_rec_frames.clear();
+                    p8rec_reset();
                 }
             }
 
@@ -1212,9 +1285,7 @@ int main(int argc, char **argv)
                             if (g_rec_mode) {
                                 fprintf(stderr, "[REC] cart hot-swap -- %s discarded\n",
                                         g_rec_mode == 1 ? "recording" : "playback");
-                                g_rec_mode = 0;
-                                g_rec_frames.clear();
-                                g_rec_pos = 0;
+                                p8rec_reset();
                             }
 
                             cart_path = std::string(full);
@@ -1310,13 +1381,30 @@ int main(int argc, char **argv)
         // cart_path AND delete .s0 — otherwise the next outer-loop poll
         // would see the old .s0 path and immediately reload the same cart
         // (perceived as "Quit just resets the cartridge").
-        // Reachable only for cart-driven shutdowns (rare — extcmd("shutdown")
-        // from a cart) or hot-swap. User-driven Quit-from-pause-menu now
-        // exit(0)s directly via the z8_cart_browser extcmd handler above —
-        // never reaches this cleanup path. Master_Daemon respawns _handler.sh
-        // for the next cart, fresh process inits DDR3 to zero. Same architecture
-        // as OpenBOR's Quit. Universal rule: pause-menu Quit must exit(0).
+        // Reached by BOTH cart-driven shutdown (extcmd("shutdown")) AND the
+        // pause-menu Quit. NOTE: Quit does NOT exit the process -- bios.p8's
+        // Quit row calls extcmd("z8_app_requestexit") -> vm::request_exit(),
+        // which only clears m_is_running, so we come back through here and the
+        // outer loop re-enters the wait-for-OSD state IN THE SAME PROCESS.
+        // (A previous version of this comment claimed Quit exit(0)s via
+        // z8_cart_browser and never reached here. That is false, and it is why
+        // the recorder reset below was missing.)
         if (!hot_swap_pending) {
+            /* Session boundary -- same reasoning as the hot-swap reset above.
+             * Every global survives an in-process return, so a recorder left
+             * armed here carries into whatever cart the user picks next:
+             *   playing   -> the old cart's stream injects into the new cart;
+             *   recording -> both carts' frames land in one buffer and a later
+             *                Stop writes them under the NEW cart's name, which
+             *                PASSES the name guard on playback and only then
+             *                desyncs.
+             * Discard rather than flush: Quit means the session was abandoned. */
+            if (g_rec_mode) {
+                fprintf(stderr, "[REC] session ended -- %s discarded\n",
+                        g_rec_mode == 1 ? "recording" : "playback");
+                p8rec_reset();
+            }
+
             cart_path.clear();
             unlink("/media/fat/config/PICO-8.s0");
             fprintf(stderr, "Cart-driven shutdown: cleared .s0, will wait for OSD\n");
