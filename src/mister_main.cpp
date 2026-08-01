@@ -981,6 +981,43 @@ int main(int argc, char **argv)
          * both false and the submenu is stuck on its idle branch forever. */
         g_vm->add_stat(148, []() -> std::any { return (int16_t)g_rec_mode; });
 
+        /* Override the built-in "reset" so Reset Cart RESTARTS a recording
+         * instead of silently ending it. Registered handlers are looked up
+         * before the built-in chain (vm.cpp api_extcmd), so this wins.
+         *
+         * Reset used to write only the reset marker, so the respawn found no
+         * recmode marker and came up idle: the take was discarded with no
+         * warning and no log line. The bad case is not losing the take -- it is
+         * not NOTICING, and playing on for ten minutes believing you are still
+         * recording. (User-found 2026-08-01; reviewers had flagged the same
+         * path as "defensible policy, but silent".)
+         *
+         * Re-arming is the behaviour that matches the feature: a recording is
+         * title-anchored, so it always begins at the cart's start, and Reset
+         * returns you to precisely that point. "Reset while recording" is
+         * therefore almost always "let me do that run again", and re-arming
+         * gives a clean re-take from the anchor.
+         *
+         * Playback is deliberately NOT re-armed: Reset during a replay is a
+         * manual intervention, and take-over already covers stopping one.
+         *
+         * Mirrors the built-in handler otherwise (marker + _exit(0), .s0 kept
+         * so the respawn re-mounts the same cart). */
+        g_vm->add_extcmd("reset", [](std::string const &) {
+            if (g_rec_mode == 1) {
+                FILE *m = fopen("/tmp/pico8_recmode", "w");
+                if (m) { fputs("REC", m); fclose(m); }
+                fprintf(stderr, "[REC] reset while recording -- restarting the take\n");
+            } else if (g_rec_mode == 2) {
+                fprintf(stderr, "[REC] reset during playback -- playback ended\n");
+            }
+            FILE *r = fopen("/tmp/pico8_reset_marker", "w");
+            if (r) fclose(r);
+            fprintf(stderr, "Reset: keeping .s0, _exit(0) -- Master_Daemon will respawn same cart\n");
+            fflush(stderr);
+            _exit(0);
+        });
+
         g_vm->add_extcmd("z8_rec_record", [](std::string const &) {
             FILE *m = fopen("/tmp/pico8_recmode", "w");
             if (m) { fputs("REC", m); fclose(m); }
