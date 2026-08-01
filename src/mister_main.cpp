@@ -1187,6 +1187,36 @@ int main(int argc, char **argv)
                             snprintf(full, sizeof(full), "/media/fat/%s", s0_path);
                         if (cart_path != full) {
                             fprintf(stderr, "Hot-swap: new OSD cart %s\n", full);
+
+                            /* Stop the recorder. A hot-swap is an IN-PROCESS
+                             * reload, so unlike Reset/Quit (which _exit and get
+                             * a clean slate for free) every global survives it.
+                             * Leaving the recorder running across a cart change
+                             * is wrong in both directions:
+                             *   playing   -> the old cart's input stream keeps
+                             *                injecting into the NEW cart, which
+                             *                desyncs immediately (user-reported
+                             *                2026-07-31);
+                             *   recording -> frames from two different carts land
+                             *                in one buffer, and a later Stop
+                             *                writes them under the NEW cart's
+                             *                name -- a poisoned file that passes
+                             *                the cart-name guard on playback.
+                             * A hot-swap means this session was abandoned, so
+                             * discard rather than flush; that also matches
+                             * OpenBOR, whose _exit(1) swap discards implicitly.
+                             * NOTE: scoped to the OSD .s0 path ONLY. A cart-driven
+                             * load() (multicart sub-cart) must NOT reset -- the
+                             * original run did the same load at the same frame, so
+                             * it is part of the deterministic replay. */
+                            if (g_rec_mode) {
+                                fprintf(stderr, "[REC] cart hot-swap -- %s discarded\n",
+                                        g_rec_mode == 1 ? "recording" : "playback");
+                                g_rec_mode = 0;
+                                g_rec_frames.clear();
+                                g_rec_pos = 0;
+                            }
+
                             cart_path = std::string(full);
                             game_running = false;
                             hot_swap_pending = true;
