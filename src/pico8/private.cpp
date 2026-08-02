@@ -31,6 +31,10 @@
 #include "pico8/pico8.h"
 #include "pico8/vm.h"
 
+/* Defined in mister_main.cpp. Records which save files a run touches so the
+ * recorder can embed only those. A no-op when not recording. */
+extern "C" void p8rec_note_save_file(const char *name);
+
 namespace z8::pico8
 {
 
@@ -220,6 +224,14 @@ std::string vm::get_path_cstore(std::string cart_name)
     std::error_code code;
     std::filesystem::create_directories(file_path, code);
 #endif
+    /* Tell the recorder this file is part of the run. The snapshot embedded
+     * in a shared .inp is scoped to what the run ACTUALLY touched -- without
+     * this it carried the whole saves folder, i.e. every cart the user has
+     * ever played, plus any cstore overlay (a complete .p8 cart). Hooked at
+     * BOTH getters so a multicart registers each sub-cart as it loads;
+     * scoping by the entry cart's NAME would silently break multicarts,
+     * whose sub-carts use unrelated cartdata ids. */
+    p8rec_note_save_file(cart_name.c_str());
     return file_path + cart_name;
 }
 
@@ -255,6 +267,14 @@ std::string vm::get_path_save(std::string cart_name)
     std::error_code code;
     std::filesystem::create_directories(file_path, code);
 #endif
+    /* Tell the recorder this file is part of the run. The snapshot embedded
+     * in a shared .inp is scoped to what the run ACTUALLY touched -- without
+     * this it carried the whole saves folder, i.e. every cart the user has
+     * ever played, plus any cstore overlay (a complete .p8 cart). Hooked at
+     * BOTH getters so a multicart registers each sub-cart as it loads;
+     * scoping by the entry cart's NAME would silently break multicarts,
+     * whose sub-carts use unrelated cartdata ids. */
+    p8rec_note_save_file(cart_name.c_str());
     return file_path + cart_name;
 }
 

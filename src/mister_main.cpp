@@ -184,6 +184,30 @@ static uint32_t p8_crc32(const void* buf, size_t len) {
 struct P8SnapFile { std::string name; std::vector<unsigned char> data; };
 static std::vector<P8SnapFile> g_rec_snap;   /* payload of the take being played */
 
+/* Which save files this run actually opened. Called from vm::get_path_save and
+ * vm::get_path_cstore (private.cpp) at the moment each is resolved, so a
+ * multicart registers every sub-cart as it loads.
+ *
+ * Why this exists: the snapshot used to be seeded from the WHOLE saves folder,
+ * so a shared take carried save data for every cart the user had ever played --
+ * and, because cstore writes a complete .p8 into that same directory, entire
+ * third-party carts in source form. Bloat, a privacy leak, and an unwitting
+ * redistribution of other people's work, all inside a file the user believes is
+ * a controller log.
+ *
+ * Scoping by the entry cart's NAME would have been simpler and wrong: sub-carts
+ * call cartdata() with ids bearing no relation to it, so name-scoping silently
+ * breaks every multicart recording. */
+static std::vector<std::string> g_rec_used;
+
+extern "C" void p8rec_note_save_file(const char *name)
+{
+    if (g_rec_mode != 1 || !name || !*name) return;   /* only while recording */
+    for (size_t i = 0; i < g_rec_used.size(); i++)
+        if (g_rec_used[i] == name) return;
+    if (g_rec_used.size() < 512) g_rec_used.push_back(name);
+}
+
 static std::vector<P8SnapFile> p8snap_from_dir(std::string const &dir)
 {
     std::vector<P8SnapFile> out;
@@ -193,6 +217,27 @@ static std::vector<P8SnapFile> p8snap_from_dir(std::string const &dir)
     while ((e = readdir(d)) != NULL) {
         std::string n = e->d_name;
         if (n == "." || n == "..") continue;
+        /* Only what the run touched, and only cartdata.
+         *
+         * The .p8d.txt filter is load-bearing, not tidiness: the READER refuses
+         * any payload entry that is not cartdata, because a <cart>.p8 entry is a
+         * cstore overlay and vm::load_cart would splice it over the cart's ROM.
+         * Without the same filter here, a cart that uses cstore would write a
+         * take its own reader then rejects outright.
+         *
+         * Consequence, accepted with that security fix: a cstore overlay is NOT
+         * carried, so a cart relying on one replays against un-overlaid ROM
+         * elsewhere. Closing that needs the overlay verified some other way --
+         * it is not reopened by putting it back in the payload. */
+        {
+            static const char *EXT = ".p8d.txt";
+            size_t el = strlen(EXT);
+            if (n.size() <= el || n.compare(n.size() - el, el, EXT) != 0) continue;
+            bool used = false;
+            for (size_t i = 0; i < g_rec_used.size() && !used; i++)
+                if (g_rec_used[i] == n) used = true;
+            if (!used) continue;
+        }
         std::string p = dir + "/" + n;
         struct stat st;
         if (stat(p.c_str(), &st) != 0 || S_ISDIR(st.st_mode)) continue;
@@ -675,6 +720,8 @@ static void p8rec_reset()
     g_rec_frames.shrink_to_fit();   /* clear() alone keeps the capacity forever */
     g_rec_snap.clear();             /* same reason, and it can hold real bytes */
     g_rec_snap.shrink_to_fit();
+    g_rec_used.clear();             /* the used-set belongs to one take only */
+    g_rec_used.shrink_to_fit();
     g_rec_pos  = 0;
     if (!g_test_trace_enabled)
         unsetenv("Z8_TEST_SEED");
