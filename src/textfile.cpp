@@ -19,6 +19,7 @@
 #include <filesystem>
 #endif
 #include <sstream> // std::stringstream
+#include <cstdlib> // std::strtoul -- non-throwing, unlike std::stoul
 
 namespace z8
 {
@@ -55,10 +56,22 @@ bool textfile::read_save(std::string filepath, uint8_t* data)
     for (std::string line; std::getline(ss, line, '\n');)
     {
         if (j >= 8) break;
+        /* A cartdata line is 64 hex characters. Neither of the two calls below
+         * was guarded: substr threw std::out_of_range on a short line, stoul
+         * threw std::invalid_argument on anything non-hex, and NOTHING on this
+         * path catches either -- so it went straight to std::terminate/SIGABRT.
+         *
+         * That was tolerable while these files were only ever written by us.
+         * Now a shared recording carries cartdata, so a file containing "zz" or
+         * a truncated line is a reliable "this replay kills your core" from a
+         * stranger. Skip a malformed line instead. */
+        if (line.size() < 64) break;
         for (int i = 0; i < 32; ++i)
         {
-            std::string sub = line.substr(i * 2, 2);
-            unsigned int x = std::stoul(sub, nullptr, 16);
+            char sub[3] = { line[i * 2], line[i * 2 + 1], 0 };
+            char *end = NULL;
+            unsigned int x = (unsigned int)std::strtoul(sub, &end, 16);
+            if (end != sub + 2) break;   /* non-hex: stop, do not throw */
             int gindex = i + j * 32;
             // pico 8 store the numbers in reverse order from ram
             int index = (gindex & ~0x3) + 3 - gindex % 4;
