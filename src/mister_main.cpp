@@ -509,7 +509,13 @@ static bool p8rec_load(std::string const &cart_path,
     else
     {
         int hi = p8rec_highest(base);
-        if (!hi) { fprintf(stderr, "[REC] no recording for '%s'\n", base.c_str()); return false; }
+        if (!hi) {
+            fprintf(stderr, "[REC] no recording for '%s'\n", base.c_str());
+            /* Used to be silent: Play Recording reset the cart, nothing played,
+             * and the user was left at the title with no explanation. */
+            NativeVideoWriter_Notice("No recording for this cart", 4);
+            return false;
+        }
         in = std::string(P8REC_DIR) + "/" + base + "_" + std::to_string(hi) + ".inp";
     }
 
@@ -540,6 +546,12 @@ static bool p8rec_load(std::string const &cart_path,
         fclose(f);
         fprintf(stderr, "[REC] this recording is for cart '%s' but '%s' is loaded"
                         " -- not playing\n", cart, base.c_str());
+        {   /* Name the cart they need, not just "refused" -- this is the one
+             * message a shared recording will produce most often. */
+            char msg[96];
+            snprintf(msg, sizeof(msg), "Recording is for %s - load that cart", cart);
+            NativeVideoWriter_Notice(msg, 6);
+        }
         return false;
     }
     if (ver != P8REC_ENGINE_VER)

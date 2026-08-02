@@ -114,6 +114,15 @@ void NativeVideoWriter_WriteAudio(const int16_t *stereo_samples, uint32_t num_sa
 /// screenshot or a frame-hash comparison. Safe to leave on while recording or
 /// replaying -- it lives in the framebuffer, not in the input stream.
 void NativeVideoWriter_SetFpsOverlay(int on);
+
+/* Show a short line at the top of the screen for `seconds` (0 = default 4).
+ * Uppercased and word-wrapped to 21 columns, up to 3 lines. Pass NULL to clear.
+ *
+ * For anything the player must KNOW -- a refused replay, a version mismatch, a
+ * missing snapshot, take-over, a failed Stop Recording. Those all used to go
+ * only to pico8.log, which is unreadable from a couch. Keep the log line too:
+ * this is the headline, the log is the detail. */
+void NativeVideoWriter_Notice(const char* msg, int seconds);
 int  NativeVideoWriter_GetFpsOverlay(void);
 
 #ifdef __cplusplus
