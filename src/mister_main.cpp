@@ -653,10 +653,15 @@ static bool p8rec_load(std::string const &cart_path,
         }
         return false;
     }
+    /* Braces are load-bearing: without them the notice sat outside the if and
+     * fired on EVERY successful load, so a take recorded on this exact build
+     * still warned "older build - may not match" for 6 seconds. */
     if (ver != P8REC_ENGINE_VER)
+    {
         fprintf(stderr, "[REC] recorded on engine v%u (this build is v%u) -- may"
                         " desync; press any button to take over\n", ver, P8REC_ENGINE_VER);
-                        NativeVideoWriter_Notice("Recorded on an older build - may not match", 6);
+        NativeVideoWriter_Notice("Recorded on an older build - may not match", 6);
+    }
 
     g_rec_frames.assign(n, 0u);
     size_t got = fread(&g_rec_frames[0], sizeof(uint32_t), n, f);
@@ -1839,7 +1844,7 @@ int main(int argc, char **argv)
                     if (pressed) {
                         fprintf(stderr, "[REC] take-over at frame %u -- playback stopped\n",
                                 (unsigned)g_rec_pos);
-                                NativeVideoWriter_Notice("You took over - replay stopped", 4);
+                        NativeVideoWriter_Notice("You took over - replay stopped", 4);
                         p8rec_reset();
                     } else {
                         use = g_rec_frames[g_rec_pos++];
@@ -1847,7 +1852,7 @@ int main(int argc, char **argv)
                 } else {
                     fprintf(stderr, "[REC] playback finished (%u frames)\n",
                             (unsigned)g_rec_frames.size());
-                            NativeVideoWriter_Notice("Replay finished - you have control", 4);
+                    NativeVideoWriter_Notice("Replay finished - you have control", 4);
                     p8rec_reset();
                 }
             }
