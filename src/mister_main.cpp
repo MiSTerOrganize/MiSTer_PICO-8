@@ -27,6 +27,7 @@
 #include <fcntl.h>
 #include <dirent.h>
 #include <sys/stat.h>
+#include "native_sha1.h"   /* content identity for the recorder (step 19) */
 
 #include <SDL/SDL.h>
 
@@ -88,7 +89,15 @@ static volatile bool g_return_to_browser = false;
  * receiving a newer take is routine, so it needs its own answer. */
 #define P8REC_MAGIC      "P8REC"
 #define P8REC_MAGIC_LEN  5
-#define P8REC_CONTAINER  4u        /* framing version; bump on any layout change */
+#define P8REC_CONTAINER  5u        /* framing version; bump on any layout change */
+/* v5 adds the identity section (step 19): a manifest of (name, sha1) for every
+ * cart file the run opened. v4 identified content by its PATH, which was wrong
+ * in both directions -- a renamed v2 matched v1's name, played, and desynced
+ * silently, while the same cart under a different layout was refused. It also
+ * stored the name truncated to 255 and compared the FULL string, so a deep-path
+ * cart could never replay its own take. Hashes replace all of that; the name
+ * survives only so a refusal can say WHICH cart is wanted. */
+#define P8REC_IDENT_MAX  512u      /* manifest entries; a multicart is ~dozens */
 // Bump ONLY on a shipped game-LOGIC change that would desync existing
 // recordings (VM semantics, RNG, timestep, input mapping). NOT for
 // render/audio/UI/perf changes -- the fixed timestep makes replay independent
@@ -206,6 +215,82 @@ extern "C" void p8rec_note_save_file(const char *name)
     for (size_t i = 0; i < g_rec_used.size(); i++)
         if (g_rec_used[i] == name) return;
     if (g_rec_used.size() < 512) g_rec_used.push_back(name);
+}
+
+/* ---- Content identity (step 19) -------------------------------------------
+ *
+ * A take is identified by the BYTES of every cart file the run opened, never by
+ * a path. Hooked at vm::load_cart, which is the one choke point for the entry
+ * cart, multicart siblings, reload() and cstore().
+ *
+ * Entry-only hashing would not be enough: a multicart loads siblings at runtime,
+ * so verifying just the entry checks 1 of N files and the other N-1 can differ
+ * freely -- which is precisely the silent divergence this format exists to
+ * prevent. So: record every file, verify each one AS THE RUN OPENS IT, and name
+ * the offending file when they disagree.
+ *
+ * Carts are tens to hundreds of KB, so these are always full-file hashes. No
+ * cache, no size threshold -- both are complications the PICO-8 side does not
+ * need, and a play-side cache can only ever cost correctness. */
+struct P8RecIdent { std::string name; uint8_t hash[NSHA1_DIGEST_LEN]; };
+static std::vector<P8RecIdent> g_rec_ident;   /* record: built; play: expected */
+static bool g_rec_ident_ok = true;            /* cleared by a sibling mismatch */
+
+/* Display name for a cart file: the path relative to Carts/, separators kept.
+ * Used ONLY in messages and to pair a manifest entry with the file the run
+ * opens. It never decides anything -- that is what the hash is for. */
+static std::string p8rec_ident_name(std::string const &path)
+{
+    static const char *root = "/media/fat/games/PICO-8/Carts/";
+    size_t rl = strlen(root);
+    return (path.compare(0, rl, root) == 0) ? path.substr(rl) : path;
+}
+
+extern "C" void p8rec_note_cart_file(const char *resolved_path)
+{
+    if (!g_rec_mode || !resolved_path || !*resolved_path) return;
+
+    std::string nm = p8rec_ident_name(resolved_path);
+    uint8_t h[NSHA1_DIGEST_LEN];
+    bool hashed = (nsha1_file(resolved_path, h) == 0);
+
+    if (g_rec_mode == 1)
+    {
+        /* RECORD: append each newly-seen file. An unreadable file is NOT
+         * recorded as a zero hash -- that would make two unreadable carts
+         * compare equal. Skip it; the take then simply does not vouch for it. */
+        if (!hashed) { fprintf(stderr, "[REC] cannot hash %s -- not in the manifest\n", nm.c_str()); return; }
+        for (size_t i = 0; i < g_rec_ident.size(); i++)
+            if (g_rec_ident[i].name == nm) return;
+        if (g_rec_ident.size() >= P8REC_IDENT_MAX) return;
+        P8RecIdent e; e.name = nm; memcpy(e.hash, h, sizeof(h));
+        g_rec_ident.push_back(e);
+        return;
+    }
+
+    /* PLAY: verify against what the take recorded. A file the manifest does not
+     * mention is not an error -- an older take, or a path the recorder could not
+     * hash -- but a file it DOES mention and that differs is a guaranteed
+     * divergence, so stop and say which file and what was expected. */
+    for (size_t i = 0; i < g_rec_ident.size(); i++)
+    {
+        if (g_rec_ident[i].name != nm) continue;
+        if (hashed && memcmp(g_rec_ident[i].hash, h, NSHA1_DIGEST_LEN) == 0) return;
+
+        char want[41], got[41];
+        nsha1_hex(g_rec_ident[i].hash, want);
+        if (hashed) nsha1_hex(h, got); else snprintf(got, sizeof(got), "unreadable");
+        fprintf(stderr, "[REC] %s does not match this recording (wants %s, yours is %s)"
+                        " -- stopping, the replay would not match\n", nm.c_str(), want, got);
+        {   /* Name the FILE, not just "content mismatch": on a multicart this is
+             * a sibling the user may not even know is involved. */
+            char msg[96];
+            snprintf(msg, sizeof(msg), "%s is a different version - replay stopped", nm.c_str());
+            NativeVideoWriter_Notice(msg, 6);
+        }
+        g_rec_ident_ok = false;
+        return;
+    }
 }
 
 static std::vector<P8SnapFile> p8snap_from_dir(std::string const &dir)
@@ -525,8 +610,26 @@ static bool p8rec_write(std::string const &cart_path)
            && fwrite(cart, 1, sizeof(cart), f) == sizeof(cart)
            && fwrite(&g_rec_seed, sizeof(g_rec_seed), 1, f) == 1
            && fwrite(&n, sizeof(n), 1, f) == 1
-           && fwrite(&crc, sizeof(crc), 1, f) == 1
-           && fwrite(&g_rec_frames[0], sizeof(uint32_t), n, f) == (size_t)n;
+           && fwrite(&crc, sizeof(crc), 1, f) == 1;
+
+    /* Identity section (v5). Sits between the fixed header and the frame block so
+     * a probe can read it and stop, without seeking past a frame count the file
+     * itself supplied -- probe() is called at four selection sites, before any
+     * reset, and must not have to trust the thing it is validating. */
+    if (ok)
+    {
+        uint16_t cnt = (uint16_t)g_rec_ident.size();
+        ok = fwrite(&cnt, sizeof(cnt), 1, f) == 1;
+        for (size_t i = 0; ok && i < g_rec_ident.size(); i++)
+        {
+            uint16_t nl = (uint16_t)g_rec_ident[i].name.size();
+            ok = fwrite(&nl, sizeof(nl), 1, f) == 1
+              && fwrite(g_rec_ident[i].name.data(), 1, nl, f) == nl
+              && fwrite(g_rec_ident[i].hash, 1, NSHA1_DIGEST_LEN, f) == NSHA1_DIGEST_LEN;
+        }
+    }
+
+    if (ok) ok = fwrite(&g_rec_frames[0], sizeof(uint32_t), n, f) == (size_t)n;
     /* The save state this run STARTED from, embedded so the take is one file. */
     std::vector<P8SnapFile> snap = p8snap_from_dir(P8REC_ARMSNAP);
     if (ok) ok = p8snap_write(f, snap);
@@ -640,18 +743,73 @@ static bool p8rec_load(std::string const &cart_path,
     }
 
     cart[P8REC_CART_LEN - 1] = 0;
-    if (base != cart)
+
+    /* Identity section. Read it BEFORE the frame block, and treat a short read as
+     * truncation rather than "an older take" -- the container bump already
+     * rejected every older magic, so anything reaching this line and running out
+     * of bytes is damaged. */
+    g_rec_ident.clear();
     {
-        fclose(f);
-        fprintf(stderr, "[REC] this recording is for cart '%s' but '%s' is loaded"
-                        " -- not playing\n", cart, base.c_str());
-        {   /* Name the cart they need, not just "refused" -- this is the one
-             * message a shared recording will produce most often. */
-            char msg[96];
-            snprintf(msg, sizeof(msg), "Recording is for %s - load that cart", cart);
-            NativeVideoWriter_Notice(msg, 6);
+        uint16_t cnt = 0;
+        if (fread(&cnt, sizeof(cnt), 1, f) != 1 || cnt > P8REC_IDENT_MAX)
+        {
+            fclose(f);
+            fprintf(stderr, "[REC] %s has a bad identity section\n", in.c_str());
+            NativeVideoWriter_Notice("Recording is damaged - not playing", 5);
+            return false;
         }
-        return false;
+        for (uint16_t i = 0; i < cnt; i++)
+        {
+            uint16_t nl = 0;
+            if (fread(&nl, sizeof(nl), 1, f) != 1 || nl == 0 || nl > 1024) { cnt = 0xFFFF; break; }
+            std::string nm(nl, '\0');
+            P8RecIdent e;
+            if (fread(&nm[0], 1, nl, f) != nl
+             || fread(e.hash, 1, NSHA1_DIGEST_LEN, f) != NSHA1_DIGEST_LEN) { cnt = 0xFFFF; break; }
+            e.name = nm;
+            g_rec_ident.push_back(e);
+        }
+        if (cnt == 0xFFFF)
+        {
+            fclose(f);
+            g_rec_ident.clear();
+            fprintf(stderr, "[REC] %s: identity section is truncated\n", in.c_str());
+            NativeVideoWriter_Notice("Recording is truncated - not playing", 5);
+            return false;
+        }
+    }
+
+    /* Verify the ENTRY cart by content. The stored name is display-only from here
+     * on: it is neither unique nor stable across machines, and comparing it was
+     * wrong in both directions -- a renamed v2 matched and desynced, while the
+     * same cart in a different folder was refused. Siblings are verified later,
+     * as the run opens them (p8rec_note_cart_file).
+     *
+     * An older take with an empty manifest cannot be verified at all. It still
+     * plays -- refusing would brick every take made before v5 -- but the engine
+     * warning below is the honest signal for it. */
+    if (!g_rec_ident.empty())
+    {
+        uint8_t have[NSHA1_DIGEST_LEN];
+        std::string want_name = g_rec_ident[0].name;
+        if (nsha1_file(cart_path.c_str(), have) != 0
+         || memcmp(have, g_rec_ident[0].hash, NSHA1_DIGEST_LEN) != 0)
+        {
+            fclose(f);
+            g_rec_ident.clear();
+            fprintf(stderr, "[REC] loaded cart does not match this recording"
+                            " (recorded from '%s') -- not playing\n", want_name.c_str());
+            {   /* Name what they need. This is the message a shared take produces
+                 * most often, and the renderer is 21 cols x 3 lines = 63 chars
+                 * before it truncates -- so lead with the name, and keep the
+                 * instruction short enough that a long name loses trailing words
+                 * rather than the whole point of the sentence. */
+                char msg[96];
+                snprintf(msg, sizeof(msg), "Needs %s - load that cart", want_name.c_str());
+                NativeVideoWriter_Notice(msg, 6);
+            }
+            return false;
+        }
     }
     /* Braces are load-bearing: without them the notice sat outside the if and
      * fired on EVERY successful load, so a take recorded on this exact build
@@ -727,6 +885,9 @@ static void p8rec_reset()
     g_rec_snap.shrink_to_fit();
     g_rec_used.clear();             /* the used-set belongs to one take only */
     g_rec_used.shrink_to_fit();
+    g_rec_ident.clear();            /* manifest likewise: one take, one identity */
+    g_rec_ident.shrink_to_fit();
+    g_rec_ident_ok = true;
     g_rec_pos  = 0;
     if (!g_test_trace_enabled)
         unsetenv("Z8_TEST_SEED");
@@ -1825,7 +1986,19 @@ int main(int argc, char **argv)
                 }
             }
             else if (g_rec_mode == 2) {
-                if (g_rec_pos < g_rec_frames.size()) {
+                /* A sibling cart the run just opened did not match the manifest.
+                 * p8rec_note_cart_file has already named the file on screen; it
+                 * cannot stop playback from inside vm::load_cart, because that is
+                 * called mid-load with the VM part-way through a cart swap. Stop
+                 * here instead, at the next frame boundary, which is the same
+                 * place take-over and end-of-take stop. Injecting even one more
+                 * frame into content known to differ is the silent divergence the
+                 * manifest exists to prevent. */
+                if (!g_rec_ident_ok) {
+                    fprintf(stderr, "[REC] stopping playback: content mismatch\n");
+                    p8rec_reset();
+                }
+                else if (g_rec_pos < g_rec_frames.size()) {
                     /* Take-over: any button the human presses that the
                      * recording is not already holding hands control back.
                      * Deliberately edge-based, so resting on a button the

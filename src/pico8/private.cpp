@@ -32,8 +32,14 @@
 #include "pico8/vm.h"
 
 /* Defined in mister_main.cpp. Records which save files a run touches so the
- * recorder can embed only those. A no-op when not recording. */
-extern "C" void p8rec_note_save_file(const char *name);
+ * recorder can embed only those. A no-op when not recording.
+ *
+ * WEAK, and null-checked at both call sites, because this translation unit is
+ * part of zepto8core -- which the headless diff harness links WITHOUT
+ * mister_main.cpp. As a plain extern it left an undefined symbol from the moment
+ * step 20 added it; the harness is dispatch-only and had not been run since, so
+ * the break was invisible. */
+extern "C" void p8rec_note_save_file(const char *name) __attribute__((weak));
 
 namespace z8::pico8
 {
@@ -242,7 +248,7 @@ std::string vm::get_path_cstore(std::string cart_name)
      * BOTH getters so a multicart registers each sub-cart as it loads;
      * scoping by the entry cart's NAME would silently break multicarts,
      * whose sub-carts use unrelated cartdata ids. */
-    p8rec_note_save_file(cart_name.c_str());
+    if (p8rec_note_save_file) p8rec_note_save_file(cart_name.c_str());
     return file_path + cart_name;
 }
 
@@ -285,7 +291,7 @@ std::string vm::get_path_save(std::string cart_name)
      * BOTH getters so a multicart registers each sub-cart as it loads;
      * scoping by the entry cart's NAME would silently break multicarts,
      * whose sub-carts use unrelated cartdata ids. */
-    p8rec_note_save_file(cart_name.c_str());
+    if (p8rec_note_save_file) p8rec_note_save_file(cart_name.c_str());
     return file_path + cart_name;
 }
 

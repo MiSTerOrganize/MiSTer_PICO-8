@@ -34,6 +34,16 @@
 
 #include "pico8/pico8.h"
 #include "pico8/vm.h"
+
+/* Defined in mister_main.cpp. Builds the content manifest while recording and
+ * verifies each cart file against it while playing.
+ *
+ * WEAK, and null-checked at the call site, because this translation unit is part
+ * of zepto8core -- which the headless diff harness links WITHOUT mister_main.cpp.
+ * A plain extern would leave an undefined symbol and break that build, and the
+ * harness is dispatch-only, so nobody would find out until someone next went
+ * looking for a bug with it. */
+extern "C" void p8rec_note_cart_file(const char *resolved_path) __attribute__((weak));
 #include "bindings/lua.h"
 #include "bios.h"
 #include "eris.h"  // Lua state persistence — used by savestate (Phase 1B)
@@ -521,6 +531,18 @@ bool vm::load_cart(cart &target_cart, std::string const& filename)
     bool has_loaded = target_cart.load(filename);
     if (has_loaded)
     {
+        /* Content identity for the recorder. This is the ONE choke point for
+         * every cart file a run opens -- the entry cart, multicart siblings,
+         * reload() and cstore() -- which is exactly why the manifest is built
+         * here rather than at the entry point. Hashing only the entry would
+         * verify 1 of N files on a multicart and let the rest differ freely,
+         * i.e. the silent divergence the format exists to prevent.
+         *
+         * Recording: appends (name, sha1). Playing: verifies against the take
+         * and stops with the offending filename if they disagree. No-op when
+         * neither. Called only on a SUCCESSFUL load, so it never hashes a path
+         * the engine itself rejected. */
+        if (p8rec_note_cart_file) p8rec_note_cart_file(filename.c_str());
         // TODO: in pico 8, cstore is saved using file hash as a filename
         // goal is that if you make a new version of your cart, it will change hash and so have a separate save
         // also works if you have several cartridge with same file name
