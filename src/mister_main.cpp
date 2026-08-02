@@ -678,6 +678,82 @@ static time_t g_s1_seen = 0;
  * corrupt file is REFUSED rather than played into a guaranteed desync. The
  * cart-match check below is what makes the OSD path safe: that picker will
  * happily hand us a take recorded against a completely different cart. */
+/* Validate a take BEFORE anything irreversible happens (design note §7).
+ *
+ * Every "play a replay" entry point used to write its markers and _exit()
+ * WITHOUT opening the file, so validation happened in the next process, after
+ * the cart had already reloaded. A wrong pick therefore destroyed the user's
+ * session and only then explained itself -- worst on the OSD .s1 path, which is
+ * exactly where wrong picks come from.
+ *
+ * Probing here means the refusal happens while the pause menu is still open and
+ * the run is untouched. Reads the header and the identity section only; it never
+ * touches the frame block or the payload, so it stays cheap enough to run on
+ * every selection.
+ *
+ * Returns true if the take would play. On false, `why` holds a user-facing
+ * reason already sized for the 21x3 notice renderer. */
+static bool p8rec_probe(std::string const &cart_path,
+                        std::string const &explicit_path,
+                        char *why, size_t whysz)
+{
+    std::string in = explicit_path;
+    if (in.empty())
+    {
+        std::string base = p8rec_cart_base(cart_path);
+        int hi = p8rec_highest(base);
+        if (!hi) { snprintf(why, whysz, "No recording for this cart"); return false; }
+        in = std::string(P8REC_DIR) + "/" + base + "_" + std::to_string(hi) + ".inp";
+    }
+
+    FILE *f = fopen(in.c_str(), "rb");
+    if (!f) { snprintf(why, whysz, "That recording cannot be opened"); return false; }
+
+    char magic[P8REC_MAGIC_LEN];
+    uint32_t container = 0, ver = 0;
+    char cart[P8REC_CART_LEN];
+    bool ok = fread(magic, 1, P8REC_MAGIC_LEN, f) == (size_t)P8REC_MAGIC_LEN
+           && memcmp(magic, P8REC_MAGIC, P8REC_MAGIC_LEN) == 0
+           && fread(&container, sizeof(container), 1, f) == 1
+           && fread(&ver, sizeof(ver), 1, f) == 1
+           && fread(cart, 1, sizeof(cart), f) == sizeof(cart);
+    if (!ok) { fclose(f); snprintf(why, whysz, "That file is not a valid recording"); return false; }
+    if (container > P8REC_CONTAINER)
+    { fclose(f); snprintf(why, whysz, "Made by a newer core - update to play it"); return false; }
+    if (container < P8REC_CONTAINER)
+    { fclose(f); snprintf(why, whysz, "Recorded by an older core - re-record it"); return false; }
+
+    /* skip seed + frame count + crc, then read the identity section */
+    if (fseek(f, 4 + 4 + 4, SEEK_CUR) != 0)
+    { fclose(f); snprintf(why, whysz, "Recording is truncated - not playing"); return false; }
+
+    uint16_t cnt = 0;
+    if (fread(&cnt, sizeof(cnt), 1, f) != 1 || cnt > P8REC_IDENT_MAX)
+    { fclose(f); snprintf(why, whysz, "Recording is damaged - not playing"); return false; }
+    if (cnt == 0) { fclose(f); return true; }   /* pre-v5 take: unverifiable, still plays */
+
+    uint16_t nl = 0;
+    uint8_t want[NSHA1_DIGEST_LEN];
+    std::string nm;
+    if (fread(&nl, sizeof(nl), 1, f) != 1 || nl == 0 || nl > 1024)
+    { fclose(f); snprintf(why, whysz, "Recording is damaged - not playing"); return false; }
+    nm.assign(nl, '\0');
+    if (fread(&nm[0], 1, nl, f) != nl
+     || fread(want, 1, NSHA1_DIGEST_LEN, f) != NSHA1_DIGEST_LEN)
+    { fclose(f); snprintf(why, whysz, "Recording is truncated - not playing"); return false; }
+    fclose(f);
+
+    uint8_t have[NSHA1_DIGEST_LEN];
+    if (nsha1_file(cart_path.c_str(), have) != 0
+     || memcmp(have, want, NSHA1_DIGEST_LEN) != 0)
+    {   /* Name what they need. Lead with the name so a long one loses trailing
+         * words rather than the point of the sentence. */
+        snprintf(why, whysz, "Needs %s - load that cart", nm.c_str());
+        return false;
+    }
+    return true;
+}
+
 static bool p8rec_load(std::string const &cart_path,
                        std::string const &explicit_path = std::string())
 {
@@ -1629,6 +1705,18 @@ int main(int argc, char **argv)
         });
 
         g_vm->add_extcmd("z8_rec_play", [](std::string const &) {
+            /* Validate BEFORE the reset. This used to arm and _exit()
+             * unconditionally, so a take for the wrong cart -- or a damaged one --
+             * cost the user their session and only explained itself in the next
+             * process, after the cart had reloaded. Here the pause menu is still
+             * on screen to carry the reason. */
+            char why[96];
+            if (!p8rec_probe(g_cart_path_for_rec, std::string(), why, sizeof(why)))
+            {
+                fprintf(stderr, "[REC] not arming playback: %s\n", why);
+                NativeVideoWriter_Notice(why, 6);
+                return;
+            }
             FILE *m = fopen("/tmp/pico8_recmode", "w");
             if (m) { fputs("PLAY", m); fclose(m); }
             FILE *r = fopen("/tmp/pico8_reset_marker", "w");
@@ -2102,10 +2190,27 @@ int main(int argc, char **argv)
                          * A recording in progress dies with the process, which is
                          * the intended behaviour: picking a replay abandons the
                          * take, same as any other hot-swap. */
+                        /* Probe before the reset. This is THE path wrong picks come
+                         * from -- the OSD browser will happily hand us a take for
+                         * any cart in the library -- and it used to arm and _exit()
+                         * without opening the file, so the user lost their session
+                         * and got the explanation only after the reload. Refusing
+                         * here leaves the run untouched. */
+                        char why[96];
+                        if (!p8rec_probe(g_cart_path_for_rec, std::string(full), why, sizeof(why)))
+                        {
+                            fprintf(stderr, "[REC] OSD replay refused: %s\n", why);
+                            NativeVideoWriter_Notice(why, 6);
+                            /* Baseline is already advanced by the mtime check above,
+                             * so a refused pick does not re-fire every frame. */
+                        }
+                        else
+                        {
                         if (FILE *pf = fopen("/tmp/pico8_playfile", "w")) { fprintf(pf, "%s\n", full); fclose(pf); }
                         if (FILE *mm = fopen("/tmp/pico8_recmode",  "w")) { fprintf(mm, "PLAY\n");     fclose(mm); }
                         if (FILE *rm = fopen("/tmp/pico8_reset_marker", "w")) fclose(rm);
                         _exit(0);
+                        }
                     }
                 }
 
