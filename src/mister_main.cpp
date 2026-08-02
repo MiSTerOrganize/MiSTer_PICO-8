@@ -81,7 +81,7 @@ static volatile bool g_return_to_browser = false;
 // contaminate one -- which is why leaving it on during record/replay is safe
 // and is in fact the intended debugging pairing.
 
-#define P8REC_MAGIC      "P8REC2"   /* 2: identity is the path relative to Carts/, field widened to 256 */
+#define P8REC_MAGIC      "P8REC3"   /* 3: save snapshot embedded, so a take is one shareable file */
 #define P8REC_MAGIC_LEN  6
 // Bump ONLY on a shipped game-LOGIC change that would desync existing
 // recordings (VM semantics, RNG, timestep, input mapping). NOT for
@@ -139,16 +139,108 @@ static const char *P8REC_ARMSNAP = "/media/fat/saves/PICO-8/.replays/.armsnap";
 static const char *P8_REAL_SAVES = "/media/fat/saves/PICO-8";
 static std::string g_rec_file;   /* the .inp actually opened; pairs it with its snapshot */
 
-/* Map a take's .inp path to where its save snapshot lives. Both the writer
- * (Stop) and the reader (Play) go through this, so they cannot drift apart. */
-static std::string p8rec_snap_path(std::string const &inp_path)
+/* --- The snapshot travels INSIDE the .inp -----------------------------------
+ *
+ * A recording is meant to be shareable: hand someone the .inp and it replays on
+ * their MiSTer. That only works if the save data the run started from goes with
+ * it. A sidecar directory cannot travel, and its absence fails SILENTLY -- the
+ * replay still runs, just against different save data, so the cart's menus have
+ * a different shape and the recorded presses land on different items.
+ *
+ * Appended after the frames:
+ *   u32 file_count
+ *   repeat: u32 name_len, name bytes, u32 data_len, data bytes
+ *
+ * A take with no saves writes file_count = 0, so the field is always present
+ * and the reader never has to guess whether one exists. */
+struct P8SnapFile { std::string name; std::vector<unsigned char> data; };
+static std::vector<P8SnapFile> g_rec_snap;   /* payload of the take being played */
+
+static std::vector<P8SnapFile> p8snap_from_dir(std::string const &dir)
 {
-    std::string b = inp_path;
-    size_t s = b.find_last_of('/');
-    if (s != std::string::npos) b = b.substr(s + 1);
-    if (b.size() > 4 && b.compare(b.size() - 4, 4, ".inp") == 0)
-        b = b.substr(0, b.size() - 4);
-    return std::string(P8REC_STATE) + "/" + b;
+    std::vector<P8SnapFile> out;
+    DIR *d = opendir(dir.c_str());
+    if (!d) return out;
+    struct dirent *e;
+    while ((e = readdir(d)) != NULL) {
+        std::string n = e->d_name;
+        if (n == "." || n == "..") continue;
+        std::string p = dir + "/" + n;
+        struct stat st;
+        if (stat(p.c_str(), &st) != 0 || S_ISDIR(st.st_mode)) continue;
+        FILE *f = fopen(p.c_str(), "rb");
+        if (!f) continue;
+        P8SnapFile sf;
+        sf.name = n;
+        sf.data.resize((size_t)st.st_size);
+        bool ok = (st.st_size == 0) ||
+                  fread(&sf.data[0], 1, (size_t)st.st_size, f) == (size_t)st.st_size;
+        fclose(f);
+        if (ok) out.push_back(sf);
+    }
+    closedir(d);
+    return out;
+}
+
+static bool p8snap_write(FILE *f, std::vector<P8SnapFile> const &v)
+{
+    uint32_t c = (uint32_t)v.size();
+    if (fwrite(&c, sizeof(c), 1, f) != 1) return false;
+    for (size_t i = 0; i < v.size(); i++) {
+        uint32_t nl = (uint32_t)v[i].name.size();
+        uint32_t dl = (uint32_t)v[i].data.size();
+        if (fwrite(&nl, sizeof(nl), 1, f) != 1) return false;
+        if (nl && fwrite(v[i].name.data(), 1, nl, f) != nl) return false;
+        if (fwrite(&dl, sizeof(dl), 1, f) != 1) return false;
+        if (dl && fwrite(&v[i].data[0], 1, dl, f) != dl) return false;
+    }
+    return true;
+}
+
+/* Absent payload (an older take) is NOT an error -- it plays with empty saves,
+ * exactly as it did before. Only a MALFORMED payload fails. */
+static bool p8snap_read(FILE *f, std::vector<P8SnapFile> &v)
+{
+    v.clear();
+    uint32_t c = 0;
+    if (fread(&c, sizeof(c), 1, f) != 1) return true;   /* no payload */
+    if (c > 4096u) return false;
+    for (uint32_t i = 0; i < c; i++) {
+        uint32_t nl = 0, dl = 0;
+        if (fread(&nl, sizeof(nl), 1, f) != 1 || nl > 512u) return false;
+        std::string nm(nl, '\0');
+        if (nl && fread(&nm[0], 1, nl, f) != nl) return false;
+        if (fread(&dl, sizeof(dl), 1, f) != 1 || dl > (16u << 20)) return false;
+        P8SnapFile sf; sf.name = nm; sf.data.resize(dl);
+        if (dl && fread(&sf.data[0], 1, dl, f) != dl) return false;
+        /* These files now arrive from OTHER PEOPLE. A name is a bare filename
+         * or it is dropped -- never a path, so a hostile or corrupt take cannot
+         * write outside the scratch. */
+        if (nm.empty() || nm.find('/') != std::string::npos
+                       || nm.find('\\') != std::string::npos
+                       || nm == "." || nm == "..")
+        {
+            fprintf(stderr, "[REC] ignoring unsafe name in snapshot payload\n");
+            continue;
+        }
+        v.push_back(sf);
+    }
+    return true;
+}
+
+static int p8snap_to_dir(std::vector<P8SnapFile> const &v, std::string const &dir)
+{
+    mkdir(dir.c_str(), 0777);
+    p8_wipe_dir(dir);
+    int n = 0;
+    for (size_t i = 0; i < v.size(); i++) {
+        FILE *f = fopen((dir + "/" + v[i].name).c_str(), "wb");
+        if (!f) continue;
+        bool ok = v[i].data.empty() ||
+                  fwrite(&v[i].data[0], 1, v[i].data.size(), f) == v[i].data.size();
+        if (fclose(f) == 0 && ok) n++;
+    }
+    return n;
 }
 
 static bool p8_copy_file(std::string const &src, std::string const &dst)
@@ -321,6 +413,9 @@ static bool p8rec_write(std::string const &cart_path)
            && fwrite(&g_rec_seed, sizeof(g_rec_seed), 1, f) == 1
            && fwrite(&n, sizeof(n), 1, f) == 1
            && fwrite(&g_rec_frames[0], sizeof(uint32_t), n, f) == (size_t)n;
+    /* The save state this run STARTED from, embedded so the take is one file. */
+    std::vector<P8SnapFile> snap = p8snap_from_dir(P8REC_ARMSNAP);
+    if (ok) ok = p8snap_write(f, snap);
     if (fclose(f) != 0) ok = false;          /* buffered payload lands here */
 
     if (!ok || rename(tmp.c_str(), out.c_str()) != 0)
@@ -335,13 +430,8 @@ static bool p8rec_write(std::string const &cart_path)
      * would boot against whatever the saves happen to be later, and the cart's
      * load/continue menu would have a different shape -- the recorded D-pad
      * presses would land on a different slot and desync immediately. */
-    {
-        mkdir(P8REC_STATE, 0777);
-        std::string snap = p8rec_snap_path(out);
-        int c = p8_copy_dir(P8REC_ARMSNAP, snap);
-        fprintf(stderr, "[REC] stored %d save file(s) for this take in %s\n", c, snap.c_str());
-    }
-    fprintf(stderr, "[REC] wrote %s (%u frames, seed %d)\n", out.c_str(), n, g_rec_seed);
+    fprintf(stderr, "[REC] wrote %s (%u frames, %u save file(s) embedded, seed %d)\n",
+            out.c_str(), n, (unsigned)snap.size(), g_rec_seed);
     return true;
 }
 
@@ -421,17 +511,29 @@ static bool p8rec_load(std::string const &cart_path,
 
     g_rec_frames.assign(n, 0u);
     size_t got = fread(&g_rec_frames[0], sizeof(uint32_t), n, f);
+    /* Snapshot rides in the same file. Absent = an older take, which simply
+     * plays with empty saves; malformed = refuse, rather than replay against
+     * half-written save data and desync for no visible reason. */
+    bool snap_ok = (got == n) && p8snap_read(f, g_rec_snap);
     fclose(f);
+    if (got == n && !snap_ok)
+    {
+        g_rec_frames.clear();
+        g_rec_snap.clear();
+        fprintf(stderr, "[REC] %s has a corrupt save payload -- not playing\n", in.c_str());
+        return false;
+    }
     if (got != n)
     {
         g_rec_frames.clear();
+        g_rec_snap.clear();
         fprintf(stderr, "[REC] %s is truncated\n", in.c_str());
         return false;
     }
 
     g_rec_seed = seed;
     g_rec_pos  = 0;
-    g_rec_file = in;   /* pairs this take with its snapshot (p8rec_snap_path) */
+    g_rec_file = in;   /* the take actually opened (OSD pick or newest) */
     fprintf(stderr, "[REC] playing %s (%u frames, seed %d)\n", in.c_str(), n, seed);
     return true;
 }
@@ -455,6 +557,8 @@ static void p8rec_reset()
     g_rec_mode = 0;
     g_rec_frames.clear();
     g_rec_frames.shrink_to_fit();   /* clear() alone keeps the capacity forever */
+    g_rec_snap.clear();             /* same reason, and it can hold real bytes */
+    g_rec_snap.shrink_to_fit();
     g_rec_pos  = 0;
     if (!g_test_trace_enabled)
         unsetenv("Z8_TEST_SEED");
@@ -1304,7 +1408,7 @@ int main(int argc, char **argv)
              * the RECORD run is isolated too, the replay shows exactly what the
              * user saw while recording. */
             mkdir(P8REC_DIR, 0777);
-            mkdir(P8REC_STATE, 0777);      /* parent of scratch/armsnap/snapshots */
+            mkdir(P8REC_STATE, 0777);      /* parent of scratch + armsnap */
             mkdir(P8REC_SCRATCH, 0777);
 
             if (g_rec_mode == 1) {
@@ -1321,13 +1425,11 @@ int main(int argc, char **argv)
                  * NOT the current saves -- otherwise the cart's load menu has a
                  * different shape and the recorded navigation picks a different
                  * slot. Falls back to empty if the take predates snapshots. */
-                std::string snap = p8rec_snap_path(g_rec_file);
-                int c = p8_copy_dir(snap, P8REC_SCRATCH);
+                int c = p8snap_to_dir(g_rec_snap, P8REC_SCRATCH);
                 if (c > 0)
-                    fprintf(stderr, "[REC] restored %d save file(s) recorded with this take\n", c);
+                    fprintf(stderr, "[REC] restored %d save file(s) carried in this take\n", c);
                 else
-                    fprintf(stderr, "[REC] no save snapshot for this take -- starting empty"
-                                    " (recorded before snapshots, or none existed)\n");
+                    fprintf(stderr, "[REC] this take carries no save data -- starting empty\n");
             }
             setenv("Z8_SAVES_DIR", P8REC_SCRATCH, 1);
 
