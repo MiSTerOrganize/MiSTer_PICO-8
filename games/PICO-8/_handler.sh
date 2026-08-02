@@ -34,6 +34,13 @@ else
     rm -f /media/fat/config/PICO-8.s0 2>/dev/null
 fi
 
+# NOTE: .s1 (the OSD "Load Replay" slot) is intentionally NOT cleared here.
+# The binary detects a replay pick by .s1's MTIME, baselined at startup —
+# MiSTer bumps that mtime on every pick, even re-picking the same .inp, so a
+# fresh pick triggers while a stale/unchanged .s1 never auto-replays. Clearing
+# it would risk a clear-then-restore reading as a pick. Mirrors the OpenBOR
+# handler; see feedback_hybrid_core_s1_replay_slot.md.
+
 # Free kernel page cache before launch — PICO-8 carts are small but
 # this keeps RAM state clean across multicart sub-loads.
 echo 3 > /proc/sys/vm/drop_caches 2>/dev/null
@@ -41,7 +48,9 @@ echo 3 > /proc/sys/vm/drop_caches 2>/dev/null
 # FPGA settle on first launch (the FPGA was just reflashed)
 sleep 1
 
-# 2026-06-08 affinity fix: taskset 0x03 (both cores) so the binary's render-thread
-# pin to core 1 + audio-thread pin to core 0 (mister_main.cpp) take effect. Core 0
-# takes ~165M device IRQs (USB/fb/SD), core 1 is interrupt-free — render belongs on 1.
+# taskset 0x03 (both cores) so the binary's own thread pins take effect — a child
+# thread cannot widen affinity past the process mask. WHICH thread goes WHERE is
+# decided in mister_main.cpp, not here: render/main -> core 0, audio -> core 1
+# (rule INVERTED 2026-06-13; core 0 has ~1.85x core 1's DDR3 read bandwidth and
+# render is the memory-bound one). See feedback_affinity_render_core0_audio_core1.md.
 exec taskset 0x03 ./PICO-8 -nativevideo -data "$GAMEDIR/" > "$LOGDIR/PICO-8.log" 2>&1

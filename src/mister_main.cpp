@@ -314,15 +314,46 @@ static bool p8rec_write(std::string const &cart_path)
     return true;
 }
 
-/* Load the newest recording for this cart. Returns false -- leaving the mode
- * idle -- on any mismatch, so a wrong-cart or corrupt file is REFUSED rather
- * than played into a guaranteed desync. */
-static bool p8rec_load(std::string const &cart_path)
+/* .s1 = the OSD "Load Replay" slot, the second way to start a playback (the
+ * first is the pause menu). MiSTer writes the picked file's path there.
+ *
+ * A pick is detected by .s1's MTIME, never by its contents: MiSTer bumps the
+ * mtime on EVERY pick, including re-picking the SAME file, where the path is
+ * byte-identical and a content compare sees nothing at all. Baselined at
+ * startup so a stale .s1 left behind by an earlier session never auto-replays,
+ * and deliberately NOT cleared afterwards -- it persists as a "last replay"
+ * marker, and a clear-then-restore would itself look like a fresh pick. */
+static time_t p8_s1_mtime(void)
+{
+    struct stat st;
+    if (stat("/media/fat/config/PICO-8.s1", &st) == 0) return st.st_mtime;
+    return 0;   /* absent == never picked */
+}
+static time_t g_s1_seen = 0;
+
+/* Load a recording for this cart. With no explicit path, opens the NEWEST take
+ * for the cart (the pause-menu "Play Recording" path). With one, opens exactly
+ * that file (the OSD "Load Replay" path, where the user picked it by hand).
+ *
+ * Returns false -- leaving the mode idle -- on any mismatch, so a wrong-cart or
+ * corrupt file is REFUSED rather than played into a guaranteed desync. The
+ * cart-match check below is what makes the OSD path safe: that picker will
+ * happily hand us a take recorded against a completely different cart. */
+static bool p8rec_load(std::string const &cart_path,
+                       std::string const &explicit_path = std::string())
 {
     std::string base = p8rec_cart_base(cart_path);
-    int hi = p8rec_highest(base);
-    if (!hi) { fprintf(stderr, "[REC] no recording for '%s'\n", base.c_str()); return false; }
-    std::string in = std::string(P8REC_DIR) + "/" + base + "_" + std::to_string(hi) + ".inp";
+    std::string in;
+    if (!explicit_path.empty())
+    {
+        in = explicit_path;
+    }
+    else
+    {
+        int hi = p8rec_highest(base);
+        if (!hi) { fprintf(stderr, "[REC] no recording for '%s'\n", base.c_str()); return false; }
+        in = std::string(P8REC_DIR) + "/" + base + "_" + std::to_string(hi) + ".inp";
+    }
 
     FILE *f = fopen(in.c_str(), "rb");
     if (!f) { fprintf(stderr, "[REC] cannot read %s\n", in.c_str()); return false; }
@@ -1080,6 +1111,12 @@ int main(int argc, char **argv)
          * both false and the submenu is stuck on its idle branch forever. */
         g_vm->add_stat(148, []() -> std::any { return (int16_t)g_rec_mode; });
 
+        /* Baseline the OSD replay slot ONCE per process, here rather than on the
+         * first poll: a pick made while the cart was still loading would
+         * otherwise become the baseline and be swallowed. Anything picked from
+         * this moment on is a genuine new pick. */
+        g_s1_seen = p8_s1_mtime();
+
         /* Override the built-in "reset" so Reset Cart RESTARTS a recording
          * instead of silently ending it. Registered handlers are looked up
          * before the built-in chain (vm.cpp api_extcmd), so this wins.
@@ -1189,9 +1226,26 @@ int main(int argc, char **argv)
                 }
                 else if (strcmp(want, "PLAY") == 0)
                 {
+                    /* An OSD "Load Replay" pick leaves the chosen file here;
+                     * the pause-menu path leaves no file and gets the newest
+                     * take. Consumed either way so a stale pick can never
+                     * hijack a later pause-menu Play. */
+                    std::string pick;
+                    if (FILE *pf = fopen("/tmp/pico8_playfile", "r"))
+                    {
+                        char pbuf[512] = {0};
+                        if (fgets(pbuf, sizeof(pbuf), pf))
+                        {
+                            char *e = strchr(pbuf, '\n'); if (e) *e = 0;
+                            e = strchr(pbuf, '\r');       if (e) *e = 0;
+                            pick = pbuf;
+                        }
+                        fclose(pf);
+                        unlink("/tmp/pico8_playfile");
+                    }
                     /* load() before the cart so the seed is known; it also
                      * validates cart + version and refuses on mismatch. */
-                    if (p8rec_load(cart_path)) g_rec_mode = 2;
+                    if (p8rec_load(cart_path, pick)) g_rec_mode = 2;
                 }
             }
         }
@@ -1476,6 +1530,53 @@ int main(int argc, char **argv)
             static int swap_poll = 0;
             if (++swap_poll >= 30) { // ~30 frames @ 60fps = 0.5s
                 swap_poll = 0;
+
+                /* OSD "Load Replay" (SC1). Checked before the cart poll because
+                 * a replay pick ends this process outright. */
+                time_t s1now = p8_s1_mtime();
+                if (s1now != g_s1_seen) {
+                    g_s1_seen = s1now;
+                    char s1_path[512] = {0};
+                    FILE *rf = fopen("/media/fat/config/PICO-8.s1", "r");
+                    if (rf) {
+                        if (fgets(s1_path, sizeof(s1_path), rf)) {
+                            char *e = strchr(s1_path, '\n'); if (e) *e = 0;
+                            e = strchr(s1_path, '\r');       if (e) *e = 0;
+                            /* MiSTer writes .s1 WITHOUT truncating, so a shorter
+                             * new path leaves trailing bytes from the previous
+                             * longer one -- same trap as .s0. Cut at the ext. */
+                            char *cut = NULL, *p;
+                            for (p = strstr(s1_path, ".inp"); p; p = strstr(p+1, ".inp")) cut = p + 4;
+                            if (cut) *cut = 0;
+                            int pl = (int)strlen(s1_path);
+                            while (pl > 0 && (s1_path[pl-1] == ' ' || s1_path[pl-1] == '\t')) s1_path[--pl] = 0;
+                        }
+                        fclose(rf);
+                    }
+                    if (strlen(s1_path) > 0) {
+                        char full[1024];
+                        if (s1_path[0] == '/')
+                            snprintf(full, sizeof(full), "%s", s1_path);
+                        else
+                            snprintf(full, sizeof(full), "/media/fat/%s", s1_path);
+                        fprintf(stderr, "[REC] OSD replay pick: %s\n", full);
+
+                        /* Title-anchor it exactly like pause-menu Play: carry the
+                         * chosen path, ask for PLAY, KEEP .s0 so the same cart
+                         * re-mounts, and _exit so the respawn begins at the
+                         * cart's first frame. Arming mid-run would replay the
+                         * take against a world the recording never saw.
+                         *
+                         * A recording in progress dies with the process, which is
+                         * the intended behaviour: picking a replay abandons the
+                         * take, same as any other hot-swap. */
+                        if (FILE *pf = fopen("/tmp/pico8_playfile", "w")) { fprintf(pf, "%s\n", full); fclose(pf); }
+                        if (FILE *mm = fopen("/tmp/pico8_recmode",  "w")) { fprintf(mm, "PLAY\n");     fclose(mm); }
+                        if (FILE *rm = fopen("/tmp/pico8_reset_marker", "w")) fclose(rm);
+                        _exit(0);
+                    }
+                }
+
                 char s0_path[512] = {0};
                 FILE *f = fopen("/media/fat/config/PICO-8.s0", "r");
                 if (f) {

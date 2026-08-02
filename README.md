@@ -10,6 +10,7 @@ A PICO-8 fantasy console emulator for MiSTer FPGA with native video and audio ou
 - **MiSTer OSD integration** — load .p8 and .p8.png carts from the file browser
 - **Hot-swap carts** — load a new cart from the OSD while a game is playing
 - **Save states** — 4 slots per cart, NES-style UX, OSD-driven and F1–F4 keyboard shortcuts (see [Save States](#save-states) below)
+- **Gameplay recording & replay** — record a playthrough and watch it back hands-free, from the pause menu or the MiSTer OSD (`.inp` files); deterministic playback, press any button to take over (see [Recording & Replay](#recording--replay))
 - **Controller support** — d-pad, analog stick, and button mapping through MiSTer's input system
 - **Auto-launch** — the emulator starts automatically when the core is loaded
 - **Reliable database delivery via `update_all`** (2026-05-26 infrastructure) — two CI guardrails on the per-core repo's `build.yml` ensure users always receive working binaries:
@@ -83,7 +84,7 @@ Extract the release zip to the root of your MiSTer SD card (`/media/fat/`):
 | Logs (`/media/fat/logs/PICO-8/pico8.log`) | ✅ |
 | Configs (`/media/fat/config/`) | ✅ |
 | MGLs (`_Other/*.mgl` one-click launchers) | ✅ |
-| Gameplay Recordings / TAS | ❌ no (zepto8 doesn't expose PICO-8 record/replay) |
+| Gameplay Recordings / TAS | ✅ `.inp` recordings — pause menu **or** MiSTer OSD "Load Replay"; deterministic, hands-free, press any button to take over (see [Recording & Replay](#recording--replay)) |
 | Gamepad | ✅ |
 | Keyboard | ✅ (cart browser; blocked when gamepad connected) |
 | Mouse | ❌ no (PICO-8 spec exists but zepto8 hasn't wired `stat(32,33,34)`) |
@@ -169,6 +170,73 @@ Save states have been verified working on:
 - Multicart games across sub-cart transitions (with the two-load behavior described above)
 
 Audio resumes from saved music position, visuals resume from saved frame, gameplay continues from saved state.
+
+## Recording & Replay
+
+Record a playthrough and watch it back — deterministic, so a recording plays
+exactly what you did. There are two ways to play a recording back.
+
+**Why this is handy — and a great debugging tool.** A recording replays *exactly*
+what you did, every time, and you can replay it endlessly. Great for saving and
+re-watching a favorite run — but also a powerful way to find and fix problems: if
+you hit a bug, glitch, or crash, record the run that causes it and it will
+reproduce the *same* thing on demand, hands-free — no need to remember or replay it
+by hand. That makes an issue easy to pin down and easy to confirm once it's fixed
+(replay the same recording and see if it's gone). The `.inp` file captures the whole
+run, so you can keep it or share it.
+
+**Recordings are saved as `.inp` files** in `/media/fat/games/PICO-8/Replays/`.
+Each **Stop Recording** saves a **new numbered file** — `<cart>_1.inp`,
+`<cart>_2.inp`, … — so a new recording never overwrites an older one; you build a
+library per cart. Each `.inp` is stamped with the cart it was recorded on **and**
+the engine version. A recording only plays on its own cart — if you load a replay
+while a different cart is loaded, it won't start (load the matching cart first).
+And if a later core update changes the game logic, an old replay may drift (a note
+is logged) — just press any button to take over.
+
+**From the pause menu** (START → **Recording**):
+
+- **Record** — restarts the cart and records everything from its first frame
+  through your play. (It records from the start so playback can reproduce the
+  run exactly.)
+- **Stop Recording** — saves the recording to a new numbered `<cart>_N.inp` and
+  drops you back into the game.
+- **Play Recording** — restarts the cart and plays your **latest** recording back
+  hands-free, driving through menus into the game on its own. (To play an older
+  one, use the MiSTer OSD "Load Replay" and pick it.)
+- **Stop Playback** — end playback and take control.
+- **Take over any time** — during playback, just press any button and the
+  automated inputs stop instantly so you can play. A button you were *already*
+  holding when playback started doesn't count, so a resting thumb or a drifting
+  stick won't cut a replay short.
+
+**From the MiSTer OSD** (a second way to launch a replay):
+
+1. **Load Cart** — pick the cart you want.
+2. **Load Replay** — open the **`Replays`** folder and pick the matching `.inp`
+   file. The cart restarts and the recording plays back hands-free (press any
+   button to take over). You can re-load the same recording as many times as you
+   like.
+
+**Your saved progress is kept, and is never altered by recording.** When you hit
+Record, the cart restarts from the beginning — but your existing save data is
+carried in, so you can load your progress through the cart's own menus and record
+from wherever you actually are. That navigation is part of the recording, so
+playback reproduces it. The save data as it stood at that moment is stored
+alongside the recording and restored when you play it back, which is what keeps
+the run exact. Your real saves under `/media/fat/saves/PICO-8/` are only ever
+read, never written, during a recording or a playback.
+
+**A few things end a recording**, all deliberately: quitting, switching to a
+different cart from the OSD, and loading a save state (a save state jumps the game
+to a different point, which a recording can't represent). Resetting the cart does
+**not** end it — it restarts the take from the beginning, since that's almost
+always what you want after a bad run.
+
+Playback is accurate frame for frame: recording and replay both start from a cart
+restart, the random-number seed is captured and restored, and the emulator advances
+exactly one frame per displayed frame, so the run reproduces identically regardless
+of load.
 
 ## Cart compatibility
 

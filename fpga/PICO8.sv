@@ -223,6 +223,7 @@ assign LED_POWER[0]= FB ? led[2] : act_cnt2[26] ? act_cnt2[25:18] > act_cnt2[7:0
 localparam CONF_STR = {
 	"PICO-8;;",
 	"SC0,P8 PNG,Load Cart;",
+	"SC1,INP,Load Replay;",
 	"-;",
 	"OCE,H Position (CRT),0,+1,+2,+3,-3,-2,-1;",
 	"OFH,V Position (CRT),0,+1,+2,+3,-3,-2,-1;",
@@ -258,11 +259,13 @@ wire [15:0] ioctl_index;
 wire        ioctl_wait;
 assign ioctl_wait = nv_ioctl_wait;
 
-// SC0 mounted image — config file created instantly, no ioctl streaming.
-// MiSTer writes the cart's source path to /media/fat/config/PICO-8.s0;
-// the ARM reads the path from there and loads the cart from its real
-// location, so multicart load("sibling.p8") calls resolve correctly.
-wire        img_mounted;
+// SC0 (cart) + SC1 (replay .inp) mounted images — config files created
+// instantly, no ioctl streaming. MiSTer writes the cart's source path to
+// /media/fat/config/PICO-8.s0 and the picked replay's path to PICO-8.s1;
+// the ARM reads those paths and opens the real files, so multicart
+// load("sibling.p8") calls resolve correctly. BOTH slots are read as FILES,
+// never as block devices, so the disk I/O is tied off. VDNUM=2 exposes SC1.
+wire  [1:0] img_mounted;
 wire [63:0] img_size;
 
 // Save state UI signals
@@ -274,7 +277,7 @@ wire  [7:0] ss_info;
 wire        ss_statusUpdate; // tells hps_io to write status_in back as new status
 wire [10:0] ps2_key;
 
-hps_io #(.CONF_STR(CONF_STR)) hps_io
+hps_io #(.CONF_STR(CONF_STR), .VDNUM(2)) hps_io
 (
 	.clk_sys(clk_sys),
 	.HPS_BUS(HPS_BUS),
@@ -300,11 +303,11 @@ hps_io #(.CONF_STR(CONF_STR)) hps_io
 	// SC0 mount signals
 	.img_mounted(img_mounted),
 	.img_size(img_size),
-	// Tie off disk I/O — we never read/write sectors
-	.sd_lba('{32'd0}),
-	.sd_rd(1'b0),
-	.sd_wr(1'b0),
-	.sd_buff_din('{8'd0})
+	// Tie off disk I/O — we never read/write sectors (both VDs are file-only)
+	.sd_lba('{32'd0, 32'd0}),
+	.sd_rd(2'b0),
+	.sd_wr(2'b0),
+	.sd_buff_din('{8'd0, 8'd0})
 );
 
 // Save state UI — translates OSD/keyboard input into ss_save/ss_load
