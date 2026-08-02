@@ -14,6 +14,12 @@
  *
  * C89-compatible: no VLAs, no declarations after statements, no stdbool.
  *
+ * Every function is `static inline`, not plain `static`. OpenBOR's Makefile
+ * builds with -Werror, so a plain `static` that a translation unit does not
+ * happen to call becomes -Wunused-function and FAILS THE SHIP BUILD -- and a
+ * header-only hash is used piecemeal by definition. `static inline` is the
+ * correct idiom for this shape and GCC does not warn when it is unused.
+ *
  * SHA-1 is used here as a content fingerprint, NOT as a security primitive. A
  * take is already trusted to the extent that it carries save data (see O1); an
  * attacker who can craft a collision can also just ship the save payload
@@ -38,7 +44,7 @@ typedef struct {
     size_t   buf_used;
 } nsha1_ctx;
 
-static void nsha1_init(nsha1_ctx *c)
+static inline void nsha1_init(nsha1_ctx *c)
 {
     c->h[0] = 0x67452301u;
     c->h[1] = 0xEFCDAB89u;
@@ -49,7 +55,7 @@ static void nsha1_init(nsha1_ctx *c)
     c->buf_used = 0;
 }
 
-static void nsha1_block(nsha1_ctx *c, const uint8_t *p)
+static inline void nsha1_block(nsha1_ctx *c, const uint8_t *p)
 {
     uint32_t w[80];
     uint32_t a, b, d, e, f, k, t;
@@ -82,7 +88,7 @@ static void nsha1_block(nsha1_ctx *c, const uint8_t *p)
     c->h[0] += a; c->h[1] += b; c->h[2] += d; c->h[3] += e; c->h[4] += f;
 }
 
-static void nsha1_update(nsha1_ctx *c, const void *data, size_t n)
+static inline void nsha1_update(nsha1_ctx *c, const void *data, size_t n)
 {
     const uint8_t *p = (const uint8_t *)data;
     c->len += (uint64_t)n;
@@ -99,7 +105,7 @@ static void nsha1_update(nsha1_ctx *c, const void *data, size_t n)
     if (n) { memcpy(c->buf, p, n); c->buf_used = n; }
 }
 
-static void nsha1_final(nsha1_ctx *c, uint8_t out[NSHA1_DIGEST_LEN])
+static inline void nsha1_final(nsha1_ctx *c, uint8_t out[NSHA1_DIGEST_LEN])
 {
     uint64_t bits = c->len * 8u;
     uint8_t tail[72];
@@ -127,7 +133,7 @@ static void nsha1_final(nsha1_ctx *c, uint8_t out[NSHA1_DIGEST_LEN])
 /* Hash a whole file. Returns 0 on success, non-zero if it could not be read.
  * A failure must NEVER be treated as "hash of nothing" -- a take whose content
  * cannot be hashed has to refuse, not compare equal to another unreadable file. */
-static int nsha1_file(const char *path, uint8_t out[NSHA1_DIGEST_LEN])
+static inline int nsha1_file(const char *path, uint8_t out[NSHA1_DIGEST_LEN])
 {
     nsha1_ctx c;
     FILE *f;
@@ -150,7 +156,7 @@ static int nsha1_file(const char *path, uint8_t out[NSHA1_DIGEST_LEN])
  * pak was measured at 20-70 s per arm and rejected. Returns 0 on success.
  * A short read is an ERROR, not a partial hash: silently hashing fewer bytes
  * would make a truncated pak compare equal to nothing in particular. */
-static int nsha1_update_range(nsha1_ctx *c, FILE *f, long off, size_t n)
+static inline int nsha1_update_range(nsha1_ctx *c, FILE *f, long off, size_t n)
 {
     uint8_t buf[8192];
     if (fseek(f, off, SEEK_SET) != 0) return -1;
@@ -166,7 +172,7 @@ static int nsha1_update_range(nsha1_ctx *c, FILE *f, long off, size_t n)
 
 /* 40-char lowercase hex, NUL-terminated. out must be >= 41 bytes.
  * For log lines and on-screen messages only -- comparisons use the raw 20 bytes. */
-static void nsha1_hex(const uint8_t d[NSHA1_DIGEST_LEN], char *out)
+static inline void nsha1_hex(const uint8_t d[NSHA1_DIGEST_LEN], char *out)
 {
     static const char hexd[] = "0123456789abcdef";
     int i;
@@ -180,7 +186,7 @@ static void nsha1_hex(const uint8_t d[NSHA1_DIGEST_LEN], char *out)
 /* Self-test against the two standard vectors. Returns 0 if both pass.
  * Called once at recorder init on both cores: a silently-wrong SHA-1 would make
  * every take refuse on the other core and blame the user's content for it. */
-static int nsha1_selftest(void)
+static inline int nsha1_selftest(void)
 {
     nsha1_ctx c;
     uint8_t d[NSHA1_DIGEST_LEN];
