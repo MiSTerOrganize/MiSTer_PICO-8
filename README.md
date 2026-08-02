@@ -218,6 +218,20 @@ is logged) — just press any button to take over.
    button to take over). You can re-load the same recording as many times as you
    like.
 
+> ### What a recording contains, before you share one
+>
+> A `.inp` is not only your button presses — it also carries **the save data for
+> the cart you recorded**, so that anyone replaying it starts from the same
+> progress you did. Without that, a recording made partway through a game cannot
+> reproduce on someone else's machine.
+>
+> So when you share a recording, you are sharing that cart's save data with it.
+>
+> And the reverse: **only replay recordings from people you trust.** Playing one
+> restores the save data it carries before the cart starts. It is kept separate
+> from your own saves — yours are never modified — but it is still someone else's
+> data running on your machine.
+
 **Your saved progress is kept, and is never altered by recording.** When you hit
 Record, the cart restarts from the beginning — but your existing save data is
 carried in, so you can load your progress through the cart's own menus and record
