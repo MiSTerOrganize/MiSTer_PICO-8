@@ -123,10 +123,33 @@ static const char *P8REC_DIR = "/media/fat/games/PICO-8/Replays";
  * and desync from the first second.
  *
  * Real saves are only ever READ. */
-static const char *P8REC_SCRATCH = "/media/fat/games/PICO-8/Replays/.state";
-static const char *P8REC_ARMSNAP = "/media/fat/games/PICO-8/Replays/.armsnap";
+/* All of it lives under saves/, NOT under Replays/ and NOT under savestates/.
+ *
+ * Not under Replays/ because the OSD "Load Replay" picker lists directories as
+ * well as files: a snapshot sitting beside each take turned that picker into a
+ * list of decoy folders which appear EMPTY when opened, since they hold .p8d.txt
+ * saves and the picker filters to .inp. Replays/ now contains nothing but takes.
+ *
+ * Not under savestates/ because none of this is an emulator save state -- it is
+ * cartdata the game itself wrote. (Same reasoning applies to OpenBOR, whose .sNN
+ * files are script-saves despite the directory we named "savestates".) */
+static const char *P8REC_STATE   = "/media/fat/saves/PICO-8/.replays";
+static const char *P8REC_SCRATCH = "/media/fat/saves/PICO-8/.replays/.scratch";
+static const char *P8REC_ARMSNAP = "/media/fat/saves/PICO-8/.replays/.armsnap";
 static const char *P8_REAL_SAVES = "/media/fat/saves/PICO-8";
-static std::string g_rec_file;   /* the .inp actually opened; pairs it with its .state */
+static std::string g_rec_file;   /* the .inp actually opened; pairs it with its snapshot */
+
+/* Map a take's .inp path to where its save snapshot lives. Both the writer
+ * (Stop) and the reader (Play) go through this, so they cannot drift apart. */
+static std::string p8rec_snap_path(std::string const &inp_path)
+{
+    std::string b = inp_path;
+    size_t s = b.find_last_of('/');
+    if (s != std::string::npos) b = b.substr(s + 1);
+    if (b.size() > 4 && b.compare(b.size() - 4, 4, ".inp") == 0)
+        b = b.substr(0, b.size() - 4);
+    return std::string(P8REC_STATE) + "/" + b;
+}
 
 static bool p8_copy_file(std::string const &src, std::string const &dst)
 {
@@ -170,6 +193,13 @@ static int p8_copy_dir(std::string const &src, std::string const &dst)
     while ((e = readdir(d)) != NULL) {
         std::string f = e->d_name;
         if (f == "." || f == "..") continue;
+        /* Files only. The snapshot store (.replays) lives INSIDE the directory
+         * being snapshotted, so seeding would otherwise try to copy it into
+         * every new snapshot -- harmless in that copying a directory as a file
+         * just fails, but it would skew the count and is plainly wrong. Any
+         * other stray subdirectory under saves/ was mishandled the same way. */
+        struct stat st;
+        if (stat((src + "/" + f).c_str(), &st) == 0 && S_ISDIR(st.st_mode)) continue;
         if (p8_copy_file(src + "/" + f, dst + "/" + f)) n++;
     }
     closedir(d);
@@ -306,9 +336,10 @@ static bool p8rec_write(std::string const &cart_path)
      * load/continue menu would have a different shape -- the recorded D-pad
      * presses would land on a different slot and desync immediately. */
     {
-        std::string snap = out.substr(0, out.size() - 4) + ".state";
+        mkdir(P8REC_STATE, 0777);
+        std::string snap = p8rec_snap_path(out);
         int c = p8_copy_dir(P8REC_ARMSNAP, snap);
-        fprintf(stderr, "[REC] stored %d save file(s) alongside the take\n", c);
+        fprintf(stderr, "[REC] stored %d save file(s) for this take in %s\n", c, snap.c_str());
     }
     fprintf(stderr, "[REC] wrote %s (%u frames, seed %d)\n", out.c_str(), n, g_rec_seed);
     return true;
@@ -400,7 +431,7 @@ static bool p8rec_load(std::string const &cart_path,
 
     g_rec_seed = seed;
     g_rec_pos  = 0;
-    g_rec_file = in;   /* pairs this take with its <name>.state snapshot */
+    g_rec_file = in;   /* pairs this take with its snapshot (p8rec_snap_path) */
     fprintf(stderr, "[REC] playing %s (%u frames, seed %d)\n", in.c_str(), n, seed);
     return true;
 }
@@ -1273,6 +1304,7 @@ int main(int argc, char **argv)
              * the RECORD run is isolated too, the replay shows exactly what the
              * user saw while recording. */
             mkdir(P8REC_DIR, 0777);
+            mkdir(P8REC_STATE, 0777);      /* parent of scratch/armsnap/snapshots */
             mkdir(P8REC_SCRATCH, 0777);
 
             if (g_rec_mode == 1) {
@@ -1289,7 +1321,7 @@ int main(int argc, char **argv)
                  * NOT the current saves -- otherwise the cart's load menu has a
                  * different shape and the recorded navigation picks a different
                  * slot. Falls back to empty if the take predates snapshots. */
-                std::string snap = g_rec_file.substr(0, g_rec_file.size() - 4) + ".state";
+                std::string snap = p8rec_snap_path(g_rec_file);
                 int c = p8_copy_dir(snap, P8REC_SCRATCH);
                 if (c > 0)
                     fprintf(stderr, "[REC] restored %d save file(s) recorded with this take\n", c);
