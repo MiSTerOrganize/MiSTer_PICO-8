@@ -228,6 +228,10 @@ static bool p8snap_read(FILE *f, std::vector<P8SnapFile> &v)
     return true;
 }
 
+/* Defined below, beside the other directory helpers. Declared here because
+ * p8snap_to_dir is the only caller that precedes it. */
+static void p8_wipe_dir(std::string const &dir);
+
 static int p8snap_to_dir(std::vector<P8SnapFile> const &v, std::string const &dir)
 {
     mkdir(dir.c_str(), 0777);
