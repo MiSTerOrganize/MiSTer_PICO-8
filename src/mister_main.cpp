@@ -246,6 +246,23 @@ static std::string p8rec_ident_name(std::string const &path)
     return (path.compare(0, rl, root) == 0) ? path.substr(rl) : path;
 }
 
+/* Fit a content name into a notice WITHOUT eating the instruction after it.
+ *
+ * The renderer is 21 cols x 3 lines and truncates past that (native_video_writer.c
+ * NV_COLS / NV_NOTICE_MAX), and word-wrapping wastes some of each line. So a long
+ * cart name in "Needs <name> - load that cart" pushes the only actionable part of
+ * the sentence off the screen -- on the message a shared recording produces most
+ * often, now that identity refusals are the common case.
+ *
+ * Keeps the TAIL, because the filename identifies the cart while the leading
+ * folders are what a user can infer. */
+static std::string p8rec_short_name(std::string const &n, size_t max)
+{
+    if (n.size() <= max) return n;
+    return "..." + n.substr(n.size() - (max - 3));
+}
+#define P8REC_NAME_FIT 24   /* leaves room for the longest instruction we use */
+
 extern "C" void p8rec_note_cart_file(const char *resolved_path)
 {
     if (!g_rec_mode || !resolved_path || !*resolved_path) return;
@@ -285,7 +302,8 @@ extern "C" void p8rec_note_cart_file(const char *resolved_path)
         {   /* Name the FILE, not just "content mismatch": on a multicart this is
              * a sibling the user may not even know is involved. */
             char msg[96];
-            snprintf(msg, sizeof(msg), "%s is a different version - replay stopped", nm.c_str());
+            snprintf(msg, sizeof(msg), "%s version differs - stopped",
+                     p8rec_short_name(nm, P8REC_NAME_FIT).c_str());
             NativeVideoWriter_Notice(msg, 6);
         }
         g_rec_ident_ok = false;
@@ -748,7 +766,8 @@ static bool p8rec_probe(std::string const &cart_path,
      || memcmp(have, want, NSHA1_DIGEST_LEN) != 0)
     {   /* Name what they need. Lead with the name so a long one loses trailing
          * words rather than the point of the sentence. */
-        snprintf(why, whysz, "Needs %s - load that cart", nm.c_str());
+        snprintf(why, whysz, "Needs %s - load that cart",
+                 p8rec_short_name(nm, P8REC_NAME_FIT).c_str());
         return false;
     }
     return true;
@@ -881,7 +900,8 @@ static bool p8rec_load(std::string const &cart_path,
                  * instruction short enough that a long name loses trailing words
                  * rather than the whole point of the sentence. */
                 char msg[96];
-                snprintf(msg, sizeof(msg), "Needs %s - load that cart", want_name.c_str());
+                snprintf(msg, sizeof(msg), "Needs %s - load that cart",
+                         p8rec_short_name(want_name, P8REC_NAME_FIT).c_str());
                 NativeVideoWriter_Notice(msg, 6);
             }
             return false;
