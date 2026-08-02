@@ -185,7 +185,19 @@ jobs:
         run: |
           mkdir -p release-staging/games/PICO-8 release-staging/_Other release-staging/docs/PICO-8
           cp build-arm/PICO-8 release-staging/games/PICO-8/
-          cp games/PICO-8/bios.p8 release-staging/games/PICO-8/
+          # bios.p8 comes from src/ -- the SOURCE OF TRUTH -- exactly like the
+          # binary above comes from the build, not from the repo copy.
+          #
+          # The src -> games/ sync lives inside the commit-back step, which only
+          # runs on a push to main. So on a workflow_dispatch / branch build the
+          # sync never happens, and copying games/PICO-8/bios.p8 here shipped a
+          # STALE bios in the artifact -- silently, since the binary beside it
+          # was fresh. Caught 2026-08-01: a branch artifact carried a bios 50
+          # lines behind src/, missing the whole Recording submenu and stat(148),
+          # so deploying that artifact wholesale would have REGRESSED the device.
+          # Same drift class as the 2026-07-20 incident, just reached by the
+          # branch path instead of the manual-sync one.
+          cp src/pico8/bios.p8 release-staging/games/PICO-8/
           cp games/PICO-8/_handler.sh release-staging/games/PICO-8/
           cp _Other/PICO-8*.rbf release-staging/_Other/
           cp docs/PICO-8/README.md release-staging/docs/PICO-8/
