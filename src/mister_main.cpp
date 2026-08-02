@@ -81,8 +81,14 @@ static volatile bool g_return_to_browser = false;
 // contaminate one -- which is why leaving it on during record/replay is safe
 // and is in fact the intended debugging pairing.
 
-#define P8REC_MAGIC      "P8REC3"   /* 3: save snapshot embedded, so a take is one shareable file */
-#define P8REC_MAGIC_LEN  6
+/* STABLE magic + a separate container version. The version used to live IN the
+ * magic ("P8REC3"), so a take from a NEWER build failed the magic test and was
+ * reported as "not a valid recording" -- telling the user their file was damaged
+ * when it was fine and their core was old. For a format meant to be shared,
+ * receiving a newer take is routine, so it needs its own answer. */
+#define P8REC_MAGIC      "P8REC"
+#define P8REC_MAGIC_LEN  5
+#define P8REC_CONTAINER  4u        /* framing version; bump on any layout change */
 // Bump ONLY on a shipped game-LOGIC change that would desync existing
 // recordings (VM semantics, RNG, timestep, input mapping). NOT for
 // render/audio/UI/perf changes -- the fixed timestep makes replay independent
@@ -153,6 +159,28 @@ static std::string g_rec_file;   /* the .inp actually opened; pairs it with its 
  *
  * A take with no saves writes file_count = 0, so the field is always present
  * and the reader never has to guess whether one exists. */
+/* CRC32 over the frame block, stored in the header. Without it, bit rot or a
+ * partial SD write landing inside an already-written region produces a file
+ * that passes every guard and replays as a plausible-looking divergence --
+ * silent, and indistinguishable from a game bug. One pass over data we are
+ * already reading. */
+static uint32_t p8_crc32(const void* buf, size_t len) {
+    static uint32_t tab[256];
+    static int built = 0;
+    if (!built) {
+        for (uint32_t i = 0; i < 256; i++) {
+            uint32_t c = i;
+            for (int k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320u ^ (c >> 1)) : (c >> 1);
+            tab[i] = c;
+        }
+        built = 1;
+    }
+    const unsigned char* p = (const unsigned char*)buf;
+    uint32_t c = 0xFFFFFFFFu;
+    for (size_t i = 0; i < len; i++) c = tab[(c ^ p[i]) & 0xFF] ^ (c >> 8);
+    return c ^ 0xFFFFFFFFu;
+}
+
 struct P8SnapFile { std::string name; std::vector<unsigned char> data; };
 static std::vector<P8SnapFile> g_rec_snap;   /* payload of the take being played */
 
@@ -444,11 +472,15 @@ static bool p8rec_write(std::string const &cart_path)
     uint32_t ver = P8REC_ENGINE_VER;
     uint32_t n   = (uint32_t)g_rec_frames.size();
 
+    uint32_t container = P8REC_CONTAINER;
+    uint32_t crc = p8_crc32(&g_rec_frames[0], (size_t)n * sizeof(uint32_t));
     bool ok = fwrite(P8REC_MAGIC, 1, P8REC_MAGIC_LEN, f) == (size_t)P8REC_MAGIC_LEN
+           && fwrite(&container, sizeof(container), 1, f) == 1
            && fwrite(&ver, sizeof(ver), 1, f) == 1
            && fwrite(cart, 1, sizeof(cart), f) == sizeof(cart)
            && fwrite(&g_rec_seed, sizeof(g_rec_seed), 1, f) == 1
            && fwrite(&n, sizeof(n), 1, f) == 1
+           && fwrite(&crc, sizeof(crc), 1, f) == 1
            && fwrite(&g_rec_frames[0], sizeof(uint32_t), n, f) == (size_t)n;
     /* The save state this run STARTED from, embedded so the take is one file. */
     std::vector<P8SnapFile> snap = p8snap_from_dir(P8REC_ARMSNAP);
@@ -525,15 +557,35 @@ static bool p8rec_load(std::string const &cart_path,
 
     char magic[P8REC_MAGIC_LEN];
     char cart[P8REC_CART_LEN];
-    uint32_t ver = 0, n = 0;
+    uint32_t ver = 0, n = 0, container = 0, crc = 0;
     int32_t seed = 0;
     bool ok = fread(magic, 1, P8REC_MAGIC_LEN, f) == (size_t)P8REC_MAGIC_LEN
            && memcmp(magic, P8REC_MAGIC, P8REC_MAGIC_LEN) == 0
+           && fread(&container, sizeof(container), 1, f) == 1
            && fread(&ver,  sizeof(ver),  1, f) == 1
            && fread(cart,  1, sizeof(cart), f) == sizeof(cart)
            && fread(&seed, sizeof(seed), 1, f) == 1
            && fread(&n,    sizeof(n),    1, f) == 1
+           && fread(&crc,  sizeof(crc),  1, f) == 1
            && n > 0 && n <= P8REC_MAX_FRAMES;
+    /* A NEWER container is not corruption -- say so, rather than calling the
+     * user's perfectly good file damaged. This is the whole point of splitting
+     * the version out of the magic. */
+    if (ok && container > P8REC_CONTAINER)
+    {
+        fclose(f);
+        fprintf(stderr, "[REC] %s was made by a newer core (container v%u, this build v%u)\n",
+                in.c_str(), container, P8REC_CONTAINER);
+        NativeVideoWriter_Notice("Made by a newer core - update to play it", 6);
+        return false;
+    }
+    if (ok && container < P8REC_CONTAINER)
+    {
+        fclose(f);
+        fprintf(stderr, "[REC] %s uses an older container (v%u)\n", in.c_str(), container);
+        NativeVideoWriter_Notice("Recorded by an older core - re-record it", 6);
+        return false;
+    }
     if (!ok)
     {
         fclose(f);
@@ -566,6 +618,16 @@ static bool p8rec_load(std::string const &cart_path,
     /* Snapshot rides in the same file. Absent = an older take, which simply
      * plays with empty saves; malformed = refuse, rather than replay against
      * half-written save data and desync for no visible reason. */
+    /* Verify the frame block before anything trusts it. Bit rot inside an intact
+     * block passed every other guard and replayed as a plausible divergence. */
+    if (got == n && p8_crc32(&g_rec_frames[0], (size_t)n * sizeof(uint32_t)) != crc)
+    {
+        fclose(f);
+        g_rec_frames.clear();
+        fprintf(stderr, "[REC] %s failed its checksum -- damaged, not playing\n", in.c_str());
+        NativeVideoWriter_Notice("Recording is damaged - not playing", 5);
+        return false;
+    }
     bool snap_ok = (got == n) && p8snap_read(f, g_rec_snap);
     fclose(f);
     if (got == n && !snap_ok)
