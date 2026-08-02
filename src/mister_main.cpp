@@ -1407,7 +1407,22 @@ int main(int argc, char **argv)
 
                 if (strcmp(want, "REC") == 0)
                 {
-                    g_rec_seed = (int32_t)(getpid() * 2654435761u) | 1;
+                    /* From urandom, not the PID. The multiply is invertible mod
+                     * 2^32, so a PID-derived seed was recoverable from any shared
+                     * take -- a machine-state value in a file meant to travel,
+                     * for no reason. The seed only has to be arbitrary. */
+                    g_rec_seed = 0;
+                    {
+                        FILE *ur = fopen("/dev/urandom", "rb");
+                        if (ur) {
+                            if (fread(&g_rec_seed, sizeof(g_rec_seed), 1, ur) != 1)
+                                g_rec_seed = 0;
+                            fclose(ur);
+                        }
+                    }
+                    if (g_rec_seed == 0)
+                        g_rec_seed = (int32_t)((uint32_t)time(NULL) * 2654435761u);
+                    g_rec_seed |= 1;
                     g_rec_frames.clear();
                     g_rec_pos  = 0;
                     g_rec_mode = 1;
@@ -1471,16 +1486,40 @@ int main(int argc, char **argv)
                  * your progress and load it through the cart's own menus --
                  * which is what gets recorded. The pristine copy is written
                  * beside the .inp on Stop so playback can reproduce it. */
-                int c = p8_copy_dir(P8_REAL_SAVES, P8REC_ARMSNAP);
-                p8_copy_dir(P8REC_ARMSNAP, P8REC_SCRATCH);
-                fprintf(stderr, "[REC] seeded %d save file(s) from your real saves\n", c);
+                int c  = p8_copy_dir(P8_REAL_SAVES, P8REC_ARMSNAP);
+                int c2 = p8_copy_dir(P8REC_ARMSNAP, P8REC_SCRATCH);
+                /* The second copy's return used to be discarded, and it is the
+                 * one that matters. If real->armsnap is partial, armsnap and
+                 * scratch still AGREE and the take is self-consistent. If
+                 * armsnap->scratch is partial, the run boots WITHOUT a file the
+                 * embedded payload contains -- so playback restores it, the load
+                 * menu differs, and it desyncs. Refuse to arm rather than hand
+                 * over a take that cannot replay. */
+                if (c2 != c) {
+                    fprintf(stderr, "[REC] could not prepare the save scratch (%d of %d)"
+                                    " -- not recording\n", c2, c);
+                    NativeVideoWriter_Notice("Could not prepare saves - not recording", 6);
+                    p8rec_reset();
+                } else
+                    fprintf(stderr, "[REC] seeded %d save file(s) from your real saves\n", c);
             } else {
                 /* PLAYBACK: restore the snapshot this take was recorded against,
                  * NOT the current saves -- otherwise the cart's load menu has a
                  * different shape and the recorded navigation picks a different
                  * slot. Falls back to empty if the take predates snapshots. */
+                int want = (int)g_rec_snap.size();
                 int c = p8snap_to_dir(g_rec_snap, P8REC_SCRATCH);
-                if (c > 0)
+                /* Compare against what the take CARRIED. p8snap_to_dir skips any
+                 * file it cannot write, so a read-only FS or a full SD produced
+                 * "this take carries no save data" -- a false statement about the
+                 * user's file -- and a partial restore was reported as success.
+                 * Both are guaranteed desyncs; refuse instead of playing on. */
+                if (want > 0 && c != want) {
+                    fprintf(stderr, "[REC] restored %d of %d save file(s) -- not playing,"
+                                    " the replay would not match\n", c, want);
+                    NativeVideoWriter_Notice("Could not restore this take's save data", 6);
+                    p8rec_reset();
+                } else if (c > 0)
                     fprintf(stderr, "[REC] restored %d save file(s) carried in this take\n", c);
                 else
                     fprintf(stderr, "[REC] this take carries no save data -- starting empty\n");
@@ -1680,7 +1719,13 @@ int main(int argc, char **argv)
                      * with no visible cause. */
                     static uint32_t prev_live = 0;
                     if (g_rec_pos == 0) prev_live = live;
-                    uint32_t pressed = live & ~prev_live;
+                    /* Pause (bit 6) is EXCLUDED. Opening the pause menu counted
+                     * as a take-over, so p8rec_reset() ran and stat(148) was
+                     * already 0 by the time the menu drew -- meaning the
+                     * Recording submenu rendered its IDLE branch and
+                     * "Stop Playback" could never be reached. The menu item
+                     * exists to stop a replay; let it. */
+                    uint32_t pressed = live & ~prev_live & ~(1u << 6);
                     prev_live = live;
                     if (pressed) {
                         fprintf(stderr, "[REC] take-over at frame %u -- playback stopped\n",
