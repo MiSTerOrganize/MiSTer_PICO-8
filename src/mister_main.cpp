@@ -1633,11 +1633,18 @@ int main(int argc, char **argv)
                                     " the replay would not match\n", c, want);
                     NativeVideoWriter_Notice("Could not restore this take's save data", 6);
                     p8rec_reset();
-                } else if (c > 0)
+                } else if (c > 0) {
                     fprintf(stderr, "[REC] restored %d save file(s) carried in this take\n", c);
-                else
+                } else {
+                    /* Braces are load-bearing. Without them the notice sat outside
+                     * the else and fired on EVERY playback arm -- including the
+                     * refusal branch above, where it overwrote "could not restore
+                     * this take's save data" (accurate) with "this take carries no
+                     * save data" (false), because Notice() writes one buffer and
+                     * the last call in a frame wins. */
                     fprintf(stderr, "[REC] this take carries no save data -- starting empty\n");
                     NativeVideoWriter_Notice("This take carries no save data", 4);
+                }
             }
             setenv("Z8_SAVES_DIR", P8REC_SCRATCH, 1);
 

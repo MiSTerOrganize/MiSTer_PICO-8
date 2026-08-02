@@ -183,8 +183,19 @@ std::string vm::get_path_cstore(std::string cart_name)
     // extract name from path
     size_t found = cart_name.find_last_of("/\\");
     if (found != std::string::npos)
-        cart_name = cart_name.substr(found);
+        cart_name = cart_name.substr(found + 1);   // +1: drop the separator itself
     // else: no path separator — cart_name is already a bare basename, leave it.
+    //
+    // This was substr(found), which KEEPS the separator, so cart_name came out
+    // as "/maze.p8". Two consequences: the returned path gained a harmless
+    // double slash, and -- the reason it matters -- the name handed to
+    // p8rec_note_save_file below could never match a readdir() entry, so no
+    // cstore file could ever be identified as part of the run. Latent today
+    // because the payload filter admits only *.p8d.txt, but it is exactly the
+    // guard that identity work relies on. get_path_save has no such bug: it is
+    // passed a cartdata id, not a path.
+    // substr(found + 1) is safe when the separator is the last character:
+    // substr(size()) is defined and returns empty, it does not throw.
     // (substr(npos) throws std::out_of_range; hit when a cart is loaded by bare
     //  name with no slash, e.g. the headless harness. MiSTer uses absolute paths
     //  so users don't hit it, but the guard is correct.)
