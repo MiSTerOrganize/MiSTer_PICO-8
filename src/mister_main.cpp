@@ -460,6 +460,7 @@ static bool p8rec_write(std::string const &cart_path)
         remove(tmp.c_str());                 /* never leave a file holding the index */
         fprintf(stderr, "[REC] FAILED to write %s -- the recording is still in memory,"
                         " free some space and pick Stop Recording again\n", out.c_str());
+                        NativeVideoWriter_Notice("Could not save the recording - free space and Stop again", 7);
         return false;
     }
 
@@ -537,6 +538,7 @@ static bool p8rec_load(std::string const &cart_path,
     {
         fclose(f);
         fprintf(stderr, "[REC] %s is not a valid recording\n", in.c_str());
+        NativeVideoWriter_Notice("That file is not a valid recording", 5);
         return false;
     }
 
@@ -557,6 +559,7 @@ static bool p8rec_load(std::string const &cart_path,
     if (ver != P8REC_ENGINE_VER)
         fprintf(stderr, "[REC] recorded on engine v%u (this build is v%u) -- may"
                         " desync; press any button to take over\n", ver, P8REC_ENGINE_VER);
+                        NativeVideoWriter_Notice("Recorded on an older build - may not match", 6);
 
     g_rec_frames.assign(n, 0u);
     size_t got = fread(&g_rec_frames[0], sizeof(uint32_t), n, f);
@@ -570,6 +573,7 @@ static bool p8rec_load(std::string const &cart_path,
         g_rec_frames.clear();
         g_rec_snap.clear();
         fprintf(stderr, "[REC] %s has a corrupt save payload -- not playing\n", in.c_str());
+        NativeVideoWriter_Notice("Recording damaged - not playing", 5);
         return false;
     }
     if (got != n)
@@ -577,6 +581,7 @@ static bool p8rec_load(std::string const &cart_path,
         g_rec_frames.clear();
         g_rec_snap.clear();
         fprintf(stderr, "[REC] %s is truncated\n", in.c_str());
+        NativeVideoWriter_Notice("Recording is truncated - not playing", 5);
         return false;
     }
 
@@ -1479,6 +1484,7 @@ int main(int argc, char **argv)
                     fprintf(stderr, "[REC] restored %d save file(s) carried in this take\n", c);
                 else
                     fprintf(stderr, "[REC] this take carries no save data -- starting empty\n");
+                    NativeVideoWriter_Notice("This take carries no save data", 4);
             }
             setenv("Z8_SAVES_DIR", P8REC_SCRATCH, 1);
 
@@ -1577,6 +1583,7 @@ int main(int argc, char **argv)
                 fprintf(stderr, "[REC] savestate load -- %s discarded"
                                 " (a savestate is not part of the input stream)\n",
                         g_rec_mode == 1 ? "recording" : "playback");
+                        NativeVideoWriter_Notice("Save state loaded - recording discarded", 5);
                 p8rec_reset();
             }
             if (g_vm) g_vm->savestate_load(slot);
@@ -1650,6 +1657,7 @@ int main(int argc, char **argv)
                     fprintf(stderr, "[REC] frame cap reached (%u frames)"
                                     " -- stopping and saving\n",
                             (unsigned)g_rec_frames.size());
+                            NativeVideoWriter_Notice("Recording hit its length limit - saved", 5);
                     if (p8rec_write(g_cart_path_for_rec))
                         p8rec_reset();
                     else
@@ -1677,6 +1685,7 @@ int main(int argc, char **argv)
                     if (pressed) {
                         fprintf(stderr, "[REC] take-over at frame %u -- playback stopped\n",
                                 (unsigned)g_rec_pos);
+                                NativeVideoWriter_Notice("You took over - replay stopped", 4);
                         p8rec_reset();
                     } else {
                         use = g_rec_frames[g_rec_pos++];
@@ -1684,6 +1693,7 @@ int main(int argc, char **argv)
                 } else {
                     fprintf(stderr, "[REC] playback finished (%u frames)\n",
                             (unsigned)g_rec_frames.size());
+                            NativeVideoWriter_Notice("Replay finished - you have control", 4);
                     p8rec_reset();
                 }
             }
@@ -1809,6 +1819,7 @@ int main(int argc, char **argv)
                             if (g_rec_mode) {
                                 fprintf(stderr, "[REC] cart hot-swap -- %s discarded\n",
                                         g_rec_mode == 1 ? "recording" : "playback");
+                                        NativeVideoWriter_Notice("Cart changed - recording discarded", 4);
                                 p8rec_reset();
                             }
                             /* The cart is about to reload, so it is safe to hand
