@@ -203,25 +203,58 @@ static bool p8snap_read(FILE *f, std::vector<P8SnapFile> &v)
 {
     v.clear();
     uint32_t c = 0;
-    if (fread(&c, sizeof(c), 1, f) != 1) return true;   /* no payload */
+    /* NOT "an older take". P8REC3 always writes this field (0 when there are no
+     * saves), and an older format carries an older magic and was already
+     * rejected. So in a file that reached this line, a missing count is
+     * truncation -- refuse. */
+    if (fread(&c, sizeof(c), 1, f) != 1) return false;
     if (c > 4096u) return false;
+    size_t total = 0;
     for (uint32_t i = 0; i < c; i++) {
         uint32_t nl = 0, dl = 0;
         if (fread(&nl, sizeof(nl), 1, f) != 1 || nl > 512u) return false;
         std::string nm(nl, '\0');
         if (nl && fread(&nm[0], 1, nl, f) != nl) return false;
+        /* Per-entry cap AND a running total. Cartdata is a few hundred bytes per
+         * file, so a legitimate payload is kilobytes; without the aggregate a
+         * shared take could drive this to hundreds of MB on a 1 GB board that
+         * shares its RAM with the FPGA. */
         if (fread(&dl, sizeof(dl), 1, f) != 1 || dl > (16u << 20)) return false;
+        total += dl;
+        if (total > (8u << 20)) return false;
         P8SnapFile sf; sf.name = nm; sf.data.resize(dl);
         if (dl && fread(&sf.data[0], 1, dl, f) != dl) return false;
-        /* These files now arrive from OTHER PEOPLE. A name is a bare filename
-         * or it is dropped -- never a path, so a hostile or corrupt take cannot
-         * write outside the scratch. */
+        /* These files now arrive from OTHER PEOPLE, so the name is untrusted.
+         *
+         * Bare filename only -- never a path -- so nothing can be written
+         * outside the scratch. Embedded NULs are handled: nm is length-counted,
+         * so find() scans all nl bytes, and the later c_str() truncation can
+         * only shorten a name, never re-introduce a separator.
+         *
+         * AND the extension must be .p8d.txt. A snapshot carries CARTDATA. The
+         * bare-name check alone accepted an entry called <cart>.p8 -- which is
+         * where cstore overlays live, so vm::load_cart would splice a stranger's
+         * bytes over the cart's ROM (spritesheet, map, sfx, music) before the
+         * first frame. Contained to the data region, so not code execution, but
+         * it renders arbitrary attacker content while the viewer believes they
+         * are watching the real cart -- and this project has already seen a cart
+         * pack geometry into the sfx region, so attacker "data" is attacker
+         * control flow inside the cart.
+         *
+         * A malformed payload REFUSES rather than skipping the entry: playing on
+         * with fewer save files than were recorded is a desync dressed up as a
+         * warning. (User-confirmed 2026-08-02.) */
+        static const char *SNAP_EXT = ".p8d.txt";
+        size_t extlen = strlen(SNAP_EXT);
         if (nm.empty() || nm.find('/') != std::string::npos
                        || nm.find('\\') != std::string::npos
-                       || nm == "." || nm == "..")
+                       || nm == "." || nm == ".."
+                       || nm.size() <= extlen
+                       || nm.compare(nm.size() - extlen, extlen, SNAP_EXT) != 0)
         {
-            fprintf(stderr, "[REC] ignoring unsafe name in snapshot payload\n");
-            continue;
+            fprintf(stderr, "[REC] snapshot payload contains an unsafe or "
+                            "non-cartdata name -- not playing\n");
+            return false;
         }
         v.push_back(sf);
     }
