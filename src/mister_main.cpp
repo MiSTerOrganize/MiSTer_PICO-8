@@ -118,7 +118,45 @@ static int32_t     g_rec_seed = 0;
  * so the cart path the writer needs lives here. Set at cart load. */
 static std::string g_cart_path_for_rec;
 
-static const char *P8REC_DIR = "/media/fat/games/PICO-8/Replays";
+/* One home for everything the recorder owns, top-level and per-build, matching
+ * how saves/, savestates/, config/ and logs/ already work. There was never a
+ * principled reason for replays alone to hide under games/.
+ *
+ * The old layout put takes in games/PICO-8/Replays and the scratch INSIDE the
+ * real saves directory, so a stray glob over saves/PICO-8/* would have destroyed
+ * user progress -- a hazard that had to be carefully worked around rather than
+ * not existing. Nothing of the user's lives under this tree, so rm -rf on it is
+ * always safe.
+ *
+ * OSD note: MiSTer's browser always STARTS at the core's games/ home, so the
+ * first "Load Replay" needs one navigation up and over. Selected_S[] then
+ * remembers the directory per slot -- but it reverts to home if the path is
+ * missing, which is why the handler mkdir -p's this on every launch. */
+static const char *P8REC_DIR = "/media/fat/replays/PICO-8";
+
+/* BOUNDED slot library, like savestates: <cart>_1.inp .. <cart>_8.inp, chosen
+ * with left/right on the "slot N of 8" row of the Recording submenu.
+ *
+ * It replaced an unbounded <cart>_N library whose only access path was the OSD
+ * picker -- which always starts at the core's games/ home, so reaching a
+ * top-level folder means navigating up and out. That is not something a user
+ * discovers. A slot number needs no browsing at all.
+ *
+ * Eight rather than the 4 that savestates use, because a savestate is scratch
+ * you overwrite constantly while a take is an artifact you keep; and the count
+ * is free here since the picker lives in our pause menu, not in CONF_STR status
+ * bits where two bits would force exactly four.
+ *
+ * Record OVERWRITES the chosen slot -- that is what bounded means -- but never
+ * silently: the row reads "used" or "empty" before you commit, and a notice
+ * names the slot afterwards.
+ *
+ * 0 means "not chosen yet", which is NOT the same as slot 1: Record then takes
+ * the first FREE slot so a first-timer cannot clobber anything, while Play
+ * takes the highest OCCUPIED one so it behaves exactly as it did before slots
+ * existed. */
+#define P8REC_SLOTS 8
+static int g_rec_slot = 0;   /* 1..P8REC_SLOTS, 0 = not yet chosen */
 
 /* --- Save-state snapshot, so a recording can start from YOUR progress --------
  *
@@ -138,19 +176,26 @@ static const char *P8REC_DIR = "/media/fat/games/PICO-8/Replays";
  * and desync from the first second.
  *
  * Real saves are only ever READ. */
-/* All of it lives under saves/, NOT under Replays/ and NOT under savestates/.
+/* All of it lives beside the takes in replays/PICO-8/, as DOT-directories.
  *
- * Not under Replays/ because the OSD "Load Replay" picker lists directories as
- * well as files: a snapshot sitting beside each take turned that picker into a
- * list of decoy folders which appear EMPTY when opened, since they hold .p8d.txt
- * saves and the picker filters to .inp. Replays/ now contains nothing but takes.
+ * It used to sit under saves/, to keep the OSD "Load Replay" picker clean: that
+ * picker lists directories as well as files, so a snapshot folder beside each
+ * take turned it into a list of decoys that appear EMPTY when opened (they hold
+ * .p8d.txt, and the picker filters to .inp). But hiding it inside the REAL saves
+ * directory meant a careless glob over saves/PICO-8/* would have destroyed user
+ * progress -- a hazard that then had to be worked around everywhere. A leading
+ * dot solves the picker problem without putting anything near the user's data.
  *
  * Not under savestates/ because none of this is an emulator save state -- it is
  * cartdata the game itself wrote. (Same reasoning applies to OpenBOR, whose .sNN
  * files are script-saves despite the directory we named "savestates".) */
-static const char *P8REC_STATE   = "/media/fat/saves/PICO-8/.replays";
-static const char *P8REC_SCRATCH = "/media/fat/saves/PICO-8/.replays/.scratch";
-static const char *P8REC_ARMSNAP = "/media/fat/saves/PICO-8/.replays/.armsnap";
+/* Hidden siblings of the takes, so the OSD picker (which filters to .inp and
+ * hides dotdirs) never shows them, while everything recorder-owned stays in one
+ * tree. Snapshots get their own dir rather than sitting loose beside the takes:
+ * they are per-take directories, and the browser DOES list directories. */
+static const char *P8REC_STATE   = "/media/fat/replays/PICO-8/.snapshots";
+static const char *P8REC_SCRATCH = "/media/fat/replays/PICO-8/.scratch";
+static const char *P8REC_ARMSNAP = "/media/fat/replays/PICO-8/.armsnap";
 static const char *P8_REAL_SAVES = "/media/fat/saves/PICO-8";
 static std::string g_rec_file;   /* the .inp actually opened; pairs it with its snapshot */
 
@@ -498,11 +543,10 @@ static int p8_copy_dir(std::string const &src, std::string const &dst)
     while ((e = readdir(d)) != NULL) {
         std::string f = e->d_name;
         if (f == "." || f == "..") continue;
-        /* Files only. The snapshot store (.replays) lives INSIDE the directory
-         * being snapshotted, so seeding would otherwise try to copy it into
-         * every new snapshot -- harmless in that copying a directory as a file
-         * just fails, but it would skew the count and is plainly wrong. Any
-         * other stray subdirectory under saves/ was mishandled the same way. */
+        /* Files only. The recorder tree no longer lives inside saves/, so the
+         * self-copy that motivated this is gone -- but a user's own stray
+         * subdirectory under saves/ would still be counted as a copied file
+         * while silently failing to copy, which would misreport the seed. */
         struct stat st;
         if (stat((src + "/" + f).c_str(), &st) == 0 && S_ISDIR(st.st_mode)) continue;
         if (p8_copy_file(src + "/" + f, dst + "/" + f)) n++;
@@ -544,47 +588,44 @@ static std::string p8rec_cart_base(std::string const &path)
     return b;
 }
 
-/* Highest existing index for <base>_N.inp, or 0 if there are none. */
-static int p8rec_highest(std::string const &base)
+/* Path of one slot's take. The ONLY place the name is spelled, so the writer,
+ * the reader and the used/empty probe cannot drift apart -- which the previous
+ * unbounded design did: the scan accepted any <base>_<digits>.inp while the
+ * loader rebuilt the name from the parsed integer, so a zero-padded copy
+ * (maze_007) parsed to 7 and then opened a maze_7 that did not exist, and Play
+ * broke permanently because it only ever opened the highest. Slots are
+ * generated, never parsed, so there is nothing left to disagree about. */
+static std::string p8rec_slot_path(std::string const &base, int slot)
 {
-    int best = 0;
-    DIR *d = opendir(P8REC_DIR);
-    if (!d) return 0;
-    std::string pre = base + "_";
-    struct dirent *e;
-    while ((e = readdir(d)) != NULL)
-    {
-        std::string n = e->d_name;
-        if (n.size() <= pre.size() + 4) continue;
-        if (n.compare(0, pre.size(), pre) != 0) continue;
-        if (n.compare(n.size() - 4, 4, ".inp") != 0) continue;
-
-        /* The middle must be ALL digits, and the index is then accepted only if
-         * the name we would RECONSTRUCT from it matches the one on disk.
-         *
-         * The scan accepts any <base>_<middle>.inp but p8rec_load rebuilds the
-         * name as base + "_" + to_string(hi) + ".inp" -- so anything the two
-         * disagree about breaks Play permanently, because load only ever opens
-         * the highest. A zero-padded copy (maze_007) parsed to 7 and then
-         * opened a maze_7 that does not exist. Worse, a sibling cart whose stem
-         * is <base>_<digits> aliased in: cart "maze_12" writing maze_12_1.inp
-         * made p8rec_highest("maze") parse "12_1" as 12, so Play opened a
-         * maze_12 that never existed -- and every later take for "maze" was
-         * pushed to _13. Requiring an exact round-trip rejects both. */
-        std::string mid = n.substr(pre.size(), n.size() - pre.size() - 4);
-        if (mid.empty() || mid.find_first_not_of("0123456789") != std::string::npos)
-            continue;
-        long k = strtol(mid.c_str(), NULL, 10);
-        if (k <= 0 || k > 999999) continue;                 /* also kills atoi overflow */
-        if (pre + std::to_string(k) + ".inp" != n) continue; /* e.g. zero-padded */
-        if ((int)k > best) best = (int)k;
-    }
-    closedir(d);
-    return best;
+    return std::string(P8REC_DIR) + "/" + base + "_" + std::to_string(slot) + ".inp";
 }
 
-/* Numbered library, like OpenBOR's: each Stop writes <cart>_<N+1>.inp, so a
- * new recording never overwrites an older one. */
+static bool p8rec_slot_used(std::string const &base, int slot)
+{
+    return access(p8rec_slot_path(base, slot).c_str(), R_OK) == 0;
+}
+
+/* Highest OCCUPIED slot, or 0 if the cart has no takes at all. Used only as the
+ * Play fallback when no slot has been picked. */
+static int p8rec_highest(std::string const &base)
+{
+    for (int s = P8REC_SLOTS; s >= 1; s--)
+        if (p8rec_slot_used(base, s)) return s;
+    return 0;
+}
+
+/* First FREE slot, or P8REC_SLOTS if every one is taken. Used only as the
+ * Record fallback: with nothing picked, write somewhere empty rather than
+ * silently replacing slot 1. When the library is full there is no non-
+ * destructive answer, so it lands on the last slot -- and the overwrite notice
+ * fires, which is the whole reason that notice exists. */
+static int p8rec_first_free(std::string const &base)
+{
+    for (int s = 1; s <= P8REC_SLOTS; s++)
+        if (!p8rec_slot_used(base, s)) return s;
+    return P8REC_SLOTS;
+}
+
 /* Returns true if the session can be torn down: the file was written, or there
  * was nothing to write. False means the take is STILL IN MEMORY and the caller
  * must leave the recorder armed so Stop can be retried. */
@@ -592,14 +633,21 @@ static bool p8rec_write(std::string const &cart_path)
 {
     if (g_rec_frames.empty())
     {
-        /* Never create an empty file: it would take the highest index and then
-         * shadow every real take, since playback only ever opens the highest. */
+        /* Never create an empty file -- with slots it would OVERWRITE a real
+         * take with nothing, which is the one loss the whole design is built to
+         * avoid. (Under the old numbered library it merely claimed the highest
+         * index and shadowed every good take, which was bad enough.) */
         fprintf(stderr, "[REC] nothing captured -- not writing a file\n");
         return true;   /* nothing to save, but the session is legitimately over */
     }
     std::string base = p8rec_cart_base(cart_path);
-    std::string out  = std::string(P8REC_DIR) + "/" + base + "_"
-                     + std::to_string(p8rec_highest(base) + 1) + ".inp";
+
+    /* Nothing picked -> first free slot, so a first-timer who never touches the
+     * slot row cannot replace an existing take by accident. */
+    if (g_rec_slot < 1 || g_rec_slot > P8REC_SLOTS)
+        g_rec_slot = p8rec_first_free(base);
+    bool overwriting = p8rec_slot_used(base, g_rec_slot);
+    std::string out = p8rec_slot_path(base, g_rec_slot);
 
     mkdir(P8REC_DIR, 0777);   /* handler makes it, but never lose a take to a missing dir */
 
@@ -668,6 +716,21 @@ static bool p8rec_write(std::string const &cart_path)
      * presses would land on a different slot and desync immediately. */
     fprintf(stderr, "[REC] wrote %s (%u frames, %u save file(s) embedded, seed %d)\n",
             out.c_str(), n, (unsigned)snap.size(), g_rec_seed);
+
+    /* Say which slot, and say it LOUDER when a take was replaced. Bounded slots
+     * mean Record destroys something; the row already warns beforehand, but the
+     * user is watching the game by the time the write lands, so the outcome has
+     * to be reported too. */
+    {
+        char msg[80];
+        snprintf(msg, sizeof(msg),
+                 overwriting ? "Replaced the recording in slot %d"
+                             : "Saved to slot %d",
+                 g_rec_slot);
+        NativeVideoWriter_Notice(msg, overwriting ? 5 : 3);
+        if (overwriting)
+            fprintf(stderr, "[REC] slot %d already held a take -- overwritten\n", g_rec_slot);
+    }
     return true;
 }
 
@@ -719,9 +782,20 @@ static bool p8rec_probe(std::string const &cart_path,
     if (in.empty())
     {
         std::string base = p8rec_cart_base(cart_path);
-        int hi = p8rec_highest(base);
-        if (!hi) { snprintf(why, whysz, "No recording for this cart"); return false; }
-        in = std::string(P8REC_DIR) + "/" + base + "_" + std::to_string(hi) + ".inp";
+        /* Play reads the chosen slot; with none chosen it falls back to the
+         * highest occupied one, so Play-without-touching-anything still does
+         * what it always did -- play the most recent take. */
+        int slot = (g_rec_slot >= 1 && g_rec_slot <= P8REC_SLOTS)
+                 ? g_rec_slot : p8rec_highest(base);
+        if (!slot) { snprintf(why, whysz, "No recording for this cart"); return false; }
+        if (!p8rec_slot_used(base, slot))
+        {   /* An explicitly chosen but empty slot is not "no recordings" -- the
+             * cart may well have takes in other slots, and saying otherwise
+             * sends the user looking for a bug that is not there. */
+            snprintf(why, whysz, "Slot %d is empty", slot);
+            return false;
+        }
+        in = p8rec_slot_path(base, slot);
     }
 
     FILE *f = fopen(in.c_str(), "rb");
@@ -784,15 +858,19 @@ static bool p8rec_load(std::string const &cart_path,
     }
     else
     {
-        int hi = p8rec_highest(base);
-        if (!hi) {
-            fprintf(stderr, "[REC] no recording for '%s'\n", base.c_str());
+        int slot = (g_rec_slot >= 1 && g_rec_slot <= P8REC_SLOTS)
+                 ? g_rec_slot : p8rec_highest(base);
+        if (!slot || !p8rec_slot_used(base, slot)) {
+            fprintf(stderr, "[REC] no recording for '%s' slot %d\n", base.c_str(), slot);
             /* Used to be silent: Play Recording reset the cart, nothing played,
              * and the user was left at the title with no explanation. */
-            NativeVideoWriter_Notice("No recording for this cart", 4);
+            char msg[64];
+            if (slot) snprintf(msg, sizeof(msg), "Slot %d is empty", slot);
+            else      snprintf(msg, sizeof(msg), "No recording for this cart");
+            NativeVideoWriter_Notice(msg, 4);
             return false;
         }
-        in = std::string(P8REC_DIR) + "/" + base + "_" + std::to_string(hi) + ".inp";
+        in = p8rec_slot_path(base, slot);
     }
 
     FILE *f = fopen(in.c_str(), "rb");
@@ -1715,6 +1793,11 @@ int main(int argc, char **argv)
         });
 
         g_vm->add_extcmd("z8_rec_record", [](std::string const &) {
+            /* Carry the slot across the reset (see the recovery block at arm). */
+            if (g_rec_slot >= 1 && g_rec_slot <= P8REC_SLOTS)
+            { FILE *sf = fopen("/tmp/pico8_recslot", "w");
+              if (sf) { fprintf(sf, "%d
+", g_rec_slot); fclose(sf); } }
             FILE *m = fopen("/tmp/pico8_recmode", "w");
             if (m) { fputs("REC", m); fclose(m); }
             FILE *r = fopen("/tmp/pico8_reset_marker", "w");
@@ -1737,6 +1820,11 @@ int main(int argc, char **argv)
                 NativeVideoWriter_Notice(why, 6);
                 return;
             }
+            /* Carry the slot across the reset (see the recovery block at arm). */
+            if (g_rec_slot >= 1 && g_rec_slot <= P8REC_SLOTS)
+            { FILE *sf = fopen("/tmp/pico8_recslot", "w");
+              if (sf) { fprintf(sf, "%d
+", g_rec_slot); fclose(sf); } }
             FILE *m = fopen("/tmp/pico8_recmode", "w");
             if (m) { fputs("PLAY", m); fclose(m); }
             FILE *r = fopen("/tmp/pico8_reset_marker", "w");
@@ -1754,6 +1842,47 @@ int main(int argc, char **argv)
             if (g_rec_mode == 1 && !p8rec_write(g_cart_path_for_rec))
                 return;
             p8rec_reset();
+        });
+
+        /* Slot picker. Wraps rather than clamps, so eight slots are reachable in
+         * at most four presses from either end. A slot of 0 ("not chosen") is
+         * never produced here -- once the user touches the row they own the
+         * choice, and the first-free / highest-occupied fallbacks apply only to
+         * someone who never did. */
+        g_vm->add_extcmd("z8_rec_slot_prev", [](std::string const &) {
+            int cur = (g_rec_slot >= 1 && g_rec_slot <= P8REC_SLOTS) ? g_rec_slot : 1;
+            g_rec_slot = (cur <= 1) ? P8REC_SLOTS : cur - 1;
+        });
+        g_vm->add_extcmd("z8_rec_slot_next", [](std::string const &) {
+            int cur = (g_rec_slot >= 1 && g_rec_slot <= P8REC_SLOTS) ? g_rec_slot : 1;
+            g_rec_slot = (cur >= P8REC_SLOTS) ? 1 : cur + 1;
+        });
+
+        /* 221/222 = the slot row's label and its used/empty value. Dynamic, so
+         * they are registered stats rather than entries in vm.h's static UI-text
+         * table -- and registered stats take priority over that table anyway.
+         *
+         * They MUST return std::string: api_stat converts through
+         * any_to_variant<bool,int16_t,fix32,std::string,nullptr_t>, an EXACT
+         * type match with no promotion, so anything else silently reads as nil
+         * in Lua and the row renders blank with no error anywhere.
+         *
+         * Widths are load-bearing. The menu box gives 74px from bx at 4px/char;
+         * __z8_draw_slot prints the value at x+48, so "slot 8 of 8" (11 chars,
+         * ends x+44) clears it and "empty" (5 chars) ends at x+68 -- inside the
+         * border. */
+        g_vm->add_stat(221, []() -> std::any {
+            int slot = (g_rec_slot >= 1 && g_rec_slot <= P8REC_SLOTS)
+                     ? g_rec_slot : p8rec_first_free(p8rec_cart_base(g_cart_path_for_rec));
+            char b[24];
+            snprintf(b, sizeof(b), "slot %d of %d", slot, P8REC_SLOTS);
+            return std::string(b);
+        });
+        g_vm->add_stat(222, []() -> std::any {
+            std::string base = p8rec_cart_base(g_cart_path_for_rec);
+            int slot = (g_rec_slot >= 1 && g_rec_slot <= P8REC_SLOTS)
+                     ? g_rec_slot : p8rec_first_free(base);
+            return std::string(p8rec_slot_used(base, slot) ? "used" : "empty");
         });
 
         g_vm->add_extcmd("z8_fps_overlay", [](std::string const &args) {
@@ -1776,6 +1905,25 @@ int main(int argc, char **argv)
          * stores it; playback restores the one from the file. Either way the
          * RNG stream is identical across the two runs. */
         {
+            /* Recover the slot the user picked in the pause menu. It has to
+             * travel through a file because Record and Play both _exit(0) and
+             * let the daemon respawn us -- a choice held only in memory dies
+             * with that process, and the picker would appear to do nothing. */
+            {
+                FILE *sf = fopen("/tmp/pico8_recslot", "r");
+                if (sf)
+                {
+                    char buf[16]; buf[0] = 0;
+                    if (fgets(buf, sizeof(buf), sf))
+                    {
+                        int v = atoi(buf);
+                        if (v >= 1 && v <= P8REC_SLOTS) g_rec_slot = v;
+                    }
+                    fclose(sf);
+                    unlink("/tmp/pico8_recslot");
+                }
+            }
+
             FILE *mk = fopen("/tmp/pico8_recmode", "r");
             if (mk)
             {
@@ -1860,8 +2008,8 @@ int main(int argc, char **argv)
              * the RECORD run is isolated too, the replay shows exactly what the
              * user saw while recording. */
             mkdir(P8REC_DIR, 0777);
-            mkdir(P8REC_STATE, 0777);      /* parent of scratch + armsnap */
-            mkdir(P8REC_SCRATCH, 0777);
+            mkdir(P8REC_STATE, 0777);      /* per-take snapshot store */
+            mkdir(P8REC_SCRATCH, 0777);    /* armsnap is created by p8_copy_dir */
 
             if (g_rec_mode == 1) {
                 /* RECORD: seed the scratch from your REAL saves, and keep a

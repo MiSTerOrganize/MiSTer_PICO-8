@@ -668,6 +668,20 @@ function __z8_draw_fps(st,x,y)
     print((__z8_menu.fps or 0)==0 and stat(214) or stat(215),x+48,y)
 end
 
+-- Recorder slot row. e==1 left, e==2 right (same convention as the volume
+-- gauges); press does nothing, since choosing a slot is not an action.
+function __z8_update_slot(e)
+    if(e==1) extcmd("z8_rec_slot_prev")
+    if(e==2) extcmd("z8_rec_slot_next")
+end
+
+function __z8_draw_slot(st,x,y)
+    -- x+48 like the fps row, not the gauges' x+30: "slot 8 of 8" is 11 chars =
+    -- 44px at 4px/char and would collide there. "empty" ends at x+68, inside
+    -- the box's 74px usable width.
+    print(stat(222),x+48,y)
+end
+
 function __z8_enter_pause()
     __mask_buttons()
     -- Snapshot every piece of DRAW STATE the pause menu disturbs while
@@ -731,6 +745,13 @@ function __z8_pause_menu()
         elseif m == 2 then
             add(entries, { l = stat(220), c = function (e) if e == 112 then extcmd("z8_rec_stop") __z8_menu.inrec = false end end })
         else
+            -- Slot picker: 8 bounded slots per cart, left/right, exactly like
+            -- savestates -- so no OSD file browsing is needed to reach a take.
+            -- IDLE BRANCH ONLY. During a recording or a playback the submenu is
+            -- still the 2-item form, so the shape a recorded run ever sees is
+            -- unchanged; that is what keeps injected navigation landing on the
+            -- same items on replay.
+            add(entries, { l = stat(221), c = __z8_update_slot, d = __z8_draw_slot })
             add(entries, { l = stat(217), c = function (e) if e == 112 then extcmd("z8_rec_record") end end })
             add(entries, { l = stat(219), c = function (e) if e == 112 then extcmd("z8_rec_play") end end })
         end

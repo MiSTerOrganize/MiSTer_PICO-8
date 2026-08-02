@@ -9,9 +9,19 @@
 GAMEDIR="/media/fat/games/PICO-8"
 LOGDIR="/media/fat/logs/PICO-8"
 
+# Recorder tree: top-level and per-core, alongside saves/ savestates/ config/
+# logs/. Takes are <cart>_<slot>.inp, slots 1..8. The dot-directories hold the
+# save-state snapshots a take carries and the isolated scratch a session runs
+# against; dot-prefixed so the OSD "Load Replay" picker never lists them.
+REPLAYS="/media/fat/replays/PICO-8"
+
 cd "$GAMEDIR" || exit 1
 
-mkdir -p "$LOGDIR" "$GAMEDIR/Carts" "$GAMEDIR/Replays"
+# Created EVERY launch, and that is load-bearing rather than tidy: MiSTer only
+# remembers a browse directory (Selected_S[]) while it still exists, so if this
+# vanished, "Load Replay" would snap back to games/ and the takes would look
+# gone. Also the binary can then assume the tree exists on the write path.
+mkdir -p "$LOGDIR" "$GAMEDIR/Carts" "$REPLAYS" "$REPLAYS/.snapshots"
 
 # Rotate ARM-binary stdout/stderr log
 mv -f "$LOGDIR/PICO-8.log" "$LOGDIR/PICO-8.prev.log" 2>/dev/null
