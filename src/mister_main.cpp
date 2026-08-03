@@ -1796,8 +1796,7 @@ int main(int argc, char **argv)
             /* Carry the slot across the reset (see the recovery block at arm). */
             if (g_rec_slot >= 1 && g_rec_slot <= P8REC_SLOTS)
             { FILE *sf = fopen("/tmp/pico8_recslot", "w");
-              if (sf) { fprintf(sf, "%d
-", g_rec_slot); fclose(sf); } }
+              if (sf) { fprintf(sf, "%d\n", g_rec_slot); fclose(sf); } }
             FILE *m = fopen("/tmp/pico8_recmode", "w");
             if (m) { fputs("REC", m); fclose(m); }
             FILE *r = fopen("/tmp/pico8_reset_marker", "w");
@@ -1823,8 +1822,7 @@ int main(int argc, char **argv)
             /* Carry the slot across the reset (see the recovery block at arm). */
             if (g_rec_slot >= 1 && g_rec_slot <= P8REC_SLOTS)
             { FILE *sf = fopen("/tmp/pico8_recslot", "w");
-              if (sf) { fprintf(sf, "%d
-", g_rec_slot); fclose(sf); } }
+              if (sf) { fprintf(sf, "%d\n", g_rec_slot); fclose(sf); } }
             FILE *m = fopen("/tmp/pico8_recmode", "w");
             if (m) { fputs("PLAY", m); fclose(m); }
             FILE *r = fopen("/tmp/pico8_reset_marker", "w");
