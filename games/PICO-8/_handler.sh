@@ -30,14 +30,6 @@ mkdir -p "$LOGDIR" "$GAMEDIR/Carts" "$REPLAYS" "$REPLAYS/.snapshots"
 # rather than lingering in the cart browser as a decoy.
 rmdir "$GAMEDIR/Replays" 2>/dev/null
 
-# Rotate the ARM binary's log. The name is pico8.log, matching what the docs,
-# the feature matrix and every debugging note already call it -- the binary used
-# to dup2 its own pico8.log over stderr, so this rotation ran on a PICO-8.log
-# that was permanently 0 bytes while the real output accumulated, unrotated,
-# next to it. The binary no longer redirects; this is now the only redirect,
-# which is why it can rotate.
-mv -f "$LOGDIR/pico8.log" "$LOGDIR/pico8.prev.log" 2>/dev/null
-
 # Belt-and-suspenders .s0 cleanup — Master_Daemon already clears .s0 on
 # core transitions, but MiSTer Main's auto-resume-last-file behavior can
 # leave PICO-8.s0 populated when handler spawns. Clearing here at handler
@@ -75,4 +67,22 @@ sleep 1
 # decided in mister_main.cpp, not here: render/main -> core 0, audio -> core 1
 # (rule INVERTED 2026-06-13; core 0 has ~1.85x core 1's DDR3 read bandwidth and
 # render is the memory-bound one). See feedback_affinity_render_core0_audio_core1.md.
+# Rotate the ARM binary's log, IMMEDIATELY before the redirect that recreates
+# it. The name is pico8.log, matching what the docs, the feature matrix and every
+# debugging note already call it -- the binary used to dup2 its own pico8.log
+# over stderr, so this rotation ran on a PICO-8.log that was permanently 0 bytes
+# while the real output accumulated, unrotated, next to it.
+#
+# It sits HERE, not 40 lines up, because the two operations have to be
+# neighbours. During a sister-core RBF swap MiSTer's CORENAME lags the loaded
+# RBF by a second or two, so Master_Daemon briefly spawns the OUTGOING core's
+# handler against the INCOMING RBF and kills it moments later -- a documented,
+# harmless transient. With the rotation up top that short-lived spawn reached
+# the mv but died in the `sleep 1` below before the exec, so it rotated the log
+# away and never recreated it: pico8.log simply absent, which reads like the
+# core never ran. Observed 2026-08-03 at 18:57:47. Nothing was lost (mv -f on a
+# missing source is a no-op, so prev always holds the last real session), but a
+# handler that never launches a binary should not touch the logs at all.
+mv -f "$LOGDIR/pico8.log" "$LOGDIR/pico8.prev.log" 2>/dev/null
+
 exec taskset 0x03 ./PICO-8 -nativevideo -data "$GAMEDIR/" > "$LOGDIR/pico8.log" 2>&1
