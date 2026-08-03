@@ -33,6 +33,13 @@ jobs:
       # function out of mister_main.cpp and compiles it natively.
       - name: Save-payload parser tests (untrusted input)
         run: python3 tools/harness/test_snap_payload.py
+      # Slot-selection conformance (recording checklist items 1, 3, 11). Pure
+      # logic, so it needs no controller: cuts the four real slot helpers out of
+      # mister_main.cpp and compiles them. Guards the defect class where a
+      # PARSED slot name disagrees with the GENERATED one the loader rebuilds --
+      # which broke Play permanently on a zero-padded copy.
+      - name: Recorder slot-selection tests
+        run: python3 tools/harness/test_slot_selection.py
       - name: Build z8headless (engine-only, fully static, with -g for addr2line)
         run: |
           cmake -B build -DBUILD_HEADLESS=ON -DSKIP_SDL_FRONTEND=ON -DCMAKE_BUILD_TYPE=Release \
