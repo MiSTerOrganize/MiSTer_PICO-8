@@ -23,6 +23,13 @@ cd "$GAMEDIR" || exit 1
 # gone. Also the binary can then assume the tree exists on the write path.
 mkdir -p "$LOGDIR" "$GAMEDIR/Carts" "$REPLAYS" "$REPLAYS/.snapshots"
 
+# Retire the pre-2026-08-02 location. rmdir (not rm -rf) is the whole point: it
+# refuses on a non-empty directory, so anyone holding takes in there keeps them
+# exactly where they are -- still playable via the OSD "Load Replay", which
+# browses anywhere. Only the empty folder our old handler created goes away,
+# rather than lingering in the cart browser as a decoy.
+rmdir "$GAMEDIR/Replays" 2>/dev/null
+
 # Rotate ARM-binary stdout/stderr log
 mv -f "$LOGDIR/PICO-8.log" "$LOGDIR/PICO-8.prev.log" 2>/dev/null
 
