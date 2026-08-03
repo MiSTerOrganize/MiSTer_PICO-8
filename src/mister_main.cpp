@@ -1352,8 +1352,8 @@ static void print_usage(const char *prog)
 int main(int argc, char **argv)
 {
     // Line-buffer stderr so log output is flushed on every newline. Without
-    // this, stderr (redirected to /media/fat/logs/PICO-8/pico8.log by the
-    // daemon) is block-buffered (~4 KB) — diagnostic output from
+    // this, stderr (redirected to /media/fat/logs/PICO-8/pico8.log by
+    // _handler.sh) is block-buffered (~4 KB) — diagnostic output from
     // savestate_save / savestate_load can stay buffered until process exit
     // or crash, making it impossible to debug crashes mid-restore.
     setvbuf(stderr, NULL, _IOLBF, 0);
@@ -1426,16 +1426,24 @@ int main(int argc, char **argv)
     mkdir("/media/fat/logs", 0755);
     mkdir(logs_dir.c_str(), 0755);
 
-    // Redirect stderr to log file for diagnostics
-    // Captures: startup info, cart printh() output, errors, hot-swap events
-    {
-        std::string log_path = logs_dir + "/pico8.log";
-        FILE *logf = fopen(log_path.c_str(), "w");
-        if (logf) {
-            dup2(fileno(logf), STDERR_FILENO);
-            fclose(logf);
-        }
-    }
+    // NO stderr redirect here -- deliberately. _handler.sh already runs us as
+    // `exec ... > "$LOGDIR/pico8.log" 2>&1`, so both streams arrive pointing at
+    // that one file, sharing ONE file offset.
+    //
+    // This used to dup2 a freshly-opened pico8.log over fd 2, which broke the
+    // logging in two ways at once. It stole stderr away from the handler's
+    // redirect, so the handler's own pico8.log stayed permanently 0 bytes while
+    // every real diagnostic went to a second file the handler never rotated --
+    // and "the log is empty" is indistinguishable from "the code never ran",
+    // which cost a real debugging session (see the add_stat int16_t incident).
+    //
+    // Re-opening the SAME path instead would be worse, not better: fd 1 would
+    // keep the handler's offset-0 descriptor while fd 2 got an independent one,
+    // so stdout and stderr would overwrite each other in the file. One redirect,
+    // owned by the handler, is the only arrangement without a hazard.
+    //
+    // Launched by hand outside the handler, diagnostics now go to the terminal,
+    // which is what you want when you are sitting in front of it.
 
     // Pin main/render thread to CPU core 0 (the memory-fast core; audio uses core 1).
     // 2026-06-13 affinity rule INVERTED: core 0 has ~1.85x core 1's DDR3 bandwidth

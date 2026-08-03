@@ -54,7 +54,7 @@ src/
 - **SDL 1.2.15** statically linked, runtime `SDL_VIDEODRIVER=dummy`, no fbcon/X11/ALSA. SDL exists because upstream zepto8 reaches into it — we don't add new SDL code.
 - **Audio thread** writes to DDR3 ring buffer via `NativeVideoWriter_WriteAudio`. **Never** add `usleep` to the audio thread — ring-buffer back-pressure paces it correctly. See `mister_main.cpp:92-`.
 - **60 fps tick rate** required by PICO-8 carts. Main loop in `mister_main.cpp` spin-waits to keep frame cadence (`get_now_ms` based) — must NOT fall behind, or `_update60`/`_draw` desync.
-- **Logs** go to `/media/fat/logs/PICO-8/pico8.log` (stderr `dup2`'d in `mister_main.cpp:374-379`). Never write log files to the games directory.
+- **Logs** go to `/media/fat/logs/PICO-8/pico8.log`, redirected by `_handler.sh` (`exec … > "$LOGDIR/pico8.log" 2>&1`), which also rotates it to `pico8.prev.log` each launch. The binary does **not** redirect stderr itself — it used to `dup2` its own `pico8.log` over fd 2, which stole stderr from the handler's redirect and left two files, one always empty and one never rotated. Never write log files to the games directory.
 - **BIOS** loaded at runtime from `/media/fat/games/PICO-8/bios.p8`. Edit `src/pico8/bios.p8` in the repo, push, CI deploys via `update_all`. **Never** rename to `boot.rom` (downloader hardcodes `overwrite: False` on that filename → users get stuck on stale BIOS forever).
 - **Save states** go to `/media/fat/savestates/PICO-8/<cart>_<slot>.ss`. NES-style v6 (4 slots per cart, OSD-driven, F1-F4 keyboard).
 

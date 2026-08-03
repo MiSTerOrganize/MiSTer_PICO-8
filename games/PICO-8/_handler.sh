@@ -30,8 +30,13 @@ mkdir -p "$LOGDIR" "$GAMEDIR/Carts" "$REPLAYS" "$REPLAYS/.snapshots"
 # rather than lingering in the cart browser as a decoy.
 rmdir "$GAMEDIR/Replays" 2>/dev/null
 
-# Rotate ARM-binary stdout/stderr log
-mv -f "$LOGDIR/PICO-8.log" "$LOGDIR/PICO-8.prev.log" 2>/dev/null
+# Rotate the ARM binary's log. The name is pico8.log, matching what the docs,
+# the feature matrix and every debugging note already call it -- the binary used
+# to dup2 its own pico8.log over stderr, so this rotation ran on a PICO-8.log
+# that was permanently 0 bytes while the real output accumulated, unrotated,
+# next to it. The binary no longer redirects; this is now the only redirect,
+# which is why it can rotate.
+mv -f "$LOGDIR/pico8.log" "$LOGDIR/pico8.prev.log" 2>/dev/null
 
 # Belt-and-suspenders .s0 cleanup — Master_Daemon already clears .s0 on
 # core transitions, but MiSTer Main's auto-resume-last-file behavior can
@@ -70,4 +75,4 @@ sleep 1
 # decided in mister_main.cpp, not here: render/main -> core 0, audio -> core 1
 # (rule INVERTED 2026-06-13; core 0 has ~1.85x core 1's DDR3 read bandwidth and
 # render is the memory-bound one). See feedback_affinity_render_core0_audio_core1.md.
-exec taskset 0x03 ./PICO-8 -nativevideo -data "$GAMEDIR/" > "$LOGDIR/PICO-8.log" 2>&1
+exec taskset 0x03 ./PICO-8 -nativevideo -data "$GAMEDIR/" > "$LOGDIR/pico8.log" 2>&1
