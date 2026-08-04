@@ -5,6 +5,15 @@ on:
   push:
     branches: [main]
     tags: ['v*']
+    # Harness tooling is not compiled into the ARM binary, so a tools/**
+    # push has nothing to rebuild. Without this filter it still triggers a
+    # full QEMU build AND a commit-back, which re-ships the binary to every
+    # update_all user for no functional change: measured 2026-08-03, two
+    # harness-only pushes each moved the shipped hash. (The bytes that
+    # differ are the 20-byte GNU build-id note, not code -- the real fix is
+    # -Wl,--build-id=none at link time; this filter avoids the trigger.)
+    paths-ignore:
+      - 'tools/**'
   pull_request:
     branches: [main]
   workflow_dispatch:
