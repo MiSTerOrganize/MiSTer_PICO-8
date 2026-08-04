@@ -93,6 +93,11 @@ jobs:
       - name: Commit fresh ARM binary back to repo
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         continue-on-error: true   # don't lose the artifact upload if push races
+        env:
+          # For the staleness guard's `gh api` ancestry query. Read-only use of
+          # the repo's own token; the DB/release dispatches below still use the
+          # cross-repo PAT, which GITHUB_TOKEN cannot replace.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # Save the freshly-built binary outside the worktree so we can
           # always restore it after any rebase/conflict, no matter what
@@ -127,9 +132,48 @@ jobs:
           # merge conflict cannot be auto-resolved.
           PUSH_OK=0
           NOTHING_TO_DO=0
+          STALE=0
           for i in 1 2 3 4 5; do
             git fetch origin main
             git reset --hard origin/main
+            # --- Staleness guard --------------------------------------------
+            # The re-apply above is right that a build must never be LOST, but
+            # it never asks whether the tip already carries a NEWER binary. Two
+            # builds overlap whenever pushes land close together, and they do
+            # NOT finish in start order. Measured 2026-08-04 on OpenBOR_7533:
+            # the 0ea791c build ran 00:46->01:15 while the d4815ef build ran
+            # 00:52->01:07, so the OLDER source finished LAST, re-applied its
+            # binary over the newer one, and main shipped a stale binary until
+            # an unrelated build happened to heal it. Same loop, same exposure
+            # here -- and the sibling of the 2026-07-21 race noted above, which
+            # was this identical reset-to-tip window shipping a mismatched
+            # binary+bios pair.
+            #
+            # Ancestry is asked of the API rather than the local clone:
+            # actions/checkout is depth-1, so `git merge-base` has no history to
+            # reason over. compare/{base}...{head} reports "ahead" when head is
+            # ahead of base.
+            #
+            # FAILS OPEN on every uncertainty -- no marker commit, unparseable
+            # message, API error, unrelated histories. The guard may only skip a
+            # push it is certain is stale; when unsure it must defer to the old
+            # behaviour, because wrongly skipping loses a build silently.
+            TIP_SRC=$(gh api "repos/${{ github.repository }}/commits?path=games/PICO-8/PICO-8&per_page=1" \
+                        --jq '.[0].commit.message' 2>/dev/null \
+                      | sed -n '1s/^CI: rebuild ARM binary for \([0-9a-f]\{40\}\)$/\1/p')
+            if [ -n "$TIP_SRC" ] && [ "$TIP_SRC" != "${{ github.sha }}" ]; then
+              REL=$(gh api "repos/${{ github.repository }}/compare/${{ github.sha }}...$TIP_SRC" \
+                      --jq '.status' 2>/dev/null || echo unknown)
+              if [ "$REL" = "ahead" ]; then
+                echo "[staleness guard] main already carries a binary built from $TIP_SRC,"
+                echo "  which is AHEAD of this run's source ${{ github.sha }}."
+                echo "  This build is stale -- refusing to overwrite a newer binary."
+                echo "  It is still uploaded as a workflow artifact if you need it."
+                STALE=1
+                break
+              fi
+              echo "[staleness guard] tip binary source $TIP_SRC is '$REL' vs this run -- proceeding."
+            fi
             cp /tmp/ci-binary/PICO-8 games/PICO-8/PICO-8
             chmod +x games/PICO-8/PICO-8
             # Keep the SHIPPED bios in lockstep with THIS BUILD'S source bios.
@@ -157,7 +201,7 @@ jobs:
           done
           # Exhausting the loop used to leave the job GREEN with no binary on
           # main -- a silently stale ship chain. Fail loudly instead.
-          if [ "$PUSH_OK" != "1" ] && [ "$NOTHING_TO_DO" != "1" ]; then
+          if [ "$PUSH_OK" != "1" ] && [ "$NOTHING_TO_DO" != "1" ] && [ "$STALE" != "1" ]; then
             echo "::error::Binary commit-back failed after 5 attempts. The binary is still available as a workflow artifact; deploy manually or re-run."
             exit 1
           fi
