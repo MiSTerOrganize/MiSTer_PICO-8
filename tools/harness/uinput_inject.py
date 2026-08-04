@@ -360,6 +360,14 @@ def main():
     ap.add_argument("--settle", type=float, default=25.0,
                     help="seconds to let MiSTer Main enumerate the pad "
                          "(measured: 3 s is NOT enough, 25 s works)")
+    ap.add_argument("--min-fps", type=int, default=0, metavar="N",
+                    help="wait until the core is actually producing N+ fps before "
+                         "injecting (0 = off). A core with no content still ticks "
+                         "the counter at ~7 fps via the keepalive, so 'counter is "
+                         "advancing' does NOT mean content is running. Use ~20.")
+    ap.add_argument("--wait-content", type=float, default=180.0, metavar="SECONDS",
+                    help="how long --min-fps may wait before giving up (default 180; "
+                         "PAK load times span ~2s to ~69s across the library)")
     ap.add_argument("--max-seconds", type=float, default=120.0,
                     help="hard wall-clock ceiling; nothing may outlive this")
     a = ap.parse_args()
@@ -478,6 +486,30 @@ def main():
                     print("FAIL: frame counter is not advancing (base=%d)." % base)
                     print("  No hybrid core is running, or it is not writing DDR3.")
                     return 1
+
+            # A live counter is NOT the same as content running. A core with no
+            # cart/PAK mounted still advances it via the 150ms keepalive (~6.7
+            # fps), so "advancing" alone will happily inject a whole timeline
+            # into a loading screen -- which is exactly what happened on
+            # 2026-08-03: a fixed 45s sleep was assumed generous because ATOV
+            # loads in <2s, but PAK load times across the library span ~2s to
+            # ~69s, so ANY fixed delay is wrong for some content.
+            # Gate on OBSERVED production instead of a guessed delay.
+            if a.min_fps > 0:
+                waited = 0.0
+                while True:
+                    f0 = fs.frame(); time.sleep(0.5); fps = (fs.frame() - f0) * 2
+                    if fps >= a.min_fps:
+                        print("content running (%d fps >= --min-fps %d) after %.1fs"
+                              % (fps, a.min_fps, waited))
+                        break
+                    waited += 0.5
+                    if waited >= a.wait_content:
+                        print("FAIL: only %d fps after %.0fs (--min-fps %d)."
+                              % (fps, waited, a.min_fps))
+                        print("  ~7 fps = keepalive only: no cart/PAK mounted, or still loading.")
+                        print("  Injecting now would spend the timeline on a loading screen.")
+                        return 3
             print("frame counter live (base=%d); injecting %d frames" % (base, total))
 
             start = fs.frame()
@@ -519,9 +551,16 @@ def main():
                     emitted += 1
             elapsed = time.time() - t0
             if reset:
-                # Distinct exit code: a harness must be able to tell "the core
-                # restarted" from "the timeline ran" without parsing prose.
-                return 2
+                # EXIT CODES -- must stay DISTINCT, or a harness cannot act on
+                # them and ends up parsing prose (or, worse, treating any
+                # non-zero as the same thing and reporting a driver error as a
+                # real result):
+                #   0 = the timeline ran
+                #   1 = no frame counter at all (no core running)
+                #   2 = usage / nothing to inject
+                #   3 = content not running (only keepalive) -- see --min-fps
+                #   4 = the core RESTARTED mid-run; the timeline is void
+                return 4
             print("done: %d frames, %d state changes, %.1fs (%.1f fps observed)"
                   % (last, emitted, elapsed, last / elapsed if elapsed else 0))
         finally:
