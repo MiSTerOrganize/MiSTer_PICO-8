@@ -787,7 +787,7 @@ static bool p8rec_probe(std::string const &cart_path,
          * what it always did -- play the most recent take. */
         int slot = (g_rec_slot >= 1 && g_rec_slot <= P8REC_SLOTS)
                  ? g_rec_slot : p8rec_highest(base);
-        if (!slot) { snprintf(why, whysz, "No recording for this cart"); return false; }
+        if (!slot) { snprintf(why, whysz, "No recording for this game"); return false; }
         if (!p8rec_slot_used(base, slot))
         {   /* An explicitly chosen but empty slot is not "no recordings" -- the
              * cart may well have takes in other slots, and saying otherwise
@@ -840,7 +840,7 @@ static bool p8rec_probe(std::string const &cart_path,
      || memcmp(have, want, NSHA1_DIGEST_LEN) != 0)
     {   /* Name what they need. Lead with the name so a long one loses trailing
          * words rather than the point of the sentence. */
-        snprintf(why, whysz, "Needs %s - load that cart",
+        snprintf(why, whysz, "Needs %s - load it first",
                  p8rec_short_name(nm, P8REC_NAME_FIT).c_str());
         return false;
     }
@@ -866,7 +866,7 @@ static bool p8rec_load(std::string const &cart_path,
              * and the user was left at the title with no explanation. */
             char msg[64];
             if (slot) snprintf(msg, sizeof(msg), "Slot %d is empty", slot);
-            else      snprintf(msg, sizeof(msg), "No recording for this cart");
+            else      snprintf(msg, sizeof(msg), "No recording for this game");
             NativeVideoWriter_Notice(msg, 4);
             return false;
         }
@@ -978,7 +978,7 @@ static bool p8rec_load(std::string const &cart_path,
                  * instruction short enough that a long name loses trailing words
                  * rather than the whole point of the sentence. */
                 char msg[96];
-                snprintf(msg, sizeof(msg), "Needs %s - load that cart",
+                snprintf(msg, sizeof(msg), "Needs %s - load it first",
                          p8rec_short_name(want_name, P8REC_NAME_FIT).c_str());
                 NativeVideoWriter_Notice(msg, 6);
             }
@@ -1017,7 +1017,7 @@ static bool p8rec_load(std::string const &cart_path,
         g_rec_frames.clear();
         g_rec_snap.clear();
         fprintf(stderr, "[REC] %s has a corrupt save payload -- not playing\n", in.c_str());
-        NativeVideoWriter_Notice("Recording damaged - not playing", 5);
+        NativeVideoWriter_Notice("Recording is damaged - not playing", 5);
         return false;
     }
     if (got != n)
