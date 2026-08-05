@@ -2281,14 +2281,22 @@ int main(int argc, char **argv)
                      * Recording submenu rendered its IDLE branch and
                      * "Stop Playback" could never be reached. The menu item
                      * exists to stop a replay; let it. */
-                    /* ALL FOUR players' pause bits, not just P1's. `live` packs
-                     * 4 players x 7 bits (`live |= b << (p * 7)`), so Pause is
-                     * bits 6/13/20/27. Masking only bit 6 left P2-P4's Start
-                     * killing playback, and `g_vm->button(p,6,...)` below is
-                     * per-player, so P2 really can open the menu. */
-                    static const uint32_t PAUSE_BITS =
-                        (1u << 6) | (1u << 13) | (1u << 20) | (1u << 27);
-                    uint32_t pressed = live & ~prev_live & ~PAUSE_BITS;
+                    /* 🛑 DO NOT mask the pause bits out of this test to make the
+                     * menu's "Stop Playback" item reachable. Bit 6 was masked for
+                     * exactly that reason and it is wrong -- reverted 2026-08-05
+                     * after the same change on OpenBOR_7533 was traced through.
+                     *
+                     * During playback the VM's buttons come from `use`, which is
+                     * the RECORDED frame (`use = g_rec_frames[g_rec_pos++]`
+                     * below), so a live pause press that does not trip take-over
+                     * never reaches g_vm->button(p,6,...) -- the menu simply does
+                     * not open, and the pause button does nothing at all.
+                     *
+                     * Taking over IS how a live pause reaches the VM: it leaves
+                     * `use` at `live`, so the same press opens the menu under
+                     * live control. "Stop Playback" is then unreachable because
+                     * it is unnecessary -- playback has already stopped. */
+                    uint32_t pressed = live & ~prev_live;
                     prev_live = live;
                     if (pressed) {
                         fprintf(stderr, "[REC] take-over at frame %u -- playback stopped\n",
