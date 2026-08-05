@@ -2301,7 +2301,7 @@ int main(int argc, char **argv)
                     if (pressed) {
                         fprintf(stderr, "[REC] take-over at frame %u -- playback stopped\n",
                                 (unsigned)g_rec_pos);
-                        NativeVideoWriter_Notice("You took over. Nothing is kept. Reset to play.", 4);
+                        NativeVideoWriter_Notice("You took over. Nothing is kept. Reset to play.", 6);
                         p8rec_reset();
                     } else {
                         use = g_rec_frames[g_rec_pos++];
@@ -2309,7 +2309,7 @@ int main(int argc, char **argv)
                 } else {
                     fprintf(stderr, "[REC] playback finished (%u frames)\n",
                             (unsigned)g_rec_frames.size());
-                    NativeVideoWriter_Notice("Replay finished. Nothing is kept. Reset to play.", 4);
+                    NativeVideoWriter_Notice("Replay finished. Nothing is kept. Reset to play.", 6);
                     p8rec_reset();
                 }
             }
