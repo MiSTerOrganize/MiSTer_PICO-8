@@ -995,9 +995,24 @@ static bool p8rec_load(std::string const &cart_path,
      * still warned "older build - may not match" for 6 seconds. */
     if (ver != P8REC_ENGINE_VER)
     {
-        fprintf(stderr, "[REC] recorded on engine v%u (this build is v%u) -- may"
-                        " desync; press any button to take over\n", ver, P8REC_ENGINE_VER);
-        NativeVideoWriter_Notice("Recorded on an older build - may not match", 6);
+        /* REFUSE, do not warn-and-play (policy set 2026-08-05: refuse on both
+         * cores). P8REC_ENGINE_VER is bumped ONLY for a shipped game-LOGIC change
+         * that would desync old takes, so a mismatch is a KNOWN desync, not a
+         * risk of one -- and a replay that drifts into nonsense is indis-
+         * tinguishable from a bug in the core.
+         *
+         * This site disagreed with p8rec_open's own version check, which already
+         * refuses with the newer/older split. Same condition, two answers; now
+         * both refuse, and this one names the direction too so the message says
+         * something the player can act on. */
+        fprintf(stderr, "[REC] recorded on engine v%u (this build is v%u)"
+                        " -- not playing, it would desync\n", ver, P8REC_ENGINE_VER);
+        if (ver > P8REC_ENGINE_VER)
+            NativeVideoWriter_Notice("Made by a newer core - update to play it", 6);
+        else
+            NativeVideoWriter_Notice("Recorded by an older core - re-record it", 6);
+        p8rec_reset();
+        return false;
     }
 
     g_rec_frames.assign(n, 0u);
