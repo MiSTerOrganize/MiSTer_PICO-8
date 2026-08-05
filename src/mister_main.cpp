@@ -638,6 +638,11 @@ static bool p8rec_write(std::string const &cart_path)
          * avoid. (Under the old numbered library it merely claimed the highest
          * index and shadowed every good take, which was bad enough.) */
         fprintf(stderr, "[REC] nothing captured -- not writing a file\n");
+        /* Say so on screen. Stop Recording with nothing captured used to be
+         * silent, which is indistinguishable from a save that worked -- and
+         * the slot stays empty either way. OpenBOR_7533 has said this since
+         * it shipped; same wording, per conformance item 20. */
+        NativeVideoWriter_Notice("Nothing was captured - no file written", 4);
         return true;   /* nothing to save, but the session is legitimately over */
     }
     std::string base = p8rec_cart_base(cart_path);
