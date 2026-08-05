@@ -207,7 +207,6 @@ is logged) — just press any button to take over.
   back into the game.
 - **Play Recording** — restarts the cart and plays the chosen slot back
   hands-free, driving through menus into the game on its own.
-- **Stop Playback** — end playback and take control.
 - **Take over any time** — during playback, just press any button and the
   automated inputs stop instantly so you can play. A button you were *already*
   holding when playback started doesn't count, so a resting thumb or a drifting
