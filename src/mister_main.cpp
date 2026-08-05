@@ -1011,7 +1011,9 @@ static bool p8rec_load(std::string const &cart_path,
             NativeVideoWriter_Notice("Made by a newer core - update to play it", 6);
         else
             NativeVideoWriter_Notice("Recorded by an older core - re-record it", 6);
-        p8rec_reset();
+        /* No p8rec_reset() here: it is defined further down, and every other
+         * refusal in this function just returns false -- the caller owns the
+         * teardown. */
         return false;
     }
 
