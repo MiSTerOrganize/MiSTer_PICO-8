@@ -743,14 +743,25 @@ function __z8_pause_menu()
         if m == 1 then
             add(entries, { l = stat(218), c = function (e) if e == 112 then extcmd("z8_rec_stop") __z8_menu.inrec = false end end })
         elseif m == 2 then
-            add(entries, { l = stat(220), c = function (e) if e == 112 then extcmd("z8_rec_stop") __z8_menu.inrec = false end end })
+            -- NO "stop playback" ITEM. Do not add one back. A live player can
+            -- never reach this branch: pressing pause during a replay trips
+            -- take-over, the mode drops to 0, and the idle list draws instead.
+            -- Taking over IS how a live pause reaches the VM at all -- the
+            -- buttons it reads come from the RECORDED frame otherwise. An item
+            -- here is visible during a replay and can never be chosen by the
+            -- person watching it. It is not needed to end a replay either:
+            -- take-over ends it on any button, and it ends itself at the last
+            -- recorded frame. Playback is therefore the 1-item form (Back).
         else
             -- Slot picker: 8 bounded slots per cart, left/right, exactly like
             -- savestates -- so no OSD file browsing is needed to reach a take.
-            -- IDLE BRANCH ONLY. During a recording or a playback the submenu is
-            -- still the 2-item form, so the shape a recorded run ever sees is
-            -- unchanged; that is what keeps injected navigation landing on the
-            -- same items on replay.
+            -- IDLE BRANCH ONLY, so the shape a recorded run ever sees stays
+            -- small and stable -- that is what keeps injected navigation
+            -- landing on the same items on replay. Recording is 2 items,
+            -- playback 1; the counts differing there is safe, because the only
+            -- recorded input that ever selects index 0 in this submenu is the
+            -- terminal stop that ended the take, and the replay reaches its
+            -- last frame either way.
             add(entries, { l = stat(221), c = __z8_update_slot, d = __z8_draw_slot })
             add(entries, { l = stat(217), c = function (e) if e == 112 then extcmd("z8_rec_record") end end })
             add(entries, { l = stat(219), c = function (e) if e == 112 then extcmd("z8_rec_play") end end })

@@ -579,7 +579,11 @@ private:
                                             ,"record"        // 217
                                             ,"stop recording"// 218
                                             ,"play recording"// 219
-                                            ,"stop playback" // 220
+                                            /* 220 "stop playback" REMOVED -- the item it
+                                             * labelled was dead UI (see bios.p8's m == 2
+                                             * branch). This is the last static entry, so
+                                             * dropping it shifts no index; 221 (the slot
+                                             * label) is a dynamic stat from mister_main. */
                                             };
 
     std::unordered_map<std::string, std::function<void(std::string const&)>> m_extcmds;
