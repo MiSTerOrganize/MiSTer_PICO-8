@@ -2281,7 +2281,14 @@ int main(int argc, char **argv)
                      * Recording submenu rendered its IDLE branch and
                      * "Stop Playback" could never be reached. The menu item
                      * exists to stop a replay; let it. */
-                    uint32_t pressed = live & ~prev_live & ~(1u << 6);
+                    /* ALL FOUR players' pause bits, not just P1's. `live` packs
+                     * 4 players x 7 bits (`live |= b << (p * 7)`), so Pause is
+                     * bits 6/13/20/27. Masking only bit 6 left P2-P4's Start
+                     * killing playback, and `g_vm->button(p,6,...)` below is
+                     * per-player, so P2 really can open the menu. */
+                    static const uint32_t PAUSE_BITS =
+                        (1u << 6) | (1u << 13) | (1u << 20) | (1u << 27);
+                    uint32_t pressed = live & ~prev_live & ~PAUSE_BITS;
                     prev_live = live;
                     if (pressed) {
                         fprintf(stderr, "[REC] take-over at frame %u -- playback stopped\n",
