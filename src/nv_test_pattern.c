@@ -28,14 +28,15 @@
 #include <fcntl.h>
 #include <sys/mman.h>
 
-#define NV_DDR_PHYS_BASE    0x3A000000u
-#define NV_DDR_REGION_SIZE  0x00020000u
-#define NV_CTRL_OFFSET      0x00000000u
-#define NV_BUF0_OFFSET      0x00000100u
-#define NV_BUF1_OFFSET      0x00008100u
-#define NV_WIDTH            128
-#define NV_HEIGHT           128
-#define NV_FRAME_BYTES      (NV_WIDTH * NV_HEIGHT * 2)
+/* The DDR3 map comes from the writer's header -- this file used to carry its
+ * own copy, and it had already drifted: NV_DDR_REGION_SIZE said 0x20000 while
+ * the writer mapped 0x60000. Harmless here by luck (this tool only touches the
+ * control word and the two buffers, all below 0x10100), but a second copy of a
+ * memory map is how this project has broken things before, so there is now one.
+ *
+ * Standalone build, from src/:
+ *     arm-linux-gnueabihf-gcc -O2 -o nv_test_pattern nv_test_pattern.c */
+#include "native_video_writer.h"
 
 // PICO-8 palette in RGB565 (all 16 colors)
 static const uint16_t pico8_palette[16] = {
@@ -100,7 +101,7 @@ int main(void)
     *ctrl = 0;
 
     printf("nv_test_pattern: writing PICO-8 palette bars to DDR3 at 0x%08X\n", NV_DDR_PHYS_BASE);
-    printf("  Frame: %dx%d RGB565 (%d bytes)\n", NV_WIDTH, NV_HEIGHT, NV_FRAME_BYTES);
+    printf("  Frame: %dx%d RGB565 (%d bytes)\n", NV_FRAME_WIDTH, NV_FRAME_HEIGHT, NV_FRAME_BYTES);
     printf("  Press Ctrl+C to quit.\n");
 
     uint32_t frame_counter = 0;
@@ -124,11 +125,11 @@ int main(void)
         uint32_t buf_offset = (active_buf == 0) ? NV_BUF0_OFFSET : NV_BUF1_OFFSET;
         volatile uint16_t *dst = (volatile uint16_t *)(base + buf_offset);
 
-        for (int y = 0; y < NV_HEIGHT; y++) {
+        for (int y = 0; y < NV_FRAME_HEIGHT; y++) {
             int color_idx = ((y + scroll_offset) / 8) % 16;
             uint16_t color = pico8_palette[color_idx];
-            for (int x = 0; x < NV_WIDTH; x++) {
-                dst[y * NV_WIDTH + x] = color;
+            for (int x = 0; x < NV_FRAME_WIDTH; x++) {
+                dst[y * NV_FRAME_WIDTH + x] = color;
             }
         }
 

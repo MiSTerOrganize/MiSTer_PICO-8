@@ -29,33 +29,9 @@
 #include <stdint.h>
 #include <time.h>
 
-#define NV_DDR_PHYS_BASE    0x3A000000u
-#define NV_DDR_REGION_SIZE  0x00060000u   /* 384KB covers buffers + control + cart data */
-#define NV_CTRL_OFFSET      0x00000000u
-#define NV_JOY0_OFFSET      0x00000008u  /* P1 joystick_0 from FPGA (physical 0x3A000008) */
-/* JOY1/2/3 placed at 0x030/0x038/0x040 — distinct from PICO-8's audio
- * pointers at 0x020/0x028. Matches FPGA reader's JOY1/2/3_ADDR. */
-#define NV_JOY1_OFFSET      0x00000030u  /* P2 joystick_1 */
-#define NV_JOY2_OFFSET      0x00000038u  /* P3 joystick_2 */
-#define NV_JOY3_OFFSET      0x00000040u  /* P4 joystick_3 */
-#define NV_SS_OFFSET        0x00000048u  /* save state ctrl word (FPGA writes, ARM reads) */
-                                         /* layout (LE): byte 0 = cmd (0=idle 1=save 2=load),
-                                          *              byte 1 = slot (0..3),
-                                          *              byte 2 = sequence counter (changes each event) */
-#define NV_BUF0_OFFSET      0x00000100u
-#define NV_BUF1_OFFSET      0x00008100u
-#define NV_CART_CTRL_OFFSET  0x00000010u
-#define NV_FEEDBACK_OFFSET   0x00000018u  /* vsync feedback (physical 0x3A000018) */
-#define NV_AUD_WPTR_OFFSET   0x00000020u  /* audio write pointer (physical 0x3A000020) */
-#define NV_AUD_RPTR_OFFSET   0x00000028u  /* audio read pointer (physical 0x3A000028) */
-#define NV_CART_DATA_OFFSET  0x00020000u
-#define NV_CART_MAX_SIZE     0x00040000u  /* 256KB max cart size */
-#define NV_AUD_RING_OFFSET   0x00010200u  /* audio ring buffer (physical 0x3A010200) */
-#define NV_AUD_RING_SAMPLES  4096         /* stereo samples (L+R = 4 bytes each) */
-#define NV_AUD_RING_MASK     (NV_AUD_RING_SAMPLES - 1)
-#define NV_FRAME_WIDTH      128
-#define NV_FRAME_HEIGHT     128
-#define NV_FRAME_BYTES      (NV_FRAME_WIDTH * NV_FRAME_HEIGHT * 2)  /* 32,768 */
+/* The DDR3 memory map moved to native_video_writer.h (included above), so the
+ * writer and the standalone nv_test_pattern tool share ONE definition of it
+ * rather than each carrying a copy that can drift. */
 
 static int mem_fd = -1;
 static volatile uint8_t* ddr_base = NULL;
