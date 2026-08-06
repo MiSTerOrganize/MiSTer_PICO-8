@@ -357,10 +357,47 @@ void NativeVideoWriter_Notice(const char* msg, int seconds) {
     nv_notice_until_ns = nv_now_ns() + (uint64_t)seconds * 1000000000ull;
 }
 
+/* Solid backing so the text stays readable over busy art. OpenBOR_7533 got
+ * this and PICO-8 did not, which is the real notice-parity gap between the
+ * cores -- the FONT already matches (5x7 here upscaled 2x/1.75x by the FPGA
+ * lands ~10x12, against OpenBOR's directly-drawn 10x14). */
+static void nv_fill_rect(volatile uint16_t* dst, int x0, int y0, int w, int h,
+                         uint16_t colour) {
+    for (int y = y0; y < y0 + h; y++) {
+        if (y < 0 || y >= NV_FRAME_HEIGHT) continue;
+        volatile uint16_t* row = dst + (size_t)y * NV_FRAME_WIDTH;
+        for (int x = x0; x < x0 + w; x++) {
+            if (x < 0 || x >= NV_FRAME_WIDTH) continue;
+            row[x] = colour;
+        }
+    }
+}
+
 /* Word-wrap at NV_COLS. A word longer than a line is hard-broken rather than
  * dropped, so a long cart name still shows something useful. */
 static void nv_draw_notice(volatile uint16_t* dst) {
     if (!nv_notice_until_ns || nv_now_ns() >= nv_notice_until_ns) return;
+
+    /* Measure first, then paint the panel, then the text -- same two-pass
+     * shape OpenBOR uses, so the panel is only as wide as the longest line. */
+    {
+        const char* q = nv_notice_text;
+        int nlines = 0, widest = 0;
+        while (*q && nlines < NV_NOTICE_MAX) {
+            while (*q == ' ') q++;
+            if (!*q) break;
+            int t = 0, b = 0;
+            while (q[t] && t < NV_COLS) { if (q[t] == ' ') b = t; t++; }
+            if (q[t] && b > 0) t = b;
+            if (t > widest) widest = t;
+            q += t;
+            nlines++;
+        }
+        if (nlines == 0) return;
+        nv_fill_rect(dst, NV_FPS_MARGIN - 2, NV_FPS_MARGIN - 2,
+                     widest * (NV_GLYPH_W + NV_GLYPH_GAP) + 4,
+                     nlines * (NV_GLYPH_H + 2) + 3, 0x0000);
+    }
 
     const char* p = nv_notice_text;
     int line = 0;
