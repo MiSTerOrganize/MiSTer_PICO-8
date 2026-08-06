@@ -525,9 +525,16 @@ static int nv_buf_index(volatile uint16_t* dst) {
  * the notice band only into a buffer that does not already hold it. */
 static void nv_draw_overlays(volatile uint16_t* dst) {
     /* The fps read-out is redrawn every frame and so STILL drops on the odd
-     * frame at high render rates, exactly as the notice used to. Accepted, not
-     * overlooked: it is a number that changes twice a second, so a missing
-     * frame is invisible, and making it static is impossible by definition. */
+     * frame at high render rates, exactly as the notice used to. Accepted, and
+     * a COSTED CHOICE rather than an impossibility.
+     *
+     * 🛑 It is NOT exempt because "it changes every frame". nv_fps_value is
+     * recomputed only twice a second, so the same digits are drawn for ~30
+     * consecutive frames at 60 fps -- it could be made static like the notice.
+     * It is not, because it is a bottom-RIGHT rectangle rather than a
+     * full-width band: skipping a rectangle needs per-row X guards in every
+     * copy path, and the cheap band form would put a permanent black bar over
+     * rows 119-127, 7% of the frame, the whole time the overlay is on. */
     nv_fps_tick();
     if (nv_fps_overlay) nv_draw_fps(dst);
 
