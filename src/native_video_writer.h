@@ -123,6 +123,23 @@ void NativeVideoWriter_SetFpsOverlay(int on);
  * only to pico8.log, which is unreadable from a couch. Keep the log line too:
  * this is the headline, the log is the detail. */
 void NativeVideoWriter_Notice(const char* msg, int seconds);
+
+/* Height in rows of the notice band at the top of the frame, 0 when no notice
+ * is live.
+ *
+ * 🛑 EVERY publisher of a DDR3 frame must start its copy below this. The notice
+ * is drawn ONCE into each buffer and then left alone; a copy path that writes
+ * over those rows puts the notice back to being repainted every frame, and the
+ * frames scanned between the copy and the repaint show no notice. That is the
+ * flicker -- reported on OpenBOR 2026-08-05 and PICO-8 2026-08-06, one defect
+ * with one fix on every hybrid core. */
+int  NativeVideoWriter_NoticeRows(void);
+
+/* Forget which buffers already hold the notice band, so a live notice is
+ * painted into them again. Call after anything wipes a frame buffer -- the row
+ * skip above would otherwise protect a hole nothing ever fills. */
+void NativeVideoWriter_NoticeRepaint(void);
+
 int  NativeVideoWriter_GetFpsOverlay(void);
 
 #ifdef __cplusplus
