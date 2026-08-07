@@ -732,7 +732,7 @@ function __z8_pause_menu()
     local cursor = 0
     local is_pc = stat(145)=="pc"
     if __z8_menu.inquitmsg != nil then -- quit message asking
-        wintitle = __z8_menu.inquitmsg.l
+        wintitle = __z8_menu.inquitmsg.t or __z8_menu.inquitmsg.l
         add(entries, { l = stat(206), c = function (e) if e == 112 then __z8_menu.inquitmsg = nil return true end end })
         add(entries, { l = __z8_menu.inquitmsg.l, c = function (e) if e == 112 then __z8_menu.inquitmsg.c(112) __z8_menu.inquitmsg = nil end end })
         
@@ -819,7 +819,7 @@ function __z8_pause_menu()
         if bread then
             add(entries, { l = bread, c = function (e) if e == 112 then extcmd("breadcrumb") end end, ask = true})
         end
-        add(entries, { l = stat(209), c = function (e) if e == 112 then extcmd("z8_app_requestexit") end end, ask = true})
+        add(entries, { l = stat(209), c = function (e) if e == 112 then extcmd("z8_app_requestexit") end end, ask = true, askrec = true})
 
         if (btnp(2)) __z8_menu.cursor -= 1
         if (btnp(3)) __z8_menu.cursor += 1
@@ -906,9 +906,14 @@ function __z8_pause_menu()
         if cur.c then
             __z8_menu.in_menu_item = cursor
             if action then -- activate button
-                if stat(149) and cur.ask then -- ask before some actions
+                if (stat(149) and cur.ask)
+                or (cur.askrec and stat(148) == 1) then -- ask before some actions
                     __z8_menu.quitcursor = 0
-                    __z8_menu.inquitmsg = cur
+                    -- Say WHAT is lost. Without a title of its own the
+                    -- prompt reads just "quit", which is the one thing the
+                    -- user already knew.
+                    __z8_menu.inquitmsg = { l = cur.l, c = cur.c,
+                        t = stat(148) == 1 and "quit? recording lost" or nil }
                 else
                     stay = cur.c(112)
                 end
