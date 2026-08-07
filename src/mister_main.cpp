@@ -790,8 +790,24 @@ static bool p8rec_probe(std::string const &cart_path,
         /* Play reads the chosen slot; with none chosen it falls back to the
          * highest occupied one, so Play-without-touching-anything still does
          * what it always did -- play the most recent take. */
+        /* first_free, NOT highest -- the SAME default stat(221) displays.
+         *
+         * They used to differ, and the row names a slot, so the menu said one
+         * thing and the button did another: with nothing recorded the row read
+         * "slot 1" while Play resolved highest=0 and reported the generic "no
+         * recording for this game" instead of "Slot 1 is empty"; with slot 1
+         * recorded the row read "slot 2" and Play resolved highest=1 and played
+         * slot 1's take rather than saying slot 2 was empty. Both reported on
+         * hardware 2026-08-07.
+         *
+         * A convenience default is fine while nothing on screen CLAIMS a slot.
+         * This row claims one, so the default has to be the displayed one.
+         * first_free is also what Record already uses, so all three agree. */
         int slot = (g_rec_slot >= 1 && g_rec_slot <= P8REC_SLOTS)
-                 ? g_rec_slot : p8rec_highest(base);
+                 ? g_rec_slot : p8rec_first_free(base);
+        /* Every slot occupied: first_free has no answer, so fall back to the
+         * highest -- which is also what the row shows in that case. */
+        if (slot < 1 || slot > P8REC_SLOTS) slot = p8rec_highest(base);
         if (!slot) { snprintf(why, whysz, "No recording for this game"); return false; }
         if (!p8rec_slot_used(base, slot))
         {   /* An explicitly chosen but empty slot is not "no recordings" -- the
@@ -863,8 +879,24 @@ static bool p8rec_load(std::string const &cart_path,
     }
     else
     {
+        /* first_free, NOT highest -- the SAME default stat(221) displays.
+         *
+         * They used to differ, and the row names a slot, so the menu said one
+         * thing and the button did another: with nothing recorded the row read
+         * "slot 1" while Play resolved highest=0 and reported the generic "no
+         * recording for this game" instead of "Slot 1 is empty"; with slot 1
+         * recorded the row read "slot 2" and Play resolved highest=1 and played
+         * slot 1's take rather than saying slot 2 was empty. Both reported on
+         * hardware 2026-08-07.
+         *
+         * A convenience default is fine while nothing on screen CLAIMS a slot.
+         * This row claims one, so the default has to be the displayed one.
+         * first_free is also what Record already uses, so all three agree. */
         int slot = (g_rec_slot >= 1 && g_rec_slot <= P8REC_SLOTS)
-                 ? g_rec_slot : p8rec_highest(base);
+                 ? g_rec_slot : p8rec_first_free(base);
+        /* Every slot occupied: first_free has no answer, so fall back to the
+         * highest -- which is also what the row shows in that case. */
+        if (slot < 1 || slot > P8REC_SLOTS) slot = p8rec_highest(base);
         if (!slot || !p8rec_slot_used(base, slot)) {
             fprintf(stderr, "[REC] no recording for '%s' slot %d\n", base.c_str(), slot);
             /* Used to be silent: Play Recording reset the cart, nothing played,
