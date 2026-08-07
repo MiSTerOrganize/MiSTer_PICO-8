@@ -158,6 +158,10 @@ static const char *P8REC_DIR = "/media/fat/replays/PICO-8";
  * existed. */
 #define P8REC_SLOTS 8
 static int g_rec_slot = 0;   /* 1..P8REC_SLOTS, 0 = not yet chosen */
+/* Set when a write fails AT THE FRAME CAP, so the cap block reports once
+ * instead of re-attempting a full file write on every frame. Cleared by
+ * p8rec_reset(), i.e. by any successful Stop or a new session. */
+static bool g_rec_cap_failed = false;
 
 /* --- Save-state snapshot, so a recording can start from YOUR progress --------
  *
@@ -1111,6 +1115,7 @@ static bool p8rec_load(std::string const &cart_path,
 static void p8rec_reset()
 {
     g_rec_mode = 0;
+    g_rec_cap_failed = false;
     g_rec_frames.clear();
     g_rec_frames.shrink_to_fit();   /* clear() alone keeps the capacity forever */
     g_rec_snap.clear();             /* same reason, and it can hold real bytes */
@@ -2326,8 +2331,27 @@ int main(int argc, char **argv)
                             NativeVideoWriter_Notice("Recording hit its length limit - saved", 5);
                     if (p8rec_write(g_cart_path_for_rec))
                         p8rec_reset();
-                    else
-                        g_rec_mode = 0;   /* write failed; do not spin on the cap */
+                    else if (!g_rec_cap_failed) {
+                        /* The write failed AT THE CAP.
+                         *
+                         * Do NOT drop to mode 0: that left the frames
+                         * allocated while the menu drew its IDLE list, so
+                         * Stop Recording vanished and the take could be
+                         * neither saved nor discarded -- the opposite of
+                         * the normal Stop path, which deliberately keeps
+                         * the buffer so the user can free space and retry.
+                         *
+                         * Do NOT retry every frame either: at the cap this
+                         * block runs on every single frame, so a retry is a
+                         * full file write per frame and the notice re-fires
+                         * forever. That is exactly what OpenBOR does today.
+                         *
+                         * Stay armed, say it once, and let Stop Recording be
+                         * the retry -- which is what the notice already
+                         * tells the user to do. */
+                        g_rec_cap_failed = true;
+                        NativeVideoWriter_Notice("Could not save the recording - free space and Stop again", 7);
+                    }
                 }
             }
             else if (g_rec_mode == 2) {
@@ -2535,9 +2559,26 @@ int main(int argc, char **argv)
                             if (g_rec_mode) {
                                 fprintf(stderr, "[REC] cart hot-swap -- %s discarded\n",
                                         g_rec_mode == 1 ? "recording" : "playback");
-                                        NativeVideoWriter_Notice("Cart changed - recording discarded", 4);
+                                NativeVideoWriter_Notice("Cart changed - recording discarded", 4);
                                 p8rec_reset();
                             }
+                            /* Globals the cart swap must ALSO clear. This core reloads
+                             * IN PROCESS, so anything not reset here survives into the
+                             * next cart; OpenBOR is immune only because it _exit()s.
+                             *
+                             * g_rec_slot is deliberately NOT cleared by p8rec_reset(),
+                             * which also runs on take-over where keeping the choice is
+                             * right. Left alone it carried cart A's slot to cart B, so
+                             * Recording on B named a slot chosen for a different cart
+                             * and Record could replace a take the user never selected.
+                             *
+                             * SetFpsOverlay(0) lives in the wait-for-OSD block, which a
+                             * hot-swap skips -- while the bios reload resets the menu row
+                             * to off. The row then read "off" over a visible overlay and
+                             * the next press appeared to do nothing: the same
+                             * displayed-value vs acted-on-value split as the slot bugs. */
+                            g_rec_slot = 0;
+                            NativeVideoWriter_SetFpsOverlay(0);
                             /* The cart is about to reload, so it is safe to hand
                              * saves back now -- and necessary, or the next cart
                              * would keep writing into the recorder scratch dir.

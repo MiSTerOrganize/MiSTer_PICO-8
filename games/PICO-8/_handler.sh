@@ -42,6 +42,26 @@ rmdir "$GAMEDIR/Replays" 2>/dev/null
 # If marker exists: skip cleanup + delete marker. (Mirrors OpenBOR's
 # pattern; same regression family — without the exception, Reset would
 # break Quit/Reset asymmetry and produce black screen on Reset Cart.)
+# A recmode marker with NO reset marker beside it was never asked for.
+#
+# Record, Play and Reset-while-recording all write recmode and the reset
+# marker together, then _exit(0) so the daemon respawns us. But recmode is
+# consumed by the BINARY, at the first cart load. Kill the process in that
+# window -- a core switch, a reboot, a crash -- and recmode outlives the
+# request, so the next launch of ANY cart armed a recording nobody asked
+# for, aimed at the previous cart's slot.
+#
+# The window is far shorter here than on OpenBOR (a cart loads in a moment,
+# a PAK takes 12-90 s) and this core does not isolate saves from the marker,
+# so it cannot lose real progress the way OpenBOR could -- but an unrequested
+# recording is still wrong, and both cores should behave the same.
+#
+# Runs BEFORE the marker is consumed just below: its presence is the
+# evidence, so this has to read it first.
+if [ -f /tmp/pico8_recmode ] && [ ! -f /tmp/pico8_reset_marker ]; then
+    rm -f /tmp/pico8_recmode /tmp/pico8_recslot /tmp/pico8_playfile 2>/dev/null
+fi
+
 if [ -f /tmp/pico8_reset_marker ]; then
     rm -f /tmp/pico8_reset_marker 2>/dev/null
 else
