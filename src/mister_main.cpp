@@ -610,8 +610,11 @@ static bool p8rec_slot_used(std::string const &base, int slot)
     return access(p8rec_slot_path(base, slot).c_str(), R_OK) == 0;
 }
 
-/* Highest OCCUPIED slot, or 0 if the cart has no takes at all. Used only as the
- * Play fallback when no slot has been picked. */
+/* Highest OCCUPIED slot, or 0 if the cart has no takes at all.
+ *
+ * No longer a Play fallback -- p8rec_slot_now() resolves that. What survives
+ * is the has-ANY-takes test, which is what separates "no recording for this
+ * game" from "the slot you are looking at is empty". */
 static int p8rec_highest(std::string const &base)
 {
     for (int s = P8REC_SLOTS; s >= 1; s--)
@@ -894,14 +897,8 @@ static bool p8rec_load(std::string const &cart_path,
     }
     else
     {
-        /* The SAME slot stat(221) displays -- p8rec_slot_now() is the one
-         * place that decides it, rather than an expression repeated here and
-         * hoped to stay in step.
-         *
-         * They used to differ, and the row names a slot, so the menu said one
-         * thing and the button did another: the row read "slot 2" while Play
-         * resolved the highest occupied slot and played slot 1's take rather
-         * than saying slot 2 was empty. Reported on hardware 2026-08-07. */
+        /* The SAME slot stat(221) displays. p8rec_slot_now() is the one
+         * place that decides it; see p8rec_probe for why that matters. */
         int slot = p8rec_slot_now();
         if (!p8rec_slot_used(base, slot)) {
             fprintf(stderr, "[REC] no recording for '%s' slot %d\n", base.c_str(), slot);
@@ -2302,14 +2299,26 @@ int main(int argc, char **argv)
             if (g_rec_mode == 1) {
                 if (g_rec_frames.size() < P8REC_MAX_FRAMES) {
                     /* push_back THROWS on allocation failure -- it does not
-                     * return an error the way OpenBOR's realloc does. Nothing in
-                     * this binary catches, so an OOM here was std::terminate:
-                     * the process dies, Master_Daemon respawns it, and the
-                     * player loses the session with nothing on screen saying
-                     * why. Catch it and stop the take the same way the other
-                     * core does, with the same words. p8rec_reset() also
-                     * shrink_to_fit()s, so the memory actually comes back --
-                     * which matters more here than anywhere else. */
+                     * return an error the way OpenBOR's realloc does, and
+                     * nothing in this binary catches, so an OOM here was
+                     * std::terminate: the process dies, Master_Daemon respawns
+                     * it, and the player loses the session with nothing on
+                     * screen saying why. Catch it and stop the take the same
+                     * way the other core does, with the same words.
+                     *
+                     * This is the per-FRAME allocation, not every one: the
+                     * per-cart-file g_rec_used and g_rec_ident push_backs are
+                     * still unguarded. Far rarer, and left alone rather than
+                     * wrapped speculatively -- but the hole is not closed, so
+                     * do not read this as "the recorder is OOM-safe".
+                     *
+                     * p8rec_reset() also shrink_to_fit()s, so the memory is
+                     * genuinely returned rather than held as capacity. Worth
+                     * doing on the path that just failed to allocate, though
+                     * the exposure here is ~8 MB at the frame cap (~24 MB
+                     * across a doubling), not the 144 MB the other core holds
+                     * -- an earlier version of this comment borrowed those
+                     * numbers and overstated it by roughly 20x. */
                     try {
                         g_rec_frames.push_back(live);
                     } catch (const std::bad_alloc &) {
