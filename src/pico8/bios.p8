@@ -656,8 +656,17 @@ end
 -- the bios is its only writer, and reset exits the process so both sides
 -- start at 0 together.
 function __z8_update_fps(e)
-    __z8_menu.fps = 1 - (__z8_menu.fps or 0)
-    extcmd("z8_fps_overlay "..tostr(__z8_menu.fps))
+    -- left = off, right = on, matching OpenBOR (2026-08-07 parity decision) and
+    -- matching how the volume rows on both cores already behave. It used to
+    -- toggle on BOTH directions, so pressing left twice left it on here and off
+    -- there. Confirm still toggles, which costs nothing and keeps the row usable
+    -- on a pad with an unreliable d-pad.
+    local v = __z8_menu.fps or 0
+    if e == 1 then v = 0
+    elseif e == 2 then v = 1
+    else v = 1 - v end
+    __z8_menu.fps = v
+    extcmd("z8_fps_overlay "..tostr(v))
 end
 
 function __z8_draw_fps(st,x,y)
@@ -737,9 +746,15 @@ function __z8_pause_menu()
         -- registered from mister_main.cpp: 0 idle / 1 recording / 2 playing.
         -- Record and Play both reset the cart first so the run is title-
         -- anchored; Stop just flushes and resumes.
-        wintitle = stat(216)
         forcestay = true
         local m = stat(148)
+        -- Say which mode you are in. OpenBOR draws a separate non-selectable
+        -- status row; this core has no such row type, so the same information
+        -- goes in the title it already shows -- same guarantee, this core's own
+        -- idiom. Before this the title read "recording" in all three modes, so
+        -- the only clue you were mid-replay was the shape of the item list.
+        wintitle = m == 1 and "recording..."
+                or (m == 2 and "replaying..." or stat(216))
         if m == 1 then
             add(entries, { l = stat(218), c = function (e) if e == 112 then extcmd("z8_rec_stop") __z8_menu.inrec = false end end })
         elseif m == 2 then
