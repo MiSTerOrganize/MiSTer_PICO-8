@@ -15,6 +15,7 @@
 #include <cmath>
 #include <string>
 #include <vector>
+#include <new>          /* std::bad_alloc -- the recorder catches it, see p8rec */
 #include <memory>
 #include <thread>
 #include <atomic>
@@ -2284,7 +2285,24 @@ int main(int argc, char **argv)
 
             if (g_rec_mode == 1) {
                 if (g_rec_frames.size() < P8REC_MAX_FRAMES) {
-                    g_rec_frames.push_back(live);
+                    /* push_back THROWS on allocation failure -- it does not
+                     * return an error the way OpenBOR's realloc does. Nothing in
+                     * this binary catches, so an OOM here was std::terminate:
+                     * the process dies, Master_Daemon respawns it, and the
+                     * player loses the session with nothing on screen saying
+                     * why. Catch it and stop the take the same way the other
+                     * core does, with the same words. p8rec_reset() also
+                     * shrink_to_fit()s, so the memory actually comes back --
+                     * which matters more here than anywhere else. */
+                    try {
+                        g_rec_frames.push_back(live);
+                    } catch (const std::bad_alloc &) {
+                        fprintf(stderr, "[REC] out of memory at %u frames"
+                                        " -- recording stopped\n",
+                                (unsigned)g_rec_frames.size());
+                        NativeVideoWriter_Notice("Out of memory - recording stopped", 6);
+                        p8rec_reset();
+                    }
                 } else {
                     /* At the cap, STOP and flush rather than silently dropping
                      * frames while the menu still reads "Stop Recording" -- the
