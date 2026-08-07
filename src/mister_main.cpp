@@ -615,42 +615,30 @@ static int p8rec_highest(std::string const &base)
     return 0;
 }
 
-/* First FREE slot, or P8REC_SLOTS if every one is taken. Used only as the
- * Record fallback: with nothing picked, write somewhere empty rather than
- * silently replacing slot 1. When the library is full there is no non-
- * destructive answer, so it lands on the last slot -- and the overwrite notice
- * fires, which is the whole reason that notice exists. */
-static int p8rec_first_free(std::string const &base)
-{
-    for (int s = 1; s <= P8REC_SLOTS; s++)
-        if (!p8rec_slot_used(base, s)) return s;
-    return P8REC_SLOTS;
-}
-
 /* THE slot: resolve the default ONCE and ASSIGN it, so the row that DISPLAYS a
  * slot and every consumer that ACTS on one are the same variable.
  *
  * Computing the default per-consumer is what produced two hardware bugs in a
  * row. f7a870e fixed Play by making it compute the same expression the row did;
- * the left/right handlers still fell back to 1, so with slot 1 occupied the row
- * read "slot 2" while LEFT adjusted 0 and jumped to slot 8, and RIGHT went to 1.
- * Reported 2026-08-07. Matching expressions in N places is not one variable --
- * OpenBOR has never had either bug because pausemenu_patch.c assigns the default
- * at the row (`if(mrec_slot < 1 || ...) mrec_slot = 1;`) and every later reader
- * sees that assignment. This is the same thing, with this core's default.
+ * the left/right handlers still fell back to 1, so the row read one slot while
+ * LEFT adjusted another and jumped to slot 8. Matching expressions in N places
+ * is not one variable -- OpenBOR has never had either bug because
+ * pausemenu_patch.c assigns the default at the row and every later reader sees
+ * that assignment. This is the same thing.
  *
- * Assigning here does not make Record any more destructive than it already was:
- * p8rec_write has always assigned first_free on the way past, so a second Record
- * has always reused the slot the first one claimed. */
+ * The default is SLOT 1, matching OpenBOR (user's decision, 2026-08-07). It was
+ * briefly first-free here, on the reasoning that a first-timer should not
+ * clobber an existing take -- but that made the menu open on a different slot
+ * depending on what was already recorded, which is unpredictable in exactly the
+ * place a user wants predictability. Overwriting stays visible rather than
+ * prevented: the row reads "used" before you commit, and the notice names the
+ * slot afterwards. Do not reintroduce a first-free default on either core
+ * without asking -- it is a decision, not an oversight. */
 static int p8rec_slot_now()
 {
-    if (g_rec_slot >= 1 && g_rec_slot <= P8REC_SLOTS) return g_rec_slot;
-
-    std::string base = p8rec_cart_base(g_cart_path_for_rec);
-    int s = p8rec_first_free(base);          /* never clobber by default */
-    if (s < 1 || s > P8REC_SLOTS) s = 1;     /* no cart path yet */
-    g_rec_slot = s;
-    return s;
+    if (g_rec_slot < 1 || g_rec_slot > P8REC_SLOTS)
+        g_rec_slot = 1;
+    return g_rec_slot;
 }
 
 /* Returns true if the session can be torn down: the file was written, or there
@@ -674,8 +662,7 @@ static bool p8rec_write(std::string const &cart_path)
     }
     std::string base = p8rec_cart_base(cart_path);
 
-    /* Nothing picked -> first free slot, so a first-timer who never touches the
-     * slot row cannot replace an existing take by accident. */
+    /* Nothing picked -> slot 1, the same slot the row was showing. */
     p8rec_slot_now();
     bool overwriting = p8rec_slot_used(base, g_rec_slot);
     std::string out = p8rec_slot_path(base, g_rec_slot);
@@ -813,30 +800,24 @@ static bool p8rec_probe(std::string const &cart_path,
     if (in.empty())
     {
         std::string base = p8rec_cart_base(cart_path);
-        /* Play reads the chosen slot; with none chosen it falls back to the
-         * highest occupied one, so Play-without-touching-anything still does
-         * what it always did -- play the most recent take. */
-        /* first_free, NOT highest -- the SAME default stat(221) displays.
+        /* The SAME slot stat(221) displays -- p8rec_slot_now() is the only
+         * thing that decides it.
          *
          * They used to differ, and the row names a slot, so the menu said one
-         * thing and the button did another: with nothing recorded the row read
-         * "slot 1" while Play resolved highest=0 and reported the generic "no
-         * recording for this game" instead of "Slot 1 is empty"; with slot 1
-         * recorded the row read "slot 2" and Play resolved highest=1 and played
-         * slot 1's take rather than saying slot 2 was empty. Both reported on
-         * hardware 2026-08-07.
+         * thing and the button did another: the row read "slot 2" while Play
+         * resolved the highest occupied slot and played slot 1's take rather
+         * than saying slot 2 was empty. Reported on hardware 2026-08-07.
          *
          * A convenience default is fine while nothing on screen CLAIMS a slot.
-         * This row claims one, so the default has to be the displayed one.
-         * first_free is also what Record already uses, so all three agree. */
+         * This row claims one, so the default has to be the displayed one. */
         int slot = p8rec_slot_now();
         /* Nothing anywhere for this cart is a different fact from "the slot you
          * are looking at is empty", and only the first one tells the user there
          * is nothing to look for. OpenBOR has always split them this way
          * (pausemenu_patch.c: _pmx == 0 -> "No recording for this game"); before
          * this, PICO-8 could only reach that string when the resolved slot was
-         * 0, which the first_free default made impossible -- so the notice was
-         * in the binary and unreachable. */
+         * 0, which no default here ever produces -- so the notice was in the
+         * binary and unreachable. */
         if (p8rec_highest(base) == 0)
         { snprintf(why, whysz, "No recording for this game"); return false; }
         if (!p8rec_slot_used(base, slot))
@@ -909,20 +890,14 @@ static bool p8rec_load(std::string const &cart_path,
     }
     else
     {
-        /* first_free, NOT highest -- the SAME default stat(221) displays.
+        /* The SAME slot stat(221) displays -- p8rec_slot_now() is the one
+         * place that decides it, rather than an expression repeated here and
+         * hoped to stay in step.
          *
          * They used to differ, and the row names a slot, so the menu said one
-         * thing and the button did another: with nothing recorded the row read
-         * "slot 1" while Play resolved highest=0 and reported the generic "no
-         * recording for this game" instead of "Slot 1 is empty"; with slot 1
-         * recorded the row read "slot 2" and Play resolved highest=1 and played
-         * slot 1's take rather than saying slot 2 was empty. Both reported on
-         * hardware 2026-08-07.
-         *
-         * A convenience default is fine while nothing on screen CLAIMS a slot.
-         * This row claims one, so the default has to be the displayed one --
-         * and p8rec_slot_now() is now the one place that decides it, rather
-         * than an expression repeated here and hoped to stay in step. */
+         * thing and the button did another: the row read "slot 2" while Play
+         * resolved the highest occupied slot and played slot 1's take rather
+         * than saying slot 2 was empty. Reported on hardware 2026-08-07. */
         int slot = p8rec_slot_now();
         if (!p8rec_slot_used(base, slot)) {
             fprintf(stderr, "[REC] no recording for '%s' slot %d\n", base.c_str(), slot);
@@ -1944,12 +1919,13 @@ int main(int argc, char **argv)
         /* Slot picker. Wraps rather than clamps, so eight slots are reachable in
          * at most four presses from either end. A slot of 0 ("not chosen") is
          * never produced here -- once the user touches the row they own the
-         * choice, and the first-free / highest-occupied fallbacks apply only to
-         * someone who never did. */
+         * choice, and the slot-1 default applies only to someone who never
+         * did. */
         g_vm->add_extcmd("z8_rec_slot_prev", [](std::string const &) {
-            /* Adjust the slot the row is SHOWING. Falling back to 1 here instead
-             * meant that with slot 1 occupied the row read "slot 2" and LEFT
-             * moved to 8 -- reported on hardware 2026-08-07. */
+            /* Adjust the slot the row is SHOWING. These handlers used to
+             * resolve their own default, so the row and the button disagreed:
+             * with the row on slot 3, LEFT jumped to slot 8. Reported on
+             * hardware 2026-08-07. */
             int cur = p8rec_slot_now();
             g_rec_slot = (cur <= 1) ? P8REC_SLOTS : cur - 1;
         });
