@@ -627,6 +627,32 @@ static int p8rec_first_free(std::string const &base)
     return P8REC_SLOTS;
 }
 
+/* THE slot: resolve the default ONCE and ASSIGN it, so the row that DISPLAYS a
+ * slot and every consumer that ACTS on one are the same variable.
+ *
+ * Computing the default per-consumer is what produced two hardware bugs in a
+ * row. f7a870e fixed Play by making it compute the same expression the row did;
+ * the left/right handlers still fell back to 1, so with slot 1 occupied the row
+ * read "slot 2" while LEFT adjusted 0 and jumped to slot 8, and RIGHT went to 1.
+ * Reported 2026-08-07. Matching expressions in N places is not one variable --
+ * OpenBOR has never had either bug because pausemenu_patch.c assigns the default
+ * at the row (`if(mrec_slot < 1 || ...) mrec_slot = 1;`) and every later reader
+ * sees that assignment. This is the same thing, with this core's default.
+ *
+ * Assigning here does not make Record any more destructive than it already was:
+ * p8rec_write has always assigned first_free on the way past, so a second Record
+ * has always reused the slot the first one claimed. */
+static int p8rec_slot_now()
+{
+    if (g_rec_slot >= 1 && g_rec_slot <= P8REC_SLOTS) return g_rec_slot;
+
+    std::string base = p8rec_cart_base(g_cart_path_for_rec);
+    int s = p8rec_first_free(base);          /* never clobber by default */
+    if (s < 1 || s > P8REC_SLOTS) s = 1;     /* no cart path yet */
+    g_rec_slot = s;
+    return s;
+}
+
 /* Returns true if the session can be torn down: the file was written, or there
  * was nothing to write. False means the take is STILL IN MEMORY and the caller
  * must leave the recorder armed so Stop can be retried. */
@@ -650,8 +676,7 @@ static bool p8rec_write(std::string const &cart_path)
 
     /* Nothing picked -> first free slot, so a first-timer who never touches the
      * slot row cannot replace an existing take by accident. */
-    if (g_rec_slot < 1 || g_rec_slot > P8REC_SLOTS)
-        g_rec_slot = p8rec_first_free(base);
+    p8rec_slot_now();
     bool overwriting = p8rec_slot_used(base, g_rec_slot);
     std::string out = p8rec_slot_path(base, g_rec_slot);
 
@@ -804,12 +829,16 @@ static bool p8rec_probe(std::string const &cart_path,
          * A convenience default is fine while nothing on screen CLAIMS a slot.
          * This row claims one, so the default has to be the displayed one.
          * first_free is also what Record already uses, so all three agree. */
-        int slot = (g_rec_slot >= 1 && g_rec_slot <= P8REC_SLOTS)
-                 ? g_rec_slot : p8rec_first_free(base);
-        /* Every slot occupied: first_free has no answer, so fall back to the
-         * highest -- which is also what the row shows in that case. */
-        if (slot < 1 || slot > P8REC_SLOTS) slot = p8rec_highest(base);
-        if (!slot) { snprintf(why, whysz, "No recording for this game"); return false; }
+        int slot = p8rec_slot_now();
+        /* Nothing anywhere for this cart is a different fact from "the slot you
+         * are looking at is empty", and only the first one tells the user there
+         * is nothing to look for. OpenBOR has always split them this way
+         * (pausemenu_patch.c: _pmx == 0 -> "No recording for this game"); before
+         * this, PICO-8 could only reach that string when the resolved slot was
+         * 0, which the first_free default made impossible -- so the notice was
+         * in the binary and unreachable. */
+        if (p8rec_highest(base) == 0)
+        { snprintf(why, whysz, "No recording for this game"); return false; }
         if (!p8rec_slot_used(base, slot))
         {   /* An explicitly chosen but empty slot is not "no recordings" -- the
              * cart may well have takes in other slots, and saying otherwise
@@ -891,20 +920,19 @@ static bool p8rec_load(std::string const &cart_path,
          * hardware 2026-08-07.
          *
          * A convenience default is fine while nothing on screen CLAIMS a slot.
-         * This row claims one, so the default has to be the displayed one.
-         * first_free is also what Record already uses, so all three agree. */
-        int slot = (g_rec_slot >= 1 && g_rec_slot <= P8REC_SLOTS)
-                 ? g_rec_slot : p8rec_first_free(base);
-        /* Every slot occupied: first_free has no answer, so fall back to the
-         * highest -- which is also what the row shows in that case. */
-        if (slot < 1 || slot > P8REC_SLOTS) slot = p8rec_highest(base);
-        if (!slot || !p8rec_slot_used(base, slot)) {
+         * This row claims one, so the default has to be the displayed one --
+         * and p8rec_slot_now() is now the one place that decides it, rather
+         * than an expression repeated here and hoped to stay in step. */
+        int slot = p8rec_slot_now();
+        if (!p8rec_slot_used(base, slot)) {
             fprintf(stderr, "[REC] no recording for '%s' slot %d\n", base.c_str(), slot);
             /* Used to be silent: Play Recording reset the cart, nothing played,
              * and the user was left at the title with no explanation. */
             char msg[64];
-            if (slot) snprintf(msg, sizeof(msg), "Slot %d is empty", slot);
-            else      snprintf(msg, sizeof(msg), "No recording for this game");
+            /* "nothing for this cart" vs "this slot is empty" -- see p8rec_probe. */
+            if (p8rec_highest(base) == 0)
+                 snprintf(msg, sizeof(msg), "No recording for this game");
+            else snprintf(msg, sizeof(msg), "Slot %d is empty", slot);
             NativeVideoWriter_Notice(msg, 4);
             return false;
         }
@@ -1844,7 +1872,15 @@ int main(int argc, char **argv)
             if (g_rec_mode == 1) {
                 FILE *m = fopen("/tmp/pico8_recmode", "w");
                 if (m) { fputs("REC", m); fclose(m); }
-                fprintf(stderr, "[REC] reset while recording -- restarting the take\n");
+                /* Carry the slot, exactly as Record and Play do. Without this the
+                 * re-armed take fell back to the default, so Stop wrote a slot
+                 * the user never chose -- destroying whatever was in it, and then
+                 * Play read a third slot and replayed someone else's take. Both
+                 * cores had it; reported on hardware 2026-08-07. */
+                { FILE *sf = fopen("/tmp/pico8_recslot", "w");
+                  if (sf) { fprintf(sf, "%d\n", p8rec_slot_now()); fclose(sf); } }
+                fprintf(stderr, "[REC] reset while recording -- restarting the take"
+                                " in slot %d\n", g_rec_slot);
             } else if (g_rec_mode == 2) {
                 fprintf(stderr, "[REC] reset during playback -- playback ended\n");
             }
@@ -1911,11 +1947,14 @@ int main(int argc, char **argv)
          * choice, and the first-free / highest-occupied fallbacks apply only to
          * someone who never did. */
         g_vm->add_extcmd("z8_rec_slot_prev", [](std::string const &) {
-            int cur = (g_rec_slot >= 1 && g_rec_slot <= P8REC_SLOTS) ? g_rec_slot : 1;
+            /* Adjust the slot the row is SHOWING. Falling back to 1 here instead
+             * meant that with slot 1 occupied the row read "slot 2" and LEFT
+             * moved to 8 -- reported on hardware 2026-08-07. */
+            int cur = p8rec_slot_now();
             g_rec_slot = (cur <= 1) ? P8REC_SLOTS : cur - 1;
         });
         g_vm->add_extcmd("z8_rec_slot_next", [](std::string const &) {
-            int cur = (g_rec_slot >= 1 && g_rec_slot <= P8REC_SLOTS) ? g_rec_slot : 1;
+            int cur = p8rec_slot_now();
             g_rec_slot = (cur >= P8REC_SLOTS) ? 1 : cur + 1;
         });
 
@@ -1933,17 +1972,13 @@ int main(int argc, char **argv)
          * ends x+44) clears it and "empty" (5 chars) ends at x+68 -- inside the
          * border. */
         g_vm->add_stat(221, []() -> std::any {
-            int slot = (g_rec_slot >= 1 && g_rec_slot <= P8REC_SLOTS)
-                     ? g_rec_slot : p8rec_first_free(p8rec_cart_base(g_cart_path_for_rec));
             char b[24];
-            snprintf(b, sizeof(b), "slot %d of %d", slot, P8REC_SLOTS);
+            snprintf(b, sizeof(b), "slot %d of %d", p8rec_slot_now(), P8REC_SLOTS);
             return std::string(b);
         });
         g_vm->add_stat(222, []() -> std::any {
             std::string base = p8rec_cart_base(g_cart_path_for_rec);
-            int slot = (g_rec_slot >= 1 && g_rec_slot <= P8REC_SLOTS)
-                     ? g_rec_slot : p8rec_first_free(base);
-            return std::string(p8rec_slot_used(base, slot) ? "used" : "empty");
+            return std::string(p8rec_slot_used(base, p8rec_slot_now()) ? "used" : "empty");
         });
 
         g_vm->add_extcmd("z8_fps_overlay", [](std::string const &args) {
