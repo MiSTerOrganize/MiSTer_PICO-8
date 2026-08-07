@@ -869,6 +869,16 @@ function __z8_pause_menu()
     if btnp(5) then
         if __z8_menu.inoption then
             __z8_menu.inoption = false
+        elseif __z8_menu.inrec then
+            -- inrec was missing here, so back inside Recording fell through to
+            -- the return false below and CLOSED the pause menu. forcestay (set
+            -- for this branch) could not save it: forcestay is read at the
+            -- function's normal exit, and that return is an early one.
+            -- It also left inrec true, so the next pause opened inside this
+            -- submenu. Cursor needs no restoring -- the main-menu cursor is
+            -- untouched while a submenu is open, so it is still on "recording",
+            -- which is what OpenBOR does explicitly with pauselector = 2.
+            __z8_menu.inrec = false
         elseif __z8_menu.inquitmsg then
             __z8_menu.inquitmsg = nil
         else
