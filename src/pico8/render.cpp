@@ -90,7 +90,9 @@ void vm::render(lol::u8vec4 *screen, size_t max_pixels) const
     for (int y = 0; y < 128; ++y)
     {
         for (int x = 0; x < 128; ++x)
-            *screen++ = lut[pixel(x, y, get_front_screen())];
+            // _composited: screen 0 is the one the pause menu draws on. The
+            // extra multiscreen surfaces below keep plain pixel().
+            *screen++ = lut[pixel_composited(x, y, get_front_screen())];
         if (msx > 1)
         {
             for (int sx = 1; sx < msx; ++sx)
@@ -112,14 +114,15 @@ void vm::render(lol::u8vec4 *screen, size_t max_pixels) const
 
 
 // Hardware pixel accessor
-uint8_t vm::pixel(int x, int y, u4mat2<128, 128> const& screen) const
+/* Screen-mode transform: display coords in, source coords out.
+ *
+ * Split out of pixel() so the A9 display-space pause overlay can shade a
+ * pixel WITHOUT it, while the game behind the menu still gets it. Byte-for-
+ * byte the same arithmetic as before -- moving it did not change it. */
+void vm::screen_xform(int &x, int &y) const
 {
-    // TODO: cache all state
-    auto &draw_state = m_front_draw_state;
-    auto &hw_state = m_front_hw_state;
-
     // Get screen mode
-    uint8_t const& mode = draw_state.screen_mode;
+    uint8_t const& mode = m_front_draw_state.screen_mode;
 
     // Apply screen mode (rotation, mirror, flip…)
     if ((mode & 0xbc) == 0x84)
@@ -140,8 +143,16 @@ uint8_t vm::pixel(int x, int y, u4mat2<128, 128> const& screen) const
             : (mode & 0xbe) == 0x02 ? y / 2                // stretch
             : (mode & 0xbe) == 0x82 ? 127 - y : y;         // flip
     }
+}
 
-    int c = screen.get(x, y);
+/* Raster mode + screen palette, i.e. everything pixel() does AFTER the fetch.
+ *
+ * y is the row the colour is being shaded FOR: the transformed source row for
+ * cart pixels, the display row for overlay pixels. Raster effects are per-row,
+ * so passing the wrong one would tilt a gradient against the menu. */
+uint8_t vm::pixel_shade(int c, int y) const
+{
+    auto &hw_state = m_front_hw_state;
 
     // Apply raster mode
     if (hw_state.raster.mode == 0x10)
@@ -160,7 +171,37 @@ uint8_t vm::pixel(int x, int y, u4mat2<128, 128> const& screen) const
         }
     }
 
-    return normalize_palette_color(draw_state.screen_palette[c]);
+    return normalize_palette_color(m_front_draw_state.screen_palette[c]);
+}
+
+uint8_t vm::pixel(int x, int y, u4mat2<128, 128> const& screen) const
+{
+    // TODO: cache all state
+    screen_xform(x, y);
+    return pixel_shade(screen.get(x, y), y);
+}
+
+/* A9: the game, then the pause menu on top of it in display space.
+ *
+ * Inside the darken box the overlay owns the pixel outright -- the box was
+ * filled with the dimmed backdrop before the menu drew over it, so there is
+ * nothing to blend here. Outside it, and whenever no menu is up, this is
+ * exactly pixel(): one predictable branch on a bool that is false during
+ * normal play. */
+uint8_t vm::pixel_composited(int x, int y, u4mat2<128, 128> const& screen) const
+{
+    // m_in_pause as well as the flag: private_set_pause(false) clears the flag
+    // on the normal exit, but gating on the menu ACTUALLY being up means no
+    // bios path can leave a stale overlay painted over live gameplay. The
+    // invariant is then local to this function instead of spread across the
+    // bios, which is the difference between a bug being impossible and a bug
+    // being merely unlikely.
+    if (m_in_pause && m_pause_overlay_on
+         && x >= m_pause_box[0] && x <= m_pause_box[2]
+         && y >= m_pause_box[1] && y <= m_pause_box[3])
+        return pixel_shade(m_pause_overlay.get(x, y), y);
+
+    return pixel(x, y, screen);
 }
 
 int vm::get_ansi_color(uint8_t c) const

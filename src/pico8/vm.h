@@ -409,6 +409,14 @@ public:
 private:
     uint8_t get_pixel(int16_t x, int16_t y) const;
     uint8_t pixel(int x, int y, u4mat2<128, 128> const& screen) const;
+
+    // pixel() split so the display-space pause overlay can reuse the second
+    // half without the first: screen_xform is the screen-mode transform,
+    // pixel_shade is the raster-mode + screen-palette lookup that follows it.
+    // The overlay skips the transform and shades at its display y.
+    void screen_xform(int &x, int &y) const;
+    uint8_t pixel_shade(int c, int y) const;
+    uint8_t pixel_composited(int x, int y, u4mat2<128, 128> const& screen) const;
     void private_set_pause(bool pause);
     void private_end_render();
 
@@ -478,6 +486,33 @@ private:
     std::vector<std::shared_ptr<u4mat2<128, 128>>> m_multiscreens;
 
     bool m_in_pause = false;
+
+    /* A9: the pause menu is composited in DISPLAY space, not cart space.
+     *
+     * Before this, the menu was drawn into m_front_buffer and then went
+     * through pixel()'s screen-mode transform along with the frozen game --
+     * so a cart in a stretch mode (Alex Kidd in Pico World does
+     * poke(0x5f2c,3), which displays only source coords 0..63) clipped the
+     * menu to a corner. The old workaround forced screen mode 0 while paused,
+     * which un-stretched the GAME too: the picture visibly changed the instant
+     * you paused, and changed back on resume.
+     *
+     * Now private_pause_darken() fills m_pause_overlay with the dimmed
+     * backdrop at DISPLAY coordinates and flips get_current_screen() over to
+     * it, so every later menu draw lands in display space untransformed while
+     * the game behind it keeps its own transform.
+     *
+     * m_pause_box IS the coverage mask. The bios darkens a box one pixel
+     * larger than the menu box and draws the menu strictly inside it, so a
+     * rectangle test is exact -- there is no per-pixel cover plane to keep in
+     * sync, and no write path can escape it. That matters: draws reach the
+     * screen through set_pixel, hline, two direct data[] fills and cls's
+     * memset, and a cover plane maintained in only some of them would drop
+     * pixels exactly the way the OpenBOR notice band did before its brace walk.
+     */
+    u4mat2<128, 128> m_pause_overlay;
+    bool m_pause_overlay_on = false;
+    int16_t m_pause_box[4] = { 0, 0, -1, -1 };   // x0,y0,x1,y1, clamped 0..127
 
     // PCM streaming channel (serial(0x808)). Carts doing custom audio mixing
     // (Another World's pure-Lua 4-channel mixer is the only one in our test

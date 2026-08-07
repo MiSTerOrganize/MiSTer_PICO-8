@@ -821,7 +821,11 @@ function __z8_pause_menu()
     -- against Alex Kidd in Pico World, whose _init() does poke(0x5f2c,3);
     -- affects ANY cart using a non-default screen mode. A cart that never set
     -- one has 0 here, so this is a no-op for it.
-    __z8_pause_screen_mode(0)
+    -- (A9) The forced screen mode 0 that used to sit here is GONE. It fixed
+    -- the clipping by un-stretching the whole screen, so the frozen game
+    -- changed appearance the instant you paused. The menu is now composited
+    -- in display space by the C++ side instead, which leaves the game's own
+    -- screen mode alone -- so DO NOT reintroduce a mode poke here.
     -- Draw-palette-only reset for the menu's own drawing — NOT bare pal(),
     -- which would also wipe the cart's SCREEN + raster palettes every menu
     -- frame (killing menuitem palette picks and the cart's live palette).

@@ -358,6 +358,12 @@ std::vector<std::string> vm::private_dir(opt<std::string> target_dir)
 void vm::private_set_pause(bool pause)
 {
     m_in_pause = pause;
+    // A9: the display-space overlay is only meaningful while the menu is up.
+    // Clearing it on exit means a later pause cannot composite last session's
+    // menu for the one frame before darken repaints, and get_current_screen()
+    // returns to its normal cart target immediately.
+    if (!pause)
+        m_pause_overlay_on = false;
 }
 
 } // namespace z8::pico8

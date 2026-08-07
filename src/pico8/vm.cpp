@@ -147,7 +147,13 @@ u4mat2<128, 128> const &vm::get_front_screen() const
 
 u4mat2<128, 128> const& vm::get_current_screen() const
 {
-    if (m_in_pause) return m_front_buffer;
+    // A9: once private_pause_darken() has laid down the display-space backdrop
+    // for this frame, every following menu draw goes to the overlay instead of
+    // the front buffer, so it is never screen-mode transformed. Before darken
+    // runs (and on any pause frame that somehow skips it) this falls back to
+    // the old front-buffer target, which is what shipped previously.
+    if (m_in_pause)
+        return m_pause_overlay_on ? m_pause_overlay : m_front_buffer;
     if (m_ram.draw_state.misc_features.multi_screen)
     {
         if (m_multiscreen_current > 0 && m_multiscreen_current <= m_multiscreens.size())

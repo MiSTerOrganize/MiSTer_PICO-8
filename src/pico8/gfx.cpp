@@ -1622,21 +1622,49 @@ void vm::private_pause_darken(int16_t x0, int16_t y0, int16_t x1, int16_t y1)
     static uint8_t const palpause[16] =
         { 0,0,0,0,0,0,1,1,0,1,1,0,0,0,0,1 };
 
-    auto &ds = m_ram.draw_state;
+    /* A9: this is the moment the display-space overlay is (re)built.
+     *
+     * The bios calls it once per menu frame, before any other menu drawing,
+     * with a box one pixel larger than the menu box -- so filling that box
+     * here and claiming it in m_pause_box gives the compositor an exact
+     * coverage mask, and flipping m_pause_overlay_on sends every following
+     * menu draw into the overlay via get_current_screen().
+     *
+     * The read side is what changed. It used to raw_peek() screen memory at
+     * cart coordinates; now it samples the frozen front buffer THROUGH the
+     * screen-mode transform, so the dimmed backdrop shows the same stretched/
+     * rotated pixels the game is showing right beside the box. Sampling
+     * untransformed would have put an unstretched patch of game inside a
+     * stretched screen -- the seam the old force-mode-0 workaround hid by
+     * unstretching everything.
+     *
+     * Writing straight to the overlay rather than through set_pixel also
+     * drops the camera offset and the fill-pattern path. Neither applies: the
+     * bios resets camera() and fillp() before it draws the menu, and an
+     * overlay coordinate is a screen coordinate by definition. For a cart in
+     * screen mode 0 with those reset -- which is every cart that worked
+     * before -- the output is identical to the previous code.
+     */
+    if (x0 > x1 || y0 > y1)
+        return;
+    if (x0 < 0) x0 = 0;
+    if (y0 < 0) y0 = 0;
+    if (x1 > 127) x1 = 127;
+    if (y1 > 127) y1 = 127;
 
     for (int16_t y = y0; y <= y1; ++y)
         for (int16_t x = x0; x <= x1; ++x)
         {
-            int16_t addr = (int16_t)(0x6000 + (x >> 1) + 0x40 * y);
-            uint8_t v1 = raw_peek(addr);
-            uint8_t v2 = ((x & 1) == 0) ? (uint8_t)(v1 & 0xf)
-                                        : (uint8_t)((v1 >> 4) & 0xf);
-            /* explicit int16_t: fix32 has int8_t/int16_t/int32_t/templated
-             * overloads, so a bare uint8_t is ambiguous. */
-            uint32_t color_bits = to_color_bits(fix32((int16_t)palpause[v2]));
-            set_pixel((int16_t)(x - ds.camera.x),
-                      (int16_t)(y - ds.camera.y), color_bits);
+            int sx = x, sy = y;
+            screen_xform(sx, sy);
+            m_pause_overlay.set(x, y, palpause[m_front_buffer.get(sx, sy)]);
         }
+
+    m_pause_box[0] = x0;
+    m_pause_box[1] = y0;
+    m_pause_box[2] = x1;
+    m_pause_box[3] = y1;
+    m_pause_overlay_on = true;
 }
 
 void vm::api_rect(int16_t x0, int16_t y0, int16_t x1, int16_t y1, opt<fix32> c)
