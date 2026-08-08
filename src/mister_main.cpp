@@ -2337,9 +2337,15 @@ int main(int argc, char **argv)
                     fprintf(stderr, "[REC] frame cap reached (%u frames)"
                                     " -- stopping and saving\n",
                             (unsigned)g_rec_frames.size());
-                            NativeVideoWriter_Notice("Recording hit its length limit - saved", 5);
-                    if (p8rec_write(g_cart_path_for_rec))
+                    /* Announce AFTER the write, not before: this said
+                     * "- saved" and only then tried. A failure did correct
+                     * itself, because the next notice overwrites the buffer,
+                     * but a message should not assert something not yet
+                     * known. Same ordering fixed on OpenBOR. */
+                    if (p8rec_write(g_cart_path_for_rec)) {
+                        NativeVideoWriter_Notice("Recording hit its length limit - saved", 5);
                         p8rec_reset();
+                    }
                     else if (!g_rec_cap_failed) {
                         /* The write failed AT THE CAP.
                          *

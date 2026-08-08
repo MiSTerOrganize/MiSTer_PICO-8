@@ -919,7 +919,7 @@ function __z8_pause_menu()
                     -- Only the TITLE varies with mode; the prompt's two rows
                     -- never do.
                     __z8_menu.inquitmsg = { l = cur.l, c = cur.c,
-                        t = stat(148) == 1 and "lose recording" or "quit?" }
+                        t = stat(148) == 1 and "lose recording" or "really quit" }
                 else
                     stay = cur.c(112)
                 end
