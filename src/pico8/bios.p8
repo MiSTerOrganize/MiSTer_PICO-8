@@ -913,7 +913,7 @@ function __z8_pause_menu()
                     -- prompt reads just "quit", which is the one thing the
                     -- user already knew.
                     __z8_menu.inquitmsg = { l = cur.l, c = cur.c,
-                        t = stat(148) == 1 and "quit? recording lost" or nil }
+                        t = stat(148) == 1 and "lose recording" or nil }
                 else
                     stay = cur.c(112)
                 end
