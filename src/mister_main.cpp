@@ -2137,7 +2137,17 @@ int main(int argc, char **argv)
                     NativeVideoWriter_Notice("This take carries no save data", 4);
                 }
             }
-            setenv("Z8_SAVES_DIR", P8REC_SCRATCH, 1);
+            /* Only redirect saves if the session actually armed. Both refusal
+             * branches above call p8rec_reset(), but this ran unconditionally,
+             * so "Could not prepare saves - not recording" was followed by the
+             * session running on the half-seeded scratch anyway -- progress
+             * looking missing, and anything new wiped at the next arm. The
+             * playback refusal was worse: the scratch there holds a partially
+             * restored stranger's saves. OpenBOR avoids this by construction
+             * (its handler removes recmode, so isolation never rises), which is
+             * why its copy of that notice can say "not recording" and mean it. */
+            if (g_rec_mode)
+                setenv("Z8_SAVES_DIR", P8REC_SCRATCH, 1);
 
             /* KNOWN LIMITATION, deliberately not "fixed": music/sfx position is
              * not part of the deterministic state.
@@ -2234,7 +2244,11 @@ int main(int argc, char **argv)
                 fprintf(stderr, "[REC] savestate load -- %s discarded"
                                 " (a savestate is not part of the input stream)\n",
                         g_rec_mode == 1 ? "recording" : "playback");
-                        NativeVideoWriter_Notice("Save state loaded - recording discarded", 5);
+                /* Same as the hot-swap: mode-aware, because loading a save
+                 * state during a replay reported a discarded recording. */
+                NativeVideoWriter_Notice(g_rec_mode == 1
+                    ? "Save state loaded - recording discarded"
+                    : "Save state loaded - replay stopped", 5);
                 p8rec_reset();
             }
             if (g_vm) g_vm->savestate_load(slot);
@@ -2341,7 +2355,11 @@ int main(int argc, char **argv)
                      * "- saved" and only then tried. A failure did correct
                      * itself, because the next notice overwrites the buffer,
                      * but a message should not assert something not yet
-                     * known. Same ordering fixed on OpenBOR. */
+                     * known.
+                     *
+                     * This comment used to end "Same ordering fixed on OpenBOR."
+                     * It was not -- I wrote that while editing this file only.
+                     * OpenBOR still announces its cap before the write. */
                     if (p8rec_write(g_cart_path_for_rec)) {
                         NativeVideoWriter_Notice("Recording hit its length limit - saved", 5);
                         p8rec_reset();
@@ -2423,7 +2441,12 @@ int main(int argc, char **argv)
                     if (pressed) {
                         fprintf(stderr, "[REC] take-over at frame %u -- playback stopped\n",
                                 (unsigned)g_rec_pos);
-                        NativeVideoWriter_Notice("Took over - nothing saved. Reset to play.", 6);
+                        /* NOT "Reset to play" -- reset does not replay. The recorder is
+                         * already torn down by the time this draws, so the reset
+                         * extcmd writes only the reset marker and the cart just
+                         * restarts. What reset DOES undo is the save isolation,
+                         * which is the part worth acting on. */
+                        NativeVideoWriter_Notice("Took over - saves off. Reset for normal play.", 6);
                         p8rec_reset();
                     } else {
                         use = g_rec_frames[g_rec_pos++];
@@ -2431,7 +2454,7 @@ int main(int argc, char **argv)
                 } else {
                     fprintf(stderr, "[REC] playback finished (%u frames)\n",
                             (unsigned)g_rec_frames.size());
-                    NativeVideoWriter_Notice("Replay over - nothing saved. Reset to play.", 6);
+                    NativeVideoWriter_Notice("Replay over - saves off. Reset for normal play.", 6);
                     p8rec_reset();
                 }
             }
@@ -2574,7 +2597,13 @@ int main(int argc, char **argv)
                             if (g_rec_mode) {
                                 fprintf(stderr, "[REC] cart hot-swap -- %s discarded\n",
                                         g_rec_mode == 1 ? "recording" : "playback");
-                                NativeVideoWriter_Notice("Cart changed - recording discarded", 4);
+                                /* Build the string from the MODE. The fprintf above already
+                                 * distinguished the two; the notice did not, so hot-swapping
+                                 * during a REPLAY announced a discarded recording that never
+                                 * existed. */
+                                NativeVideoWriter_Notice(g_rec_mode == 1
+                                    ? "Cart changed - recording discarded"
+                                    : "Cart changed - replay stopped", 4);
                                 p8rec_reset();
                             }
                             /* Globals the cart swap must ALSO clear. This core reloads
