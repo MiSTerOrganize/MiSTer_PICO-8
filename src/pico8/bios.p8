@@ -906,12 +906,18 @@ function __z8_pause_menu()
         if cur.c then
             __z8_menu.in_menu_item = cursor
             if action then -- activate button
-                if (stat(149) and cur.ask)
-                or (cur.askrec and stat(148) == 1) then -- ask before some actions
+                -- 🛑 askrec asks in EVERY recorder mode, not just while
+                -- recording. A replay injects presses by POSITION, so a
+                -- confirm that exists only while recording sent the replayed
+                -- "back" press to quit itself and exited to a black screen.
+                -- Same rule as the recording submenu's fixed item count.
+                if (stat(149) and cur.ask) or cur.askrec then
                     __z8_menu.quitcursor = 0
                     -- Say WHAT is lost. Without a title of its own the
                     -- prompt reads just "quit", which is the one thing the
                     -- user already knew.
+                    -- Only the TITLE varies with mode; the prompt's two rows
+                    -- never do.
                     __z8_menu.inquitmsg = { l = cur.l, c = cur.c,
                         t = stat(148) == 1 and "lose recording" or nil }
                 else
