@@ -863,12 +863,12 @@ function __z8_pause_menu()
 
     rect(px, py, px + sx, py + sy, 7)
     local bx, by = px + 5, py + 14
-    if __z8_menu.inquitmsg != nil then
-        print("this game require\na manual save\nare you sure?", px + 5, py + 8, 7)
-        by += 18
-    else
-        print(wintitle, px + sx/2 - #wintitle*2, py + 4, 7)
-    end
+    -- One heading for every dialog, including the quit confirm. That branch
+    -- used to print a hardcoded "this game require / a manual save / are you
+    -- sure?" and never reach wintitle -- so the title set for it was dead,
+    -- and once quit began always confirming, that line claimed every cart
+    -- needs a manual save, which is usually false.
+    print(wintitle, px + sx/2 - #wintitle*2, py + 4, 7)
     for i = 1,#entries do
         local sel = cursor + 1 == i
         if (sel) pset(bx - 2, by + 2, 7)
@@ -919,7 +919,7 @@ function __z8_pause_menu()
                     -- Only the TITLE varies with mode; the prompt's two rows
                     -- never do.
                     __z8_menu.inquitmsg = { l = cur.l, c = cur.c,
-                        t = stat(148) == 1 and "lose recording" or nil }
+                        t = stat(148) == 1 and "lose recording" or "quit?" }
                 else
                     stay = cur.c(112)
                 end
