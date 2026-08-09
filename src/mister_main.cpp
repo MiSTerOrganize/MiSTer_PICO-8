@@ -664,7 +664,7 @@ static bool p8rec_write(std::string const &cart_path)
          * silent, which is indistinguishable from a save that worked -- and
          * the slot stays empty either way. OpenBOR_7533 has said this since
          * it shipped; same wording, per conformance item 20. */
-        NativeVideoWriter_Notice("Nothing was captured - no file written", 4);
+        NativeVideoWriter_Notice("Nothing captured - no file. Saves off until reset.", 4);
         return true;   /* nothing to save, but the session is legitimately over */
     }
     std::string base = p8rec_cart_base(cart_path);
@@ -2353,7 +2353,7 @@ int main(int argc, char **argv)
                         fprintf(stderr, "[REC] out of memory at %u frames"
                                         " -- recording stopped\n",
                                 (unsigned)g_rec_frames.size());
-                        NativeVideoWriter_Notice("Out of memory - recording stopped", 6);
+                        NativeVideoWriter_Notice("Out of memory - stopped. Saves off until reset.", 6);
                         p8rec_reset();
                     }
                 } else {
@@ -2470,7 +2470,7 @@ int main(int argc, char **argv)
                          * extcmd writes only the reset marker and the cart just
                          * restarts. What reset DOES undo is the save isolation,
                          * which is the part worth acting on. */
-                        NativeVideoWriter_Notice("Took over - saves off. Reset for normal play.", 6);
+                        NativeVideoWriter_Notice("Took over - saves off until reset.", 6);
                         p8rec_reset();
                     } else {
                         use = g_rec_frames[g_rec_pos++];
@@ -2478,7 +2478,7 @@ int main(int argc, char **argv)
                 } else {
                     fprintf(stderr, "[REC] playback finished (%u frames)\n",
                             (unsigned)g_rec_frames.size());
-                    NativeVideoWriter_Notice("Replay over - saves off. Reset for normal play.", 6);
+                    NativeVideoWriter_Notice("Replay over - saves off until reset.", 6);
                     p8rec_reset();
                 }
             }
