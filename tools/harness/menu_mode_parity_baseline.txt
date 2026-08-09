@@ -1,0 +1,7 @@
+# Reviewed mode-conditional sites in the pause menu.
+# A NEW line here means: does it change what is DRAWN IN a
+# row, or WHICH ROWS EXIST? Only the first is allowed.
+# Regenerate with --update-baseline, and say in the commit
+# message which answer each new site got.
+local m = stat(148)
+t = stat(148) == 1 and "lose recording" or "are you sure" }
