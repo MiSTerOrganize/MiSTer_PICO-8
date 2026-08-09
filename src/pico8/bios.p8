@@ -864,8 +864,8 @@ function __z8_pause_menu()
     rect(px, py, px + sx, py + sy, 7)
     local bx, by = px + 5, py + 14
     -- One heading for every dialog, including the quit confirm. That branch
-    -- used to print a hardcoded "this game require / a manual save / are you
-    -- sure?" and never reach wintitle -- so the title set for it was dead,
+    -- used to print a hardcoded three-line manual-save warning and never
+    -- reach wintitle -- so the title set for it was dead,
     -- and once quit began always confirming, that line claimed every cart
     -- needs a manual save, which is usually false.
     print(wintitle, px + sx/2 - #wintitle*2, py + 4, 7)

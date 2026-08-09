@@ -753,8 +753,13 @@ static bool p8rec_write(std::string const &cart_path)
                   * Z8_SAVES_DIR pointing at the scratch on purpose, so
                   * everything written after this is wiped at the next arm.
                   * Reset is what clears it, so the instruction is actionable.
-                  * "Replaced the recording in slot %d" had to shorten: with
-                  * the suffix it wraps to FOUR lines at 21 cols and is cut. */
+                  * The previous replace wording was 17 characters longer;
+                  * with the suffix it wrapped to FOUR lines at 21 cols and
+                  * was cut. Retired strings are DESCRIBED here, never quoted
+                  * verbatim -- a grep cannot tell code from a comment, so a
+                  * quoted one turns "is it gone?" into a permanent failure
+                  * that gets waved away, which is how a check stops being
+                  * believed. Same reasoning as the ASCII-only patch rule. */
                  overwriting ? "Replaced slot %d. Saves off until reset."
                              : "Saved to slot %d. Saves off until reset.",
                  g_rec_slot);
