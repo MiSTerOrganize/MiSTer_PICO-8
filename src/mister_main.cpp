@@ -749,10 +749,16 @@ static bool p8rec_write(std::string const &cart_path)
     {
         char msg[80];
         snprintf(msg, sizeof(msg),
-                 overwriting ? "Replaced the recording in slot %d"
-                             : "Saved to slot %d",
+                 /* Says the saves are still isolated: p8rec_reset() leaves
+                  * Z8_SAVES_DIR pointing at the scratch on purpose, so
+                  * everything written after this is wiped at the next arm.
+                  * Reset is what clears it, so the instruction is actionable.
+                  * "Replaced the recording in slot %d" had to shorten: with
+                  * the suffix it wraps to FOUR lines at 21 cols and is cut. */
+                 overwriting ? "Replaced slot %d. Saves off until reset."
+                             : "Saved to slot %d. Saves off until reset.",
                  g_rec_slot);
-        NativeVideoWriter_Notice(msg, overwriting ? 5 : 3);
+        NativeVideoWriter_Notice(msg, 6);
         if (overwriting)
             fprintf(stderr, "[REC] slot %d already held a take -- overwritten\n", g_rec_slot);
     }
@@ -916,7 +922,15 @@ static bool p8rec_load(std::string const &cart_path,
     }
 
     FILE *f = fopen(in.c_str(), "rb");
-    if (!f) { fprintf(stderr, "[REC] cannot read %s\n", in.c_str()); return false; }
+    if (!f) {
+        /* Was SILENT. A take that vanishes between the probe and the arm --
+         * deleted from another core, a failing card, a pulled SD -- produced
+         * nothing on screen at all. OpenBOR has an engine-side backstop for
+         * exactly this case; same string. */
+        fprintf(stderr, "[REC] cannot read %s\n", in.c_str());
+        NativeVideoWriter_Notice("That recording cannot be opened", 5);
+        return false;
+    }
 
     char magic[P8REC_MAGIC_LEN];
     char cart[P8REC_CART_LEN];
@@ -2361,7 +2375,17 @@ int main(int argc, char **argv)
                      * It was not -- I wrote that while editing this file only.
                      * OpenBOR still announces its cap before the write. */
                     if (p8rec_write(g_cart_path_for_rec)) {
-                        NativeVideoWriter_Notice("Recording hit its length limit - saved", 5);
+                        {   /* Fires AFTER p8rec_write, so it lands over that
+                             * function's own Saved/Replaced notice in the same
+                             * frame -- last call wins, and the cap wording is the
+                             * more informative one. Same end state as OpenBOR,
+                             * which folds the two together in its stop path. */
+                            char m[96];
+                            snprintf(m, sizeof(m),
+                                     "Slot %d saved at the length limit."
+                                     " Saves off until reset.", p8rec_slot_now());
+                            NativeVideoWriter_Notice(m, 6);
+                        }
                         p8rec_reset();
                     }
                     else if (!g_rec_cap_failed) {
