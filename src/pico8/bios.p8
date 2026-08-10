@@ -906,12 +906,19 @@ function __z8_pause_menu()
         if cur.c then
             __z8_menu.in_menu_item = cursor
             if action then -- activate button
-                -- 🛑 askrec asks in EVERY recorder mode, not just while
-                -- recording. A replay injects presses by POSITION, so a
-                -- confirm that exists only while recording sent the replayed
-                -- "back" press to quit itself and exited to a black screen.
-                -- Same rule as the recording submenu's fixed item count.
-                if (stat(149) and cur.ask) or cur.askrec then
+                -- askrec asks only when there IS something to lose. Reset
+                -- Cart does not ask and neither should quit: a second press
+                -- to leave a game you are done with is friction for no gain,
+                -- and the justification for asking was always the recording.
+                -- 🛑 THE PREDICATE IS stat(148) != 0, NEVER == 1. A replay
+                -- injects presses by POSITION. Frames are only ever captured
+                -- while RECORDING (148 == 1) and replayed at 148 == 2, so the
+                -- confirm must exist in BOTH or the recorded "back" lands on
+                -- quit itself and exits to a black screen -- the exact bug
+                -- seen on hardware when this was == 1 only. Idle (0) is never
+                -- inside a take, so skipping the confirm there cannot desync.
+                -- Enforced by check C of menu_mode_parity_check.py.
+                if (stat(149) and cur.ask) or (cur.askrec and stat(148) != 0) then
                     __z8_menu.quitcursor = 0
                     -- Say WHAT is lost. Without a title of its own the
                     -- prompt reads just "quit", which is the one thing the

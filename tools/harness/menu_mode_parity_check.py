@@ -12,7 +12,17 @@ so the replay exited to a black screen at exactly that moment. The rule was
 already written down, but scoped to the Recording submenu; this was an entire
 menu STATE, one menu over. Scope was the mistake.
 
-TWO CHECKS, because neither alone is enough:
+THE ONE SANCTIONED EXCEPTION (2026-08-10). A site MAY change which rows exist
+if the differing shape is UNREACHABLE INSIDE A TAKE. Exactly one shape
+qualifies: gated on mode NON-ZERO. Frames are only ever captured while
+recording (mode 1) and replayed at mode 2, so both sides of a replay see the
+same menu; idle (0) is never inside a take. Quit's confirm is that case -- it
+asks only when there is a recording or replay to lose, because Reset Pak does
+not ask either and a second press to leave a finished game is friction for no
+gain. This trades safety-by-construction for safety-by-argument, so the
+argument is enforced by check C rather than left in a comment.
+
+THREE CHECKS, because none alone is enough:
 
   A. ROW COUNTS. The per-mode row counts must match the cross-core invariant
      (idle 4 / recording 2 / playing 1). Direct, exact, and cheap -- but blind
@@ -22,6 +32,12 @@ TWO CHECKS, because neither alone is enough:
      in the reviewed baseline beside this script. A NEW one fails until a human
      answers: does this change what is DRAWN IN a row, or WHICH ROWS EXIST?
      This is the check that would have caught the quit confirm.
+
+  C. QUIT-CONFIRM GATE. The exception above is only sound while the gate is a
+     non-zero test. `== 1` is the ORIGINAL SHIPPED BUG and `== 2` is its mirror;
+     either distinguishes recording from playback and desyncs a replay. B would
+     not catch the regression, because the site is already in the baseline -- so
+     C reads the gate itself and fails on any equality against a literal mode.
 
 Baseline entries are keyed on the normalized source line, not the line number,
 so ordinary edits above them do not churn it.
@@ -54,12 +70,18 @@ CORES = {
         # /tmp/openbor_recmode is a marker path, not a conditional.
         "ignore": ["openbor_recmode"],
         "comment": ("*", "/*", "//"),
+        # The line that RAISES the confirm. The gate is the nearest
+        # mode-mentioning line at or above it.
+        "confirm_anchor": "in_quitconfirm = 1",
+        "confirm_sym": "mrec_mode",
     },
     "pico8": {
         "file": "src/pico8/bios.p8",
         "symbols": ["stat(148)"],
         "ignore": [],
         "comment": ("--",),
+        "confirm_anchor": "cur.askrec",
+        "confirm_sym": "stat(148)",
     },
 }
 
@@ -137,6 +159,33 @@ def rows_pico8(src):
             "idle": idle.count("add(entries,") + c}
 
 
+def quit_gate(path, cfg):
+    """The condition guarding Quit's confirm, or None if it cannot be found.
+
+    Returns None rather than guessing: an anchor that has moved means this
+    check is measuring nothing, and a check that cannot fail is not a check.
+    """
+    lines = open(path, encoding="utf-8", errors="replace").read().splitlines()
+    anchor = None
+    for i, raw in enumerate(lines):
+        st = raw.strip()
+        if st.startswith(cfg["comment"]):
+            continue
+        if cfg["confirm_anchor"] in st:
+            anchor = i
+            break
+    if anchor is None:
+        return None
+    # nearest mode-mentioning non-comment line at or above the anchor
+    for i in range(anchor, max(-1, anchor - 12), -1):
+        st = lines[i].strip()
+        if st.startswith(cfg["comment"]):
+            continue
+        if cfg["confirm_sym"] in st:
+            return re.sub(r"\s+", " ", re.split(r"/\*|//|--\s", st)[0].strip())
+    return None
+
+
 def main():
     name, cfg, path = detect()
     if not name:
@@ -171,7 +220,10 @@ def main():
         with open(BASELINE, "w", encoding="utf-8", newline="\n") as f:
             f.write("# Reviewed mode-conditional sites in the pause menu.\n"
                     "# A NEW line here means: does it change what is DRAWN IN a\n"
-                    "# row, or WHICH ROWS EXIST? Only the first is allowed.\n"
+                    "# row, or WHICH ROWS EXIST? Only the first is allowed --\n"
+                    "# EXCEPT a gate on mode NON-ZERO, whose differing shape is\n"
+                    "# unreachable inside a take (captured at 1, replayed at 2).\n"
+                    "# That exception is enforced by check C, not by trust.\n"
                     "# Regenerate with --update-baseline, and say in the commit\n"
                     "# message which answer each new site got.\n")
             for s in found:
@@ -198,8 +250,35 @@ def main():
     for s in gone:
         print("note  B  site gone (fine, refresh the baseline): %s" % s[:80])
 
-    print("PASS  B  %d reviewed site(s), no new ones" % len(base)
-          if not new else "")
+    if not new:
+        print("PASS  B  %d reviewed site(s), no new ones" % len(base))
+
+    # ---- C. quit-confirm gate ---------------------------------------------
+    gate = quit_gate(path, cfg)
+    if gate is None:
+        print("FAIL  C  could not find the quit-confirm gate (anchor %r moved)"
+              % cfg["confirm_anchor"])
+        print("         Re-point this before trusting a pass -- as written it")
+        print("         is measuring nothing.")
+        fail += 1
+    else:
+        sym = re.escape(cfg["confirm_sym"])
+        bad = re.search(sym + r"\s*(==\s*-?\d+|!=\s*-?[1-9]\d*|~=\s*-?[1-9]\d*)",
+                        gate)
+        if bad:
+            print("FAIL  C  quit confirm is gated on a SPECIFIC mode: %s"
+                  % bad.group(0))
+            print("           %s" % gate[:100])
+            print("         Recording is mode 1 and playback is mode 2. A take")
+            print("         is captured at 1 and replayed at 2, so a gate that")
+            print("         tells them apart makes the confirm appear on one")
+            print("         side and not the other -- the recorded Back lands")
+            print("         on Quit and the replay exits to a black screen.")
+            print("         Gate on NON-ZERO instead.")
+            fail += 1
+        else:
+            print("PASS  C  quit confirm gated on non-zero mode: %s" % gate[:60])
+
     return 1 if fail else 0
 
 
