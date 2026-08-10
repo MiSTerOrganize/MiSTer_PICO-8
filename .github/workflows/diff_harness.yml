@@ -6,6 +6,22 @@ name: Diff Harness
 # shipped, NOT part of the ARM binary. Fast (~2 min): native x86-64, no QEMU/SDL.
 
 on:
+  # 🛑 PUSH TRIGGER IS LOAD-BEARING. This was workflow_dispatch-only, so the
+  # hard gates it carries -- the untrusted-input payload parser, slot-selection
+  # conformance, and the pause-menu mode-parity check -- ran only when somebody
+  # remembered. Slot-selection sat RED from 2026-08-07 to 08-10: commit 4110894
+  # deliberately removed p8rec_first_free and the test still demanded it, so it
+  # exited 2 ("could not cut") and nothing said so. A gate nobody runs protects
+  # nothing.
+  #
+  # The path list is an ALLOW-list, so getting it wrong means a change silently
+  # never gets checked. Prefer a wasted 2-minute run over a missed one.
+  push:
+    paths:
+      - '.github/workflows/diff_harness.yml'
+      - 'src/**'
+      - 'tools/**'
+      - 'games/PICO-8/bios.p8'
   workflow_dispatch:
     inputs:
       reason:

@@ -3,9 +3,20 @@
 
 Covers the checklist items that are pure logic and therefore do NOT need a
 controller in front of a MiSTer -- items 1 (8 bounded slots), 3 (slot paths
-GENERATED, never parsed) and 11 (nothing picked: Record takes the first FREE
-slot, Play takes the highest OCCUPIED one). Every other item needs button
-presses in-core and belongs to the 10-step hardware procedure.
+GENERATED, never parsed) and 11 (nothing picked: the row opens on slot 1, Play
+takes the highest OCCUPIED one). Every other item needs button presses in-core
+and belongs to the 10-step hardware procedure.
+
+🛑 The default is slot 1, NOT the first free slot. It was briefly first-free,
+on the reasoning that a first-timer should not clobber an existing take; that
+made the menu open somewhere different depending on what had already been
+recorded, which is unpredictable exactly where a user wants predictability, so
+4110894 removed it and matched OpenBOR. This file asserted the OLD contract and
+kept naming a function that commit deleted, so it exited 2 ("could not cut")
+from Aug 7 until 2026-08-10 -- and because diff_harness.yml was
+workflow_dispatch-only, nothing said so. A gate nobody runs protects nothing.
+The regression guard is therefore the opposite of what it used to be: the
+default must NOT move when the library fills up.
 
 Like test_snap_payload.py, this CUTS THE REAL FUNCTIONS out of
 src/mister_main.cpp and compiles them natively. It never reimplements them: a
@@ -27,7 +38,7 @@ import tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 SRC = os.path.normpath(os.path.join(HERE, "..", "..", "src", "mister_main.cpp"))
 
-WANT = ["p8rec_slot_path", "p8rec_slot_used", "p8rec_highest", "p8rec_first_free"]
+WANT = ["p8rec_slot_path", "p8rec_slot_used", "p8rec_highest", "p8rec_slot_now"]
 
 
 def cut_source():
@@ -93,30 +104,49 @@ int main(int argc, char **argv) {
     /* item 1 -- bounded at 8 */
     ck(P8REC_SLOTS == 8, "P8REC_SLOTS == 8");
 
-    /* item 11 -- empty library: Record takes slot 1, Play finds nothing */
-    ck(p8rec_first_free(base) == 1, "empty library: first free slot is 1");
-    ck(p8rec_highest(base) == 0,    "empty library: highest occupied is 0");
+    /* item 11 -- nothing picked yet. The row opens on slot 1 and Play finds
+     * nothing. g_rec_slot == 0 is the "not yet chosen" sentinel. */
+    g_rec_slot = 0;
+    ck(p8rec_slot_now() == 1,    "unset slot resolves to 1");
+    ck(p8rec_highest(base) == 0, "empty library: highest occupied is 0");
+
+    /* the clamp is what makes the row survive junk from any source -- a stale
+     * /tmp marker, a hand-edited value, an off-by-one in a caller */
+    g_rec_slot = 0;   ck(p8rec_slot_now() == 1, "slot 0 clamps to 1");
+    g_rec_slot = -3;  ck(p8rec_slot_now() == 1, "negative slot clamps to 1");
+    g_rec_slot = P8REC_SLOTS + 1;
+    ck(p8rec_slot_now() == 1, "slot past the end clamps to 1");
+    g_rec_slot = 3;   ck(p8rec_slot_now() == 3, "an in-range choice is preserved");
+    ck(g_rec_slot == 3, "resolving does not disturb an in-range choice");
 
     /* occupy 1 and 2 */
     touch(p8rec_slot_path(base, 1));
     touch(p8rec_slot_path(base, 2));
     ck(p8rec_slot_used(base, 1),  "slot 1 reads used once written");
     ck(!p8rec_slot_used(base, 3), "slot 3 still reads empty");
-    ck(p8rec_first_free(base) == 3, "with 1+2 taken, first free is 3");
-    ck(p8rec_highest(base) == 2,    "with 1+2 taken, highest occupied is 2");
+    ck(p8rec_highest(base) == 2,  "with 1+2 taken, highest occupied is 2");
 
-    /* a GAP must not confuse either end: occupy 5, leave 3 and 4 empty.
-     * Record must still fill the hole rather than append, and Play must still
-     * find the newest-numbered take. */
+    /* 🛑 THE REGRESSION GUARD. The default must NOT depend on the library:
+     * that is precisely the first-free behaviour 4110894 removed. If someone
+     * reintroduces it, this is the check that fails. */
+    g_rec_slot = 0;
+    ck(p8rec_slot_now() == 1, "default stays 1 even though slot 1 is taken");
+
+    /* a GAP must not confuse Play: occupy 5, leave 3 and 4 empty. Play must
+     * still find the newest-numbered take, not the first hole. */
     touch(p8rec_slot_path(base, 5));
-    ck(p8rec_first_free(base) == 3, "gap: first free is still 3, not 6");
-    ck(p8rec_highest(base) == 5,    "gap: highest occupied is 5");
+    ck(p8rec_highest(base) == 5, "gap: highest occupied is 5");
+    g_rec_slot = 0;
+    ck(p8rec_slot_now() == 1,    "gap: default still 1, not the hole at 3");
 
-    /* a full library has no non-destructive answer; it must land on the last
-     * slot so the overwrite notice fires, never run off the end */
+    /* a full library is where a first-free default used to have no
+     * non-destructive answer. There is nothing to decide now -- the row still
+     * opens on 1, reads "used", and the overwrite notice names the slot. */
     for (int s = 1; s <= P8REC_SLOTS; s++) touch(p8rec_slot_path(base, s));
-    ck(p8rec_first_free(base) == P8REC_SLOTS, "full library: first free clamps to 8");
-    ck(p8rec_highest(base) == P8REC_SLOTS,    "full library: highest is 8");
+    ck(p8rec_highest(base) == P8REC_SLOTS, "full library: highest is 8");
+    g_rec_slot = 0;
+    ck(p8rec_slot_now() == 1,              "full library: default still 1");
+    ck(p8rec_slot_used(base, 1),           "full library: slot 1 reads used, so the row warns");
 
     /* a sibling cart whose stem ends in _<digits> must not alias in. This is
      * the exact shape that broke the old parsing scan: cart "maze_12" writing

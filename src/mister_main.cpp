@@ -2141,7 +2141,7 @@ int main(int argc, char **argv)
                 if (want > 0 && c != want) {
                     fprintf(stderr, "[REC] restored %d of %d save file(s) -- not playing,"
                                     " the replay would not match\n", c, want);
-                    NativeVideoWriter_Notice("Could not restore this take's save data", 6);
+                    NativeVideoWriter_Notice("Could not restore the save data in this take", 6);
                     p8rec_reset();
                 } else if (c > 0) {
                     fprintf(stderr, "[REC] restored %d save file(s) carried in this take\n", c);
