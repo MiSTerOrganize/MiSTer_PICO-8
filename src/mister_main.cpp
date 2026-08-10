@@ -2353,14 +2353,6 @@ int main(int argc, char **argv)
                      * -- an earlier version of this comment borrowed those
                      * numbers and overstated it by roughly 20x. */
                     try {
-                        /* TEMPORARY DIAG -- REVERT AFTER MEASURED. Forces the
-                         * refusal on demand so the handler/notice/recovery can
-                         * be exercised without recording for hours to reach the
-                         * ~8 MB the buffer needs. Thrown BEFORE push_back, so
-                         * the vector is left exactly as a real bad_alloc leaves
-                         * it. Proves the HANDLER, not the allocator. */
-                        if (access("/tmp/pico8_oom_test", F_OK) == 0)
-                            throw std::bad_alloc();
                         g_rec_frames.push_back(live);
                     } catch (const std::bad_alloc &) {
                         fprintf(stderr, "[REC] out of memory at %u frames"
