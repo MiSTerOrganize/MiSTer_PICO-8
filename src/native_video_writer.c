@@ -698,13 +698,29 @@ uint32_t NativeVideoWriter_ReadReplay(void) {
  * same number.
  *
  * `slot` is the user-facing 1..8; it is converted to the 0-based wire value
- * here so exactly one place in the codebase knows about the offset. */
-void NativeVideoWriter_PublishReplaySlot(int slot, unsigned seq) {
+ * here so exactly one place in the codebase knows about the offset.
+ *
+ * 🛑 THE SEQUENCE IS DERIVED FROM THE WIRE, NEVER FROM A COUNTER, and the
+ * caller does not get to supply it. This used to take a `seq` argument fed by
+ * a function-local `static` in the caller -- which restarts at 0 in every new
+ * process, while 0x04 SURVIVES the _exit()/respawn that Record and Play both
+ * perform. So a fresh process could publish a value already sitting on the
+ * wire, and the FPGA -- being an edge detector on this byte -- saw no change
+ * at all. The publish was dropped, the poll then adopted the unchanged echo
+ * and REVERTED the user's press, and the next Record wrote to the wrong slot,
+ * destroying whatever take was in it.
+ *
+ * Reading back is sound: the FPGA only ever READS 0x04, so this byte is
+ * whatever the ARM last wrote (or stale DDR3 at first boot, which is equally
+ * fine to increment from). Being one-more-than-what-is-there cannot collide
+ * with what is there. */
+void NativeVideoWriter_PublishReplaySlot(int slot) {
     if (!ddr_base) return;
     if (slot < 1) slot = 1;
     if (slot > 8) slot = 8;
     volatile uint32_t *pub = (volatile uint32_t *)(ddr_base + NV_REPLAY_PUB_OFFSET);
-    *pub = (uint32_t)((slot - 1) & 7) | (((uint32_t)seq & 0xFFu) << 8);
+    uint32_t next = ((*pub >> 8) + 1u) & 0xFFu;
+    *pub = (uint32_t)((slot - 1) & 7) | (next << 8);
 }
 
 uint32_t NativeVideoWriter_AudioSpace(void) {

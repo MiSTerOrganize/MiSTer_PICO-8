@@ -82,6 +82,8 @@ module pico8_video_reader (
     input  wire  [2:0] rs_slot,
     output reg   [2:0] arm_slot,
     output reg   [7:0] arm_seq,
+    output reg         arm_valid,   // a real DDR3-sourced arm_seq has been latched
+
 
     // Pixel output
     output reg   [7:0] r_out,
@@ -310,6 +312,19 @@ reg  [2:0] rs_slot_lat;
 reg  [7:0] rs_seq;
 
 always @(posedge ddr_clk) begin
+    // rs_slot_lat tracks the CURRENT slot every cycle, unconditionally. That
+    // is required, not incidental: it is how the ARM mirrors an OSD slot move
+    // into its pause menu without the user having to press Play.
+    //
+    // 🛑 It therefore does NOT snapshot the slot at the moment of the Play
+    // pulse, and no comment anywhere should say it does. This assignment used
+    // to be duplicated into the rs_play branch below, which made it look like
+    // a latch-at-press and led two ARM-side comments to claim exactly that.
+    // What the ARM actually reads is the slot as of the once-per-frame DDR3
+    // write. That is the right value to play -- it is what the OSD is showing
+    // -- but the reasoning has to match the hardware.
+    rs_slot_lat <= rs_slot;
+
     if (reset) begin
         rs_cmd_lat  <= 2'd0;
         rs_slot_lat <= 3'd0;
@@ -317,13 +332,7 @@ always @(posedge ddr_clk) begin
     end
     else if (rs_play) begin
         rs_cmd_lat  <= 2'd1;
-        rs_slot_lat <= rs_slot;
         rs_seq      <= rs_seq + 8'd1;
-    end
-    else begin
-        // Track the OSD picker even with no Play pulse, so the ARM can mirror
-        // the slot into its pause menu the moment the user moves it.
-        rs_slot_lat <= rs_slot;
     end
 end
 
@@ -372,6 +381,7 @@ always @(posedge ddr_clk) begin
         ctrl_word          <= 32'd0;
         arm_slot           <= 3'd0;
         arm_seq            <= 8'd0;
+        arm_valid          <= 1'b0;
         prev_frame_counter <= 30'd0;
         active_buffer      <= 1'b0;
         buf_base_addr      <= 29'd0;
@@ -688,6 +698,10 @@ always @(posedge ddr_clk) begin
                     //   0x04 byte0 = slot, byte1 = seq
                     arm_slot    <= ddr_dout[34:32];
                     arm_seq     <= ddr_dout[47:40];
+                    // Tell replay_slot_ui it may now start edge-detecting.
+                    // Until this fires, arm_seq is only the reset value and
+                    // adopting on it would push a garbage slot into the OSD.
+                    arm_valid   <= 1'b1;
                     timeout_cnt <= 20'd0;
                     state       <= ST_CHECK_CTRL;
                 end

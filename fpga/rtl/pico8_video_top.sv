@@ -77,7 +77,8 @@ module pico8_video_top (
     input  wire        rs_play,
     input  wire  [2:0] rs_slot,
     output wire  [2:0] arm_slot,
-    output wire  [7:0] arm_seq
+    output wire  [7:0] arm_seq,
+    output wire        arm_valid
 );
 
 // ── Convert OSD 3-bit (0..6) to signed adjustment ────────────────────
@@ -184,7 +185,8 @@ pico8_video_reader reader (
     .rs_play        (rs_play),
     .rs_slot        (rs_slot),
     .arm_slot       (arm_slot),
-    .arm_seq        (arm_seq)
+    .arm_seq        (arm_seq),
+    .arm_valid      (arm_valid)
 );
 
 // ── Output assignments ────────────────────────────────────────────────

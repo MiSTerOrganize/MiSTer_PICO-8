@@ -289,6 +289,7 @@ wire  [2:0] rs_slot;          // currently selected slot (0..7 == "Slot 1..8")
 wire        rs_statusUpdate;
 wire  [2:0] nv_arm_slot;
 wire  [7:0] nv_arm_seq;
+wire        nv_arm_valid;
 
 hps_io #(.CONF_STR(CONF_STR), .VDNUM(2)) hps_io
 (
@@ -361,6 +362,8 @@ replay_slot_ui replay_slot_ui_inst
 	.OSD_play      (status[9]),
 	.arm_slot      (nv_arm_slot),
 	.arm_seq       (nv_arm_seq),
+	.arm_valid     (nv_arm_valid),
+	.reset         (RESET),
 	.rs_play       (rs_play),
 	.statusUpdate  (rs_statusUpdate),
 	.selected_slot (rs_slot)
@@ -719,7 +722,8 @@ pico8_video_top native_video
 	.rs_play        (rs_play),
 	.rs_slot        (rs_slot),
 	.arm_slot       (nv_arm_slot),
-	.arm_seq        (nv_arm_seq)
+	.arm_seq        (nv_arm_seq),
+	.arm_valid      (nv_arm_valid)
 );
 
 // Mux VGA outputs: native video path vs. existing menu pattern

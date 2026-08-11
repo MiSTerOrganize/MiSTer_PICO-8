@@ -661,10 +661,30 @@ static int p8rec_slot_now()
  * the race this closes -- it is not optional bookkeeping. */
 static bool g_rec_pub_fresh = false;
 
+/* Carry the chosen slot across the reset, and SAY whether it worked.
+ *
+ * Record, Play and Reset all _exit() and let the daemon respawn us, so a slot
+ * held only in memory dies with the process. Every one of these writes used to
+ * be fire-and-forget: with /tmp full or read-only, fopen returns NULL, the
+ * recovery block's atoi() yields 0, p8rec_slot_now() clamps that to slot 1, and
+ * Record then overwrites SLOT 1's take instead of the one the user picked --
+ * silently. Callers that are about to arm must refuse instead. */
+static bool p8rec_save_slot_marker()
+{
+    FILE *sf = fopen("/tmp/pico8_recslot", "w");
+    if (!sf) return false;
+    bool ok = fprintf(sf, "%d\n", p8rec_slot_now()) > 0;
+    if (fclose(sf) != 0) ok = false;
+    return ok;
+}
+
 static void p8rec_publish_slot()
 {
-    static unsigned pub_seq = 0;
-    NativeVideoWriter_PublishReplaySlot(p8rec_slot_now(), ++pub_seq);
+    /* No sequence counter here on purpose -- see PublishReplaySlot. A
+     * process-local static restarts at 0 while the wire survives the respawn,
+     * so it could publish a value already there and the FPGA would see no
+     * edge at all. The sequence is derived from the wire instead. */
+    NativeVideoWriter_PublishReplaySlot(p8rec_slot_now());
     g_rec_pub_fresh = true;
 }
 
@@ -832,7 +852,8 @@ static time_t g_s1_seen = 0;
  * reason already sized for the 21x3 notice renderer. */
 static bool p8rec_probe(std::string const &cart_path,
                         std::string const &explicit_path,
-                        char *why, size_t whysz)
+                        char *why, size_t whysz,
+                        int slot_override = 0)
 {
     std::string in = explicit_path;
     if (in.empty())
@@ -848,7 +869,11 @@ static bool p8rec_probe(std::string const &cart_path,
          *
          * A convenience default is fine while nothing on screen CLAIMS a slot.
          * This row claims one, so the default has to be the displayed one. */
-        int slot = p8rec_slot_now();
+        /* slot_override lets a caller ask about a slot WITHOUT committing to
+         * it. The OSD Play path needs that: a refused Play must leave both
+         * pickers exactly where they were, which is what OpenBOR does (it
+         * commits the slot only once every check has passed). */
+        int slot = slot_override ? slot_override : p8rec_slot_now();
         /* Nothing anywhere for this cart is a different fact from "the slot you
          * are looking at is empty", and only the first one tells the user there
          * is nothing to look for. OpenBOR has always split them this way
@@ -1893,8 +1918,11 @@ int main(int argc, char **argv)
                  * the user never chose -- destroying whatever was in it, and then
                  * Play read a third slot and replayed someone else's take. Both
                  * cores had it; reported on hardware 2026-08-07. */
-                { FILE *sf = fopen("/tmp/pico8_recslot", "w");
-                  if (sf) { fprintf(sf, "%d\n", p8rec_slot_now()); fclose(sf); } }
+                /* One writer for this marker, so a failure is reported the same
+                 * way everywhere. Cannot refuse here -- the reset is already
+                 * committed -- so warn loudly instead. */
+                if (!p8rec_save_slot_marker())
+                    fprintf(stderr, "[REC] WARNING: could not carry the slot across the reset\n");
                 fprintf(stderr, "[REC] reset while recording -- restarting the take"
                                 " in slot %d\n", g_rec_slot);
             } else if (g_rec_mode == 2) {
@@ -1908,10 +1936,16 @@ int main(int argc, char **argv)
         });
 
         g_vm->add_extcmd("z8_rec_record", [](std::string const &) {
-            /* Carry the slot across the reset (see the recovery block at arm). */
-            if (g_rec_slot >= 1 && g_rec_slot <= P8REC_SLOTS)
-            { FILE *sf = fopen("/tmp/pico8_recslot", "w");
-              if (sf) { fprintf(sf, "%d\n", g_rec_slot); fclose(sf); } }
+            /* Carry the slot across the reset (see the recovery block at arm).
+             * REFUSE if it cannot be carried: an unwritten marker resolves to
+             * slot 1 in the next process, so Record would overwrite SLOT 1's
+             * take rather than the one the user picked, and say nothing. */
+            if (!p8rec_save_slot_marker())
+            {
+                fprintf(stderr, "[REC] cannot write the slot marker -- not arming\n");
+                NativeVideoWriter_Notice("Could not start recording", 5);
+                return;
+            }
             FILE *m = fopen("/tmp/pico8_recmode", "w");
             if (m) { fputs("REC", m); fclose(m); }
             FILE *r = fopen("/tmp/pico8_reset_marker", "w");
@@ -1934,10 +1968,15 @@ int main(int argc, char **argv)
                 NativeVideoWriter_Notice(why, 6);
                 return;
             }
-            /* Carry the slot across the reset (see the recovery block at arm). */
-            if (g_rec_slot >= 1 && g_rec_slot <= P8REC_SLOTS)
-            { FILE *sf = fopen("/tmp/pico8_recslot", "w");
-              if (sf) { fprintf(sf, "%d\n", g_rec_slot); fclose(sf); } }
+            /* Carry the slot across the reset (see the recovery block at arm).
+             * REFUSE if it cannot be carried -- otherwise the next process
+             * resolves to slot 1 and replays the wrong take. */
+            if (!p8rec_save_slot_marker())
+            {
+                fprintf(stderr, "[REC] cannot write the slot marker -- not arming\n");
+                NativeVideoWriter_Notice("Could not start playback", 5);
+                return;
+            }
             FILE *m = fopen("/tmp/pico8_recmode", "w");
             if (m) { fputs("PLAY", m); fclose(m); }
             FILE *r = fopen("/tmp/pico8_reset_marker", "w");
@@ -2582,7 +2621,17 @@ int main(int argc, char **argv)
                          * and got the explanation only after the reload. Refusing
                          * here leaves the run untouched. */
                         char why[96];
-                        if (!p8rec_probe(g_cart_path_for_rec, std::string(full), why, sizeof(why)))
+                        if (g_rec_mode == 1)
+                        {
+                            /* Refuse rather than exit, exactly as the OSD slot
+                             * Play path does. Exiting here would discard an
+                             * unwritten take with no confirm and no message,
+                             * while pause-Quit raises a LOSE RECORDING dialog
+                             * for the same loss. Same wording on both cores. */
+                            fprintf(stderr, "[REC] OSD replay refused -- recording in progress\n");
+                            NativeVideoWriter_Notice("Stop the recording first", 5);
+                        }
+                        else if (!p8rec_probe(g_cart_path_for_rec, std::string(full), why, sizeof(why)))
                         {
                             fprintf(stderr, "[REC] OSD replay refused: %s\n", why);
                             NativeVideoWriter_Notice(why, 6);
@@ -2626,6 +2675,10 @@ int main(int argc, char **argv)
                      * core loads. */
                     if (!rs_primed) {
                         rs_primed = true;
+                        /* Consume a publish that happened before priming, or the
+                         * skip lands on the wrong poll -- harmless, but it would
+                         * be spent on a poll it was not meant for. */
+                        g_rec_pub_fresh = false;
                     } else {
                       /* The skip below covers ADOPTION ONLY. Play must still be
                        * evaluated on a skipped poll: `rs_last_seq` advances
@@ -2633,10 +2686,14 @@ int main(int argc, char **argv)
                        * during a skipped poll would be consumed and lost for
                        * good rather than merely delayed.
                        *
-                       * `rslot` is trustworthy for Play even when the echo is
-                       * stale for adoption: the RTL latches rs_cmd_lat and
-                       * rs_slot_lat TOGETHER on the rs_play pulse, so a word
-                       * carrying cmd=1 carries the slot as of that press. */
+                       * `rslot` is the slot as of the once-per-frame DDR3 write,
+                       * NOT a snapshot taken at the Play press. (An earlier
+                       * version of this comment claimed the RTL latched cmd and
+                       * slot together on the pulse. It does not -- rs_slot_lat
+                       * tracks the current slot every cycle, which is exactly
+                       * what lets an OSD move be mirrored without pressing
+                       * Play.) That is still the right value to act on: it is
+                       * what the OSD is displaying when the user presses. */
                       if (g_rec_pub_fresh) {
                         /* We published a slot since the last poll, and the echo
                          * we are holding may pre-date it: `rs_slot_lat` tracks
@@ -2657,36 +2714,75 @@ int main(int argc, char **argv)
                          * the reader has written 0x0C many times over. A
                          * simultaneous OSD move is simply picked up then. */
                         g_rec_pub_fresh = false;
-                      } else if (rslot != p8rec_slot_now()) {
+                      } else if (g_rec_mode == 0 && rslot != p8rec_slot_now()) {
+                        /* 🛑 Adoption is FROZEN for the life of a take. The slot
+                         * row is drawn on the idle branch only, so while
+                         * recording there is nothing on screen showing which
+                         * slot Stop will write to -- and the OSD picker is still
+                         * reachable. Without this gate, moving it mid-take
+                         * silently retargets Stop onto a DIFFERENT slot and
+                         * destroys the take that was in it, with the only
+                         * feedback arriving after the damage. Once Record has
+                         * committed to a target, that target is fixed. */
                         g_rec_slot = rslot;
                         /* The slot has to survive the reset: Play and Record
                          * both respawn the process, so a choice held only in
                          * memory dies with it. */
-                        if (FILE *sf = fopen("/tmp/pico8_recslot", "w"))
-                        { fprintf(sf, "%d\n", g_rec_slot); fclose(sf); }
+                        p8rec_save_slot_marker();
                       }
 
                         if (rcmd == 1u && rseq != rs_last_seq) {
                             fprintf(stderr, "[REC] OSD play replay, slot %d\n", rslot);
-                            g_rec_slot = rslot;
+                            if (g_rec_mode == 1)
+                            {
+                                /* 🛑 Refuse rather than exit. This is the ONLY
+                                 * route that can reach Play while recording --
+                                 * the pause submenu hides Play at mode 1 -- and
+                                 * an unguarded _exit() here would discard an
+                                 * unwritten take with no confirm and no message,
+                                 * while pause-Quit raises a LOSE RECORDING
+                                 * dialog for exactly the same loss. A Notice()
+                                 * placed just before _exit() would not help: the
+                                 * process is gone before a frame publishes. */
+                                fprintf(stderr, "[REC] OSD play refused -- recording in progress\n");
+                                NativeVideoWriter_Notice("Stop the recording first", 5);
+                            }
+                            else
+                            {
                             char why[96];
-                            if (!p8rec_probe(g_cart_path_for_rec, std::string(), why, sizeof(why)))
+                            int  want = rslot;
+                            if (!p8rec_probe(g_cart_path_for_rec, std::string(), why, sizeof(why), want))
                             {
                                 /* Refused: it has already said why on screen.
-                                 * Fall through and keep playing -- do NOT reset. */
+                                 * Fall through and keep playing -- do NOT reset.
+                                 * The slot is deliberately NOT moved here, so a
+                                 * refusal leaves both pickers where they were --
+                                 * matching OpenBOR, which only commits the slot
+                                 * once every check has passed. */
                                 fprintf(stderr, "[REC] OSD replay refused: %s\n", why);
                                 NativeVideoWriter_Notice(why, 6);
                             }
                             else
                             {
-                                if (FILE *sf = fopen("/tmp/pico8_recslot", "w"))
-                                { fprintf(sf, "%d\n", g_rec_slot); fclose(sf); }
+                                g_rec_slot = want;
+                                if (!p8rec_save_slot_marker())
+                                {
+                                    /* Arming against a slot we could not record
+                                     * would resolve to slot 1 in the next
+                                     * process and replay the wrong take. */
+                                    fprintf(stderr, "[REC] cannot write the slot marker -- not arming\n");
+                                    NativeVideoWriter_Notice("Could not start playback", 5);
+                                }
+                                else
+                                {
                                 if (FILE *mm = fopen("/tmp/pico8_recmode", "w"))
                                 { fprintf(mm, "PLAY\n"); fclose(mm); }
                                 if (FILE *rm = fopen("/tmp/pico8_reset_marker", "w")) fclose(rm);
                                 fprintf(stderr, "[REC] arming playback from OSD -- resetting to the cart start\n");
                                 fflush(stderr);
                                 _exit(0);
+                                }
+                            }
                             }
                         }
                     }
@@ -2755,18 +2851,29 @@ int main(int argc, char **argv)
                              * IN PROCESS, so anything not reset here survives into the
                              * next cart; OpenBOR is immune only because it _exit()s.
                              *
-                             * g_rec_slot is deliberately NOT cleared by p8rec_reset(),
-                             * which also runs on take-over where keeping the choice is
-                             * right. Left alone it carried cart A's slot to cart B, so
-                             * Recording on B named a slot chosen for a different cart
-                             * and Record could replace a take the user never selected.
+                             * 🛑 g_rec_slot is deliberately NOT cleared here, and this
+                             * used to do the opposite. The old clear claimed to stop
+                             * cart A's slot reaching cart B -- but once the slot also
+                             * lives in the OSD it cannot: the picker keeps its value,
+                             * the poll re-adopts it within half a second, and the
+                             * recovery marker can restore it too. The clear only
+                             * produced a transient window where the pause row read
+                             * "slot 1" while the OSD read something else, which is the
+                             * two-displays-disagreeing failure this design exists to
+                             * prevent.
+                             *
+                             * Carrying it is also harmless: takes are per-content
+                             * (<content>_<slot>.inp), so slot 5 on cart B is a
+                             * different file from slot 5 on cart A -- nothing of cart
+                             * A's can be overwritten by cart B -- and the row still
+                             * reads used/empty before anything is committed. OpenBOR
+                             * has always carried it; the two cores now agree.
                              *
                              * SetFpsOverlay(0) lives in the wait-for-OSD block, which a
                              * hot-swap skips -- while the bios reload resets the menu row
                              * to off. The row then read "off" over a visible overlay and
                              * the next press appeared to do nothing: the same
                              * displayed-value vs acted-on-value split as the slot bugs. */
-                            g_rec_slot = 0;
                             NativeVideoWriter_SetFpsOverlay(0);
                             /* The cart is about to reload, so it is safe to hand
                              * saves back now -- and necessary, or the next cart

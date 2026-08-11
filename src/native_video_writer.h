@@ -142,7 +142,7 @@ uint32_t NativeVideoWriter_ReadJoystick(int player);
  * PublishReplaySlot sends the pause menu's CURRENT slot (1..8) back so the
  * OSD display follows it -- ONE slot value, both directions. */
 uint32_t NativeVideoWriter_ReadReplay(void);
-void NativeVideoWriter_PublishReplaySlot(int slot, unsigned seq);
+void NativeVideoWriter_PublishReplaySlot(int slot);
 
 /// Read VSync feedback word from DDR3 (written by FPGA each vblank).
 /// Bits [31:2] = vblank_counter, bits [1:0] = buffer_status.
