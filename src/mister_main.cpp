@@ -657,10 +657,15 @@ static int p8rec_slot_now()
  * that adoption too would bounce the value back and forth. It converges
  * either way, but the traffic is pointless and it muddies anyone reading the
  * two in a log. */
+/* Set when we publish; consumed by the ONE poll that follows. See the poll for
+ * the race this closes -- it is not optional bookkeeping. */
+static bool g_rec_pub_fresh = false;
+
 static void p8rec_publish_slot()
 {
     static unsigned pub_seq = 0;
     NativeVideoWriter_PublishReplaySlot(p8rec_slot_now(), ++pub_seq);
+    g_rec_pub_fresh = true;
 }
 
 /* Returns true if the session can be torn down: the file was written, or there
@@ -2621,6 +2626,26 @@ int main(int argc, char **argv)
                      * core loads. */
                     if (!rs_primed) {
                         rs_primed = true;
+                    } else if (g_rec_pub_fresh) {
+                        /* We published a slot since the last poll, and the echo
+                         * we are holding may pre-date it: `rs_slot_lat` tracks
+                         * every clk_sys cycle, but the reader only WRITES 0x0C
+                         * once per frame, in ST_WRITE_JOY0. So for up to one
+                         * frame after a pause-menu press, 0x0C still reports the
+                         * OLD slot -- and adopting it would revert the press the
+                         * user just made, then correct itself a poll later.
+                         *
+                         * Measured shape: the poll runs every 30 frames, the
+                         * stale window is <= 1 frame, so this bit the user on
+                         * roughly 1-3% of presses -- often enough to be reported
+                         * as "the slot sometimes jumps back", and bad enough to
+                         * matter if they hit Record inside that window.
+                         *
+                         * Skipping exactly ONE poll is sufficient and cannot
+                         * stall: the next poll is ~0.5 s later, by which time
+                         * the reader has written 0x0C many times over. A
+                         * simultaneous OSD move is simply picked up then. */
+                        g_rec_pub_fresh = false;
                     } else {
                         if (rslot != p8rec_slot_now()) {
                             g_rec_slot = rslot;
