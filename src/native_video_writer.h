@@ -34,7 +34,25 @@
 #define NV_DDR_PHYS_BASE    0x3A000000u
 #define NV_DDR_REGION_SIZE  0x00060000u   /* 384KB covers buffers + control + cart data */
 #define NV_CTRL_OFFSET      0x00000000u
+/* OSD replay-slot transport. Both words ride in DEAD SPACE inside qwords the
+ * FPGA already moves every frame, so neither direction costs a new DDR3
+ * transaction:
+ *   0x04 = spare upper half of the CONTROL qword (the reader takes only
+ *          ddr_dout[31:0] of it) -- ARM -> FPGA, byte0=slot, byte1=seq.
+ *   0x0C = spare upper half of the JOY0 qword (the FPGA wrote {32'd0, joy})
+ *          -- FPGA -> ARM, byte0=cmd, byte1=slot, byte2=seq.
+ * Slots are 0-BASED on the wire (0..7); the user-facing 1..8 conversion
+ * happens at this boundary and nowhere else. Byte-identical to OpenBOR_7533's
+ * scheme, because one layout has to serve both cores.
+ *
+ * 🛑 0x04 is deliberately NOT zeroed in Init, and that is not an oversight.
+ * The FPGA is already running and polling before the ARM binary starts, so a
+ * zeroing write would look to replay_slot_ui like a pause-menu change to
+ * slot 1 and CLOBBER the OSD slot the user had persisted in PICO-8.cfg. The
+ * RTL's own `armed` guard covers the stale-DDR3 case instead. */
+#define NV_REPLAY_PUB_OFFSET 0x00000004u  /* ARM -> FPGA */
 #define NV_JOY0_OFFSET      0x00000008u  /* P1 joystick_0 from FPGA (physical 0x3A000008) */
+#define NV_REPLAY_OFFSET    0x0000000Cu   /* FPGA -> ARM */
 /* JOY1/2/3 placed at 0x030/0x038/0x040 — distinct from PICO-8's audio
  * pointers at 0x020/0x028. Matches FPGA reader's JOY1/2/3_ADDR. */
 #define NV_JOY1_OFFSET      0x00000030u  /* P2 joystick_1 */
@@ -118,6 +136,13 @@ void NativeVideoWriter_AckCart(void);
 /// bit4=A, bit5=B, bit6=X, bit7=Y, bit10=Select, bit11=Start
 /// @param player  0..3 (P1..P4); out-of-range returns 0
 uint32_t NativeVideoWriter_ReadJoystick(int player);
+
+/* OSD replay-slot picker (see rtl/replay_slot_ui.sv). ReadReplay returns the
+ * raw FPGA->ARM word: cmd [1:0], slot [10:8] (0-based), seq [23:16].
+ * PublishReplaySlot sends the pause menu's CURRENT slot (1..8) back so the
+ * OSD display follows it -- ONE slot value, both directions. */
+uint32_t NativeVideoWriter_ReadReplay(void);
+void NativeVideoWriter_PublishReplaySlot(int slot, unsigned seq);
 
 /// Read VSync feedback word from DDR3 (written by FPGA each vblank).
 /// Bits [31:2] = vblank_counter, bits [1:0] = buffer_status.

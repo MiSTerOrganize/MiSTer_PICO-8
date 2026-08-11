@@ -682,6 +682,31 @@ uint32_t NativeVideoWriter_ReadSavestate(void) {
     return *ss;
 }
 
+/* OSD "Replay Slot" / "Play Replay" -> ARM. Raw word; the caller decodes.
+ *   bits [1:0]  cmd   0 = idle, 1 = play
+ *   bits [10:8] slot  0..7
+ *   bits [23:16] seq  bumped by the FPGA on every captured Play pulse, so a
+ *                     repeat of the SAME slot still reads as a new event. */
+uint32_t NativeVideoWriter_ReadReplay(void) {
+    if (!ddr_base) return 0;
+    volatile uint32_t *rs = (volatile uint32_t *)(ddr_base + NV_REPLAY_OFFSET);
+    return *rs;
+}
+
+/* Pause-menu slot -> OSD. The FPGA edge-detects `seq` and pushes the new slot
+ * into the OSD's status word, which is what makes the two pickers show the
+ * same number.
+ *
+ * `slot` is the user-facing 1..8; it is converted to the 0-based wire value
+ * here so exactly one place in the codebase knows about the offset. */
+void NativeVideoWriter_PublishReplaySlot(int slot, unsigned seq) {
+    if (!ddr_base) return;
+    if (slot < 1) slot = 1;
+    if (slot > 8) slot = 8;
+    volatile uint32_t *pub = (volatile uint32_t *)(ddr_base + NV_REPLAY_PUB_OFFSET);
+    *pub = (uint32_t)((slot - 1) & 7) | (((uint32_t)seq & 0xFFu) << 8);
+}
+
 uint32_t NativeVideoWriter_AudioSpace(void) {
     if (!ddr_base) return 0;
     volatile uint32_t *wptr = (volatile uint32_t *)(ddr_base + NV_AUD_WPTR_OFFSET);

@@ -648,6 +648,21 @@ static int p8rec_slot_now()
     return g_rec_slot;
 }
 
+/* Push the pause menu's slot out to the OSD picker so the two show the same
+ * number. The FPGA edge-detects this sequence and writes it back into the
+ * OSD's status word (rtl/replay_slot_ui.sv).
+ *
+ * Call this ONLY from a change made in the pause menu. The OSD poll in the
+ * hot-swap block also adopts the OSD's slot into g_rec_slot; publishing on
+ * that adoption too would bounce the value back and forth. It converges
+ * either way, but the traffic is pointless and it muddies anyone reading the
+ * two in a log. */
+static void p8rec_publish_slot()
+{
+    static unsigned pub_seq = 0;
+    NativeVideoWriter_PublishReplaySlot(p8rec_slot_now(), ++pub_seq);
+}
+
 /* Returns true if the session can be torn down: the file was written, or there
  * was nothing to write. False means the take is STILL IN MEMORY and the caller
  * must leave the recorder armed so Stop can be retried. */
@@ -1949,10 +1964,12 @@ int main(int argc, char **argv)
              * hardware 2026-08-07. */
             int cur = p8rec_slot_now();
             g_rec_slot = (cur <= 1) ? P8REC_SLOTS : cur - 1;
+            p8rec_publish_slot();
         });
         g_vm->add_extcmd("z8_rec_slot_next", [](std::string const &) {
             int cur = p8rec_slot_now();
             g_rec_slot = (cur >= P8REC_SLOTS) ? 1 : cur + 1;
+            p8rec_publish_slot();
         });
 
         /* 221/222 = the slot row's label and its used/empty value. Dynamic, so
@@ -2575,6 +2592,69 @@ int main(int argc, char **argv)
                         _exit(0);
                         }
                     }
+                }
+
+                /* OSD "Replay Slot" 1-8 + "Play Replay". The FPGA publishes both
+                 * in the spare upper half of the JOY0 qword (0x0C), which it
+                 * already writes every frame, so reading it here costs nothing.
+                 *
+                 * Two jobs, and the first is the one that makes the feature
+                 * honest: mirror the OSD's slot into g_rec_slot so the
+                 * pause-menu row shows the SAME number. One slot value, two
+                 * displays -- the rule f7a870e was written to enforce.
+                 *
+                 * Play reuses p8rec_probe() -- the same policy the pause menu's
+                 * z8_rec_play calls -- so an empty slot refuses with the same
+                 * words here as there instead of resetting the cart to find
+                 * out. Refusals stay put; only a valid take resets. */
+                {
+                    static bool     rs_primed = false;
+                    static unsigned rs_last_seq = 0;
+                    uint32_t rw    = NativeVideoWriter_ReadReplay();
+                    unsigned rseq  = (rw >> 16) & 0xFFu;
+                    unsigned rcmd  = rw & 3u;
+                    int      rslot = (int)((rw >> 8) & 7u) + 1;   /* wire is 0-based */
+
+                    /* Seed the sequence from the FIRST real read, never from 0.
+                     * DDR3 holds whatever the previous core left there, so an
+                     * unseeded compare can fire a spurious Play the moment the
+                     * core loads. */
+                    if (!rs_primed) {
+                        rs_primed = true;
+                    } else {
+                        if (rslot != p8rec_slot_now()) {
+                            g_rec_slot = rslot;
+                            /* The slot has to survive the reset: Play and Record
+                             * both respawn the process, so a choice held only in
+                             * memory dies with it. */
+                            if (FILE *sf = fopen("/tmp/pico8_recslot", "w"))
+                            { fprintf(sf, "%d\n", g_rec_slot); fclose(sf); }
+                        }
+                        if (rcmd == 1u && rseq != rs_last_seq) {
+                            fprintf(stderr, "[REC] OSD play replay, slot %d\n", rslot);
+                            g_rec_slot = rslot;
+                            char why[96];
+                            if (!p8rec_probe(g_cart_path_for_rec, std::string(), why, sizeof(why)))
+                            {
+                                /* Refused: it has already said why on screen.
+                                 * Fall through and keep playing -- do NOT reset. */
+                                fprintf(stderr, "[REC] OSD replay refused: %s\n", why);
+                                NativeVideoWriter_Notice(why, 6);
+                            }
+                            else
+                            {
+                                if (FILE *sf = fopen("/tmp/pico8_recslot", "w"))
+                                { fprintf(sf, "%d\n", g_rec_slot); fclose(sf); }
+                                if (FILE *mm = fopen("/tmp/pico8_recmode", "w"))
+                                { fprintf(mm, "PLAY\n"); fclose(mm); }
+                                if (FILE *rm = fopen("/tmp/pico8_reset_marker", "w")) fclose(rm);
+                                fprintf(stderr, "[REC] arming playback from OSD -- resetting to the cart start\n");
+                                fflush(stderr);
+                                _exit(0);
+                            }
+                        }
+                    }
+                    rs_last_seq = rseq;
                 }
 
                 char s0_path[512] = {0};
