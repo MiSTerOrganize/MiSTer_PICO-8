@@ -236,6 +236,9 @@ localparam CONF_STR = {
 	"TI,Save State;",
 	"TJ,Load State;",
 	"-;",
+	"O13,Replay Slot,1,2,3,4,5,6,7,8;",
+	"T9,Play Replay;",
+	"-;",
 	"J1,O,X,Pause;",
 	"jn,B,Y,Start;",
 	"-;",
@@ -277,14 +280,29 @@ wire  [7:0] ss_info;
 wire        ss_statusUpdate; // tells hps_io to write status_in back as new status
 wire [10:0] ps2_key;
 
+// Replay slot UI signals. ONE slot value is shared with the ARM's in-game
+// pause-menu picker, so moving it in either place moves the other; see
+// rtl/replay_slot_ui.sv. arm_slot/arm_seq come out of the video reader, which
+// picks them up from the spare upper half of the DDR3 control qword.
+wire        rs_play;          // 1-cycle pulse: OSD "Play Replay"
+wire  [2:0] rs_slot;          // currently selected slot (0..7 == "Slot 1..8")
+wire        rs_statusUpdate;
+wire  [2:0] nv_arm_slot;
+wire  [7:0] nv_arm_seq;
+
 hps_io #(.CONF_STR(CONF_STR), .VDNUM(2)) hps_io
 (
 	.clk_sys(clk_sys),
 	.HPS_BUS(HPS_BUS),
 	.forced_scandoubler(forced_scandoubler),
 	.status(status),
-	.status_in({96'd0, status[31:22], ss_slot, status[19:0]}),
-	.status_set(ss_statusUpdate),
+	// Write-back path: the core can push a value into the OSD's status word.
+	// ss_slot lands on [21:20] (Save Slot) and rs_slot on [3:1] (Replay Slot);
+	// every other bit is passed through unchanged so a write-back never
+	// disturbs a setting the core does not own.
+	//   96 + 10 + 2 + 16 + 3 + 1 == 128
+	.status_in({96'd0, status[31:22], ss_slot, status[19:4], rs_slot, status[0]}),
+	.status_set(ss_statusUpdate | rs_statusUpdate),
 	.status_menumask(cfg),
 	.info_req(ss_info_req),
 	.info(ss_info),
@@ -332,6 +350,20 @@ savestate_ui #(.INFO_TIMEOUT_BITS(25)) savestate_ui_inst
 	.ss_info       (ss_info),
 	.statusUpdate  (ss_statusUpdate),
 	.selected_slot (ss_slot)
+);
+
+// Replay slot UI -- the OSD half of the recording feature. Slot + Play only;
+// Record/Stop stay in the pause menu on purpose (Record resets the cart).
+replay_slot_ui replay_slot_ui_inst
+(
+	.clk           (clk_sys),
+	.status_slot   (status[3:1]),
+	.OSD_play      (status[9]),
+	.arm_slot      (nv_arm_slot),
+	.arm_seq       (nv_arm_seq),
+	.rs_play       (rs_play),
+	.statusUpdate  (rs_statusUpdate),
+	.selected_slot (rs_slot)
 );
 
 ////////////////////   CLOCKS   ///////////////////
@@ -683,7 +715,11 @@ pico8_video_top native_video
 	// to a DDR3 control word the ARM polls between frames.
 	.ss_save        (ss_save),
 	.ss_load        (ss_load),
-	.ss_slot        (ss_slot)
+	.ss_slot        (ss_slot),
+	.rs_play        (rs_play),
+	.rs_slot        (rs_slot),
+	.arm_slot       (nv_arm_slot),
+	.arm_seq        (nv_arm_seq)
 );
 
 // Mux VGA outputs: native video path vs. existing menu pattern

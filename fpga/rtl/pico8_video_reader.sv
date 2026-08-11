@@ -73,6 +73,16 @@ module pico8_video_reader (
     input  wire        ss_load,
     input  wire  [1:0] ss_slot,
 
+    // Replay slot (OSD "Replay Slot" / "Play Replay"). Carried to the ARM in
+    // the spare upper half of the JOY0 qword; the ARM's own pause-menu slot
+    // comes BACK in the spare upper half of the control qword, which this
+    // module already reads every poll, so neither direction costs a new
+    // DDR3 transaction.
+    input  wire        rs_play,
+    input  wire  [2:0] rs_slot,
+    output reg   [2:0] arm_slot,
+    output reg   [7:0] arm_seq,
+
     // Pixel output
     output reg   [7:0] r_out,
     output reg   [7:0] g_out,
@@ -291,6 +301,32 @@ always @(posedge ddr_clk) begin
     end
 end
 
+// Replay slot — same latch shape as the save state block above.
+//   rs_cmd: 0=idle, 1=play
+//   rs_seq: increments on every captured pulse, so the ARM sees a repeat of
+//           the same slot as a NEW event rather than as no change.
+reg  [1:0] rs_cmd_lat;
+reg  [2:0] rs_slot_lat;
+reg  [7:0] rs_seq;
+
+always @(posedge ddr_clk) begin
+    if (reset) begin
+        rs_cmd_lat  <= 2'd0;
+        rs_slot_lat <= 3'd0;
+        rs_seq      <= 8'd0;
+    end
+    else if (rs_play) begin
+        rs_cmd_lat  <= 2'd1;
+        rs_slot_lat <= rs_slot;
+        rs_seq      <= rs_seq + 8'd1;
+    end
+    else begin
+        // Track the OSD picker even with no Play pulse, so the ARM can mirror
+        // the slot into its pause menu the moment the user moves it.
+        rs_slot_lat <= rs_slot;
+    end
+end
+
 assign ioctl_wait = cart_write_pending & ioctl_download;
 
 // -- Source-line computation (Bresenham 4/7) --------------------------
@@ -334,6 +370,8 @@ always @(posedge ddr_clk) begin
         ddr_burstcnt       <= 8'd1;
         ddr_addr           <= 29'd0;
         ctrl_word          <= 32'd0;
+        arm_slot           <= 3'd0;
+        arm_seq            <= 8'd0;
         prev_frame_counter <= 30'd0;
         active_buffer      <= 1'b0;
         buf_base_addr      <= 29'd0;
@@ -456,10 +494,17 @@ always @(posedge ddr_clk) begin
             end
 
             ST_WRITE_JOY0: begin
-                // Write joystick_0 (P1) to DDR3 so ARM can read it
+                // Write joystick_0 (P1) to DDR3 so ARM can read it.
+                //
+                // The upper half of this qword was dead space, so the replay
+                // control word rides along in it -- the ARM reads it as a
+                // separate uint32 at 0x0C. It costs no extra DDR3 traffic
+                // because this write already happens every frame.
+                //   32 + 8 + 8 + 5 + 3 + 6 + 2 == 64
                 if (!ddr_busy) begin
                     ddr_addr     <= JOY0_ADDR;
-                    ddr_din      <= {32'd0, joystick_0};
+                    ddr_din      <= {8'd0, rs_seq, 5'd0, rs_slot_lat,
+                                     6'd0, rs_cmd_lat, joystick_0};
                     ddr_burstcnt <= 8'd1;
                     ddr_we       <= 1'b1;
                     state        <= ST_WRITE_JOY1;
@@ -637,6 +682,12 @@ always @(posedge ddr_clk) begin
             ST_WAIT_CTRL: begin
                 if (ddr_dout_ready) begin
                     ctrl_word   <= ddr_dout[31:0];
+                    // The ARM publishes its pause-menu replay slot in the
+                    // spare upper half of this same qword, so it arrives for
+                    // free on a read that already happens every poll.
+                    //   0x04 byte0 = slot, byte1 = seq
+                    arm_slot    <= ddr_dout[34:32];
+                    arm_seq     <= ddr_dout[47:40];
                     timeout_cnt <= 20'd0;
                     state       <= ST_CHECK_CTRL;
                 end

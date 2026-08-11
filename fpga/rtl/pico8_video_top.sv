@@ -71,7 +71,13 @@ module pico8_video_top (
     // written to a DDR3 control word inside the reader.
     input  wire        ss_save,
     input  wire        ss_load,
-    input  wire  [1:0] ss_slot
+    input  wire  [1:0] ss_slot,
+
+    // Replay slot (OSD picker <-> ARM pause-menu picker; see replay_slot_ui.sv)
+    input  wire        rs_play,
+    input  wire  [2:0] rs_slot,
+    output wire  [2:0] arm_slot,
+    output wire  [7:0] arm_seq
 );
 
 // ── Convert OSD 3-bit (0..6) to signed adjustment ────────────────────
@@ -174,7 +180,11 @@ pico8_video_reader reader (
 
     .ss_save        (ss_save),
     .ss_load        (ss_load),
-    .ss_slot        (ss_slot)
+    .ss_slot        (ss_slot),
+    .rs_play        (rs_play),
+    .rs_slot        (rs_slot),
+    .arm_slot       (arm_slot),
+    .arm_seq        (arm_seq)
 );
 
 // ── Output assignments ────────────────────────────────────────────────
