@@ -2626,7 +2626,18 @@ int main(int argc, char **argv)
                      * core loads. */
                     if (!rs_primed) {
                         rs_primed = true;
-                    } else if (g_rec_pub_fresh) {
+                    } else {
+                      /* The skip below covers ADOPTION ONLY. Play must still be
+                       * evaluated on a skipped poll: `rs_last_seq` advances
+                       * unconditionally at the bottom, so a Play pulse arriving
+                       * during a skipped poll would be consumed and lost for
+                       * good rather than merely delayed.
+                       *
+                       * `rslot` is trustworthy for Play even when the echo is
+                       * stale for adoption: the RTL latches rs_cmd_lat and
+                       * rs_slot_lat TOGETHER on the rs_play pulse, so a word
+                       * carrying cmd=1 carries the slot as of that press. */
+                      if (g_rec_pub_fresh) {
                         /* We published a slot since the last poll, and the echo
                          * we are holding may pre-date it: `rs_slot_lat` tracks
                          * every clk_sys cycle, but the reader only WRITES 0x0C
@@ -2646,15 +2657,15 @@ int main(int argc, char **argv)
                          * the reader has written 0x0C many times over. A
                          * simultaneous OSD move is simply picked up then. */
                         g_rec_pub_fresh = false;
-                    } else {
-                        if (rslot != p8rec_slot_now()) {
-                            g_rec_slot = rslot;
-                            /* The slot has to survive the reset: Play and Record
-                             * both respawn the process, so a choice held only in
-                             * memory dies with it. */
-                            if (FILE *sf = fopen("/tmp/pico8_recslot", "w"))
-                            { fprintf(sf, "%d\n", g_rec_slot); fclose(sf); }
-                        }
+                      } else if (rslot != p8rec_slot_now()) {
+                        g_rec_slot = rslot;
+                        /* The slot has to survive the reset: Play and Record
+                         * both respawn the process, so a choice held only in
+                         * memory dies with it. */
+                        if (FILE *sf = fopen("/tmp/pico8_recslot", "w"))
+                        { fprintf(sf, "%d\n", g_rec_slot); fclose(sf); }
+                      }
+
                         if (rcmd == 1u && rseq != rs_last_seq) {
                             fprintf(stderr, "[REC] OSD play replay, slot %d\n", rslot);
                             g_rec_slot = rslot;
