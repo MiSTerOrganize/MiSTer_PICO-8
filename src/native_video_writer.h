@@ -48,8 +48,20 @@
  * 🛑 0x04 is deliberately NOT zeroed in Init, and that is not an oversight.
  * The FPGA is already running and polling before the ARM binary starts, so a
  * zeroing write would look to replay_slot_ui like a pause-menu change to
- * slot 1 and CLOBBER the OSD slot the user had persisted in PICO-8.cfg. The
- * RTL's own `armed` guard covers the stale-DDR3 case instead. */
+ * slot 1 and CLOBBER the OSD slot the user had persisted in the core's .cfg.
+ *
+ * 🛑 An earlier version of this note claimed "the RTL's own `armed` guard
+ * covers the stale-DDR3 case instead." IT DID NOT. That guard released on the
+ * first clock edge, roughly 1.7 million cycles before arm_seq ever arrives
+ * from DDR3, so the stale word was adopted every time -- measured on hardware
+ * at 0xAABBBFFA, which pushed "Slot 3" into the OSD on every core load. The
+ * guard now waits for the reader's arm_valid strobe, which makes that first
+ * DDR3 sample the BASELINE rather than a command. Not-zeroing is correct, but
+ * it was never what made it safe; arm_valid is. See replay_slot_ui.sv.
+ *
+ * The sequence byte is likewise never seeded from a process-local counter --
+ * PublishReplaySlot derives it from what is already on the wire, because 0x04
+ * survives the _exit()/respawn that Record and Play both perform. */
 #define NV_REPLAY_PUB_OFFSET 0x00000004u  /* ARM -> FPGA */
 #define NV_JOY0_OFFSET      0x00000008u  /* P1 joystick_0 from FPGA (physical 0x3A000008) */
 #define NV_REPLAY_OFFSET    0x0000000Cu   /* FPGA -> ARM */
