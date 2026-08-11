@@ -566,6 +566,7 @@ function __z8_tick()
             if sd then
                 poke4(0x5f00, sd[1]) poke4(0x5f04, sd[2]) poke4(0x5f08, sd[3]) poke4(0x5f0c, sd[4])
                 poke4(0x5f20, sd[5]) poke4(0x5f24, sd[6]) poke4(0x5f28, sd[7]) poke4(0x5f31, sd[8])
+                __z8_pause_screen_mode(sd[9])   -- screen mode (live + front)
                 __z8_menu.saved_draw = nil
             end
             __z8_paused = false
@@ -601,7 +602,7 @@ end
 -- pause menu
 --
 
-__z8_menu = { cursor=0, optioncursor=0, quitcursor=0, items={}, inoption=false, inquitmsg=nil, pause_btn=false, pause_act=false, in_menu_item=-1 }
+__z8_menu = { cursor=0, optioncursor=0, quitcursor=0, reccursor=0, items={}, inoption=false, inrec=false, inquitmsg=nil, pause_btn=false, pause_act=false, in_menu_item=-1 }
 function menuitem(index, label, callback)
     if (__z8_menu.in_menu_item > 0 and index==nil) index = __z8_menu.in_menu_item -- calling from inside menuitem callback
     if index < 1 or index > 5 then return end
@@ -648,6 +649,48 @@ function __z8_draw_fullscreen(st,x,y)
     print(stat(143)==0 and stat(210) or stat(211),x+30,y)
 end
 
+-- FPS overlay toggle. Required on every hybrid core: bottom-right read-out,
+-- red <30 / yellow 30-59 / green 60+. The number itself is drawn C-side in
+-- native_video_writer.c (into the 128x128 buffer, which the FPGA then scales
+-- like the game pixels); this only flips the flag. State is kept here because
+-- the bios is its only writer, and reset exits the process so both sides
+-- start at 0 together.
+function __z8_update_fps(e)
+    -- left = off, right = on, matching OpenBOR (2026-08-07 parity decision) and
+    -- matching how the volume rows on both cores already behave. It used to
+    -- toggle on BOTH directions, so pressing left twice left it on here and off
+    -- there. Confirm still toggles, which costs nothing and keeps the row usable
+    -- on a pad with an unreliable d-pad.
+    local v = __z8_menu.fps or 0
+    if e == 1 then v = 0
+    elseif e == 2 then v = 1
+    else v = 1 - v end
+    __z8_menu.fps = v
+    extcmd("z8_fps_overlay "..tostr(v))
+end
+
+function __z8_draw_fps(st,x,y)
+    -- x+48, not the x+30 the other rows use: "fps display" is 11 chars = 44px
+    -- at 4px/char, so it would run into a value drawn at x+30 (that produced
+    -- garbled overlap when first shipped). x+48 + "off" ends at x+60, inside
+    -- the box's 74px usable width.
+    print((__z8_menu.fps or 0)==0 and stat(214) or stat(215),x+48,y)
+end
+
+-- Recorder slot row. e==1 left, e==2 right (same convention as the volume
+-- gauges); press does nothing, since choosing a slot is not an action.
+function __z8_update_slot(e)
+    if(e==1) extcmd("z8_rec_slot_prev")
+    if(e==2) extcmd("z8_rec_slot_next")
+end
+
+function __z8_draw_slot(st,x,y)
+    -- x+48 like the fps row, not the gauges' x+30: "slot 8 of 8" is 11 chars =
+    -- 44px at 4px/char and would collide there. "empty" ends at x+68, inside
+    -- the box's 74px usable width.
+    print(stat(222),x+48,y)
+end
+
 function __z8_enter_pause()
     __mask_buttons()
     -- Snapshot every piece of DRAW STATE the pause menu disturbs while
@@ -674,6 +717,7 @@ function __z8_enter_pause()
         peek4(0x5f24),                                              -- color + text cursor
         peek4(0x5f28),                                              -- camera
         peek4(0x5f31),                                              -- fill pattern
+        peek(0x5f2c),                                               -- SCREEN MODE (1 byte)
     }
     __z8_paused = true
     __z8_menu.cursor = 0
@@ -688,7 +732,7 @@ function __z8_pause_menu()
     local cursor = 0
     local is_pc = stat(145)=="pc"
     if __z8_menu.inquitmsg != nil then -- quit message asking
-        wintitle = __z8_menu.inquitmsg.l
+        wintitle = __z8_menu.inquitmsg.t or __z8_menu.inquitmsg.l
         add(entries, { l = stat(206), c = function (e) if e == 112 then __z8_menu.inquitmsg = nil return true end end })
         add(entries, { l = __z8_menu.inquitmsg.l, c = function (e) if e == 112 then __z8_menu.inquitmsg.c(112) __z8_menu.inquitmsg = nil end end })
         
@@ -697,6 +741,53 @@ function __z8_pause_menu()
         if (#entries>0) __z8_menu.quitcursor = (__z8_menu.quitcursor + #entries) % #entries
 
         cursor = __z8_menu.quitcursor
+    elseif __z8_menu.inrec then -- recording sub menu
+        -- State-aware, like OpenBOR_7533's. stat(148) is the recorder mode
+        -- registered from mister_main.cpp: 0 idle / 1 recording / 2 playing.
+        -- Record and Play both reset the cart first so the run is title-
+        -- anchored; Stop just flushes and resumes.
+        forcestay = true
+        local m = stat(148)
+        -- Say which mode you are in. OpenBOR draws a separate non-selectable
+        -- status row; this core has no such row type, so the same information
+        -- goes in the title it already shows -- same guarantee, this core's own
+        -- idiom. Before this the title read "recording" in all three modes, so
+        -- the only clue you were mid-replay was the shape of the item list.
+        wintitle = m == 1 and "recording..."
+                or (m == 2 and "replaying..." or stat(216))
+        if m == 1 then
+            add(entries, { l = stat(218), c = function (e) if e == 112 then extcmd("z8_rec_stop") __z8_menu.inrec = false end end })
+        elseif m == 2 then
+            -- NO "stop playback" ITEM. Do not add one back. A live player can
+            -- never reach this branch: pressing pause during a replay trips
+            -- take-over, the mode drops to 0, and the idle list draws instead.
+            -- Taking over IS how a live pause reaches the VM at all -- the
+            -- buttons it reads come from the RECORDED frame otherwise. An item
+            -- here is visible during a replay and can never be chosen by the
+            -- person watching it. It is not needed to end a replay either:
+            -- take-over ends it on any button, and it ends itself at the last
+            -- recorded frame. Playback is therefore the 1-item form (Back).
+        else
+            -- Slot picker: 8 bounded slots per cart, left/right, exactly like
+            -- savestates -- so no OSD file browsing is needed to reach a take.
+            -- IDLE BRANCH ONLY, so the shape a recorded run ever sees stays
+            -- small and stable -- that is what keeps injected navigation
+            -- landing on the same items on replay. Recording is 2 items,
+            -- playback 1; the counts differing there is safe, because the only
+            -- recorded input that ever selects index 0 in this submenu is the
+            -- terminal stop that ended the take, and the replay reaches its
+            -- last frame either way.
+            add(entries, { l = stat(221), c = __z8_update_slot, d = __z8_draw_slot })
+            add(entries, { l = stat(217), c = function (e) if e == 112 then extcmd("z8_rec_record") end end })
+            add(entries, { l = stat(219), c = function (e) if e == 112 then extcmd("z8_rec_play") end end })
+        end
+        add(entries, { l = stat(206), c = function (e) if e == 112 then __z8_menu.inrec = false end end })
+
+        if (btnp(2)) __z8_menu.reccursor -= 1
+        if (btnp(3)) __z8_menu.reccursor += 1
+        if (#entries>0) __z8_menu.reccursor = (__z8_menu.reccursor + #entries) % #entries
+
+        cursor = __z8_menu.reccursor
     elseif __z8_menu.inoption then -- option sub menu
         wintitle = stat(201) -- options
         forcestay = true -- option sub menu cannot close the menu
@@ -705,6 +796,7 @@ function __z8_pause_menu()
         if is_pc then
             add(entries, { l = stat(204), c = __z8_update_fullscreen, d = __z8_draw_fullscreen})
         end
+        add(entries, { l = stat(213), c = __z8_update_fps, d = __z8_draw_fps})
         -- add(entries, { l = stat(205), c = __z8_update_filter, d = __z8_draw_filter})
         add(entries, { l = stat(206), c = function (e) if e == 112 then __z8_menu.inoption = false end end })
 
@@ -721,12 +813,13 @@ function __z8_pause_menu()
             end
         end
         add(entries, { l = stat(201), c = function (e) if e == 112 then __z8_menu.inoption = true __z8_menu.optioncursor = 0 end return true end })
+        add(entries, { l = stat(216), c = function (e) if e == 112 then __z8_menu.inrec = true __z8_menu.reccursor = 0 end return true end })
         add(entries, { l = stat(208), c = function (e) if e == 112 then extcmd("reset") end end, ask = true})
         local bread = stat(100)
         if bread then
             add(entries, { l = bread, c = function (e) if e == 112 then extcmd("breadcrumb") end end, ask = true})
         end
-        add(entries, { l = stat(209), c = function (e) if e == 112 then extcmd("z8_app_requestexit") end end, ask = true})
+        add(entries, { l = stat(209), c = function (e) if e == 112 then extcmd("z8_app_requestexit") end end, ask = true, askrec = true})
 
         if (btnp(2)) __z8_menu.cursor -= 1
         if (btnp(3)) __z8_menu.cursor += 1
@@ -736,6 +829,18 @@ function __z8_pause_menu()
     end
 
     clip() camera() color() fillp()
+    -- Screen mode MUST be reset too, or the menu inherits the cart's. A cart
+    -- in mode 3 (64x64, stretched 2x) only shows coords 0..63, so this menu --
+    -- drawn at a fixed x=24..103, y~36..92 -- lands in the bottom-right of the
+    -- visible area with everything past the first entry clipped off. Reported
+    -- against Alex Kidd in Pico World, whose _init() does poke(0x5f2c,3);
+    -- affects ANY cart using a non-default screen mode. A cart that never set
+    -- one has 0 here, so this is a no-op for it.
+    -- (A9) The forced screen mode 0 that used to sit here is GONE. It fixed
+    -- the clipping by un-stretching the whole screen, so the frozen game
+    -- changed appearance the instant you paused. The menu is now composited
+    -- in display space by the C++ side instead, which leaves the game's own
+    -- screen mode alone -- so DO NOT reintroduce a mode poke here.
     -- Draw-palette-only reset for the menu's own drawing — NOT bare pal(),
     -- which would also wipe the cart's SCREEN + raster palettes every menu
     -- frame (killing menuitem palette picks and the cart's live palette).
@@ -749,25 +854,21 @@ function __z8_pause_menu()
         sy += 16
     end
     --rectfill(px - 1, py - 1, px + sx + 1, py + sy + 1, 0)
-    local palpause={0,0,0,0,0,0,1,1,0,1,1,0,0,0,0,1}
-    for y = py - 1, py + sy + 1 do
-        for x = px - 1, px + sx + 1 do
-            -- we use peek as it reads from screen memory, while pset will write to the
-            -- front buffer since we are paused
-            local v1 = peek(0x6000+flr(x/2) + 0x40 * y)
-            local v2 = x%2==0 and band(v1,0xf) or band(lshr(v1,4),0xf)
-            pset(x,y,palpause[v2%16+1])
-        end
-    end
+    -- Background darkening. This was a per-pixel Lua loop (peek + band/lshr +
+    -- pset for each of 4,182-7,462 pixels, EVERY frame the menu is open) which
+    -- cost ~25ms/frame on MiSTer's A9 and pinned the pause menu at ~40fps.
+    -- Moved into C++ as a byte-identical port -- same raw_peek, same
+    -- to_color_bits/set_pixel, same palpause LUT, same dimmed see-through look.
+    __z8_pause_darken(px - 1, py - 1, px + sx + 1, py + sy + 1)
 
     rect(px, py, px + sx, py + sy, 7)
     local bx, by = px + 5, py + 14
-    if __z8_menu.inquitmsg != nil then
-        print("this game require\na manual save\nare you sure?", px + 5, py + 8, 7)
-        by += 18
-    else
-        print(wintitle, px + sx/2 - #wintitle*2, py + 4, 7)
-    end
+    -- One heading for every dialog, including the quit confirm. That branch
+    -- used to print a hardcoded three-line manual-save warning and never
+    -- reach wintitle -- so the title set for it was dead,
+    -- and once quit began always confirming, that line claimed every cart
+    -- needs a manual save, which is usually false.
+    print(wintitle, px + sx/2 - #wintitle*2, py + 4, 7)
     for i = 1,#entries do
         local sel = cursor + 1 == i
         if (sel) pset(bx - 2, by + 2, 7)
@@ -783,6 +884,16 @@ function __z8_pause_menu()
     if btnp(5) then
         if __z8_menu.inoption then
             __z8_menu.inoption = false
+        elseif __z8_menu.inrec then
+            -- inrec was missing here, so back inside Recording fell through to
+            -- the return false below and CLOSED the pause menu. forcestay (set
+            -- for this branch) could not save it: forcestay is read at the
+            -- function's normal exit, and that return is an early one.
+            -- It also left inrec true, so the next pause opened inside this
+            -- submenu. Cursor needs no restoring -- the main-menu cursor is
+            -- untouched while a submenu is open, so it is still on "recording",
+            -- which is what OpenBOR does explicitly with pauselector = 2.
+            __z8_menu.inrec = false
         elseif __z8_menu.inquitmsg then
             __z8_menu.inquitmsg = nil
         else
@@ -795,9 +906,27 @@ function __z8_pause_menu()
         if cur.c then
             __z8_menu.in_menu_item = cursor
             if action then -- activate button
-                if stat(149) and cur.ask then -- ask before some actions
+                -- askrec asks only when there IS something to lose. Reset
+                -- Cart does not ask and neither should quit: a second press
+                -- to leave a game you are done with is friction for no gain,
+                -- and the justification for asking was always the recording.
+                -- 🛑 THE PREDICATE IS stat(148) != 0, NEVER == 1. A replay
+                -- injects presses by POSITION. Frames are only ever captured
+                -- while RECORDING (148 == 1) and replayed at 148 == 2, so the
+                -- confirm must exist in BOTH or the recorded "back" lands on
+                -- quit itself and exits to a black screen -- the exact bug
+                -- seen on hardware when this was == 1 only. Idle (0) is never
+                -- inside a take, so skipping the confirm there cannot desync.
+                -- Enforced by check C of menu_mode_parity_check.py.
+                if (stat(149) and cur.ask) or (cur.askrec and stat(148) != 0) then
                     __z8_menu.quitcursor = 0
-                    __z8_menu.inquitmsg = cur
+                    -- Say WHAT is lost. Without a title of its own the
+                    -- prompt reads just "quit", which is the one thing the
+                    -- user already knew.
+                    -- Only the TITLE varies with mode; the prompt's two rows
+                    -- never do.
+                    __z8_menu.inquitmsg = { l = cur.l, c = cur.c,
+                        t = stat(148) == 1 and "lose recording" or "are you sure" }
                 else
                     stay = cur.c(112)
                 end
