@@ -2676,12 +2676,33 @@ int main(int argc, char **argv)
                          * Unlike OpenBOR's equivalent this cannot clobber a
                          * pending marker: PICO-8's recovery read runs before
                          * this poll ever does, so nothing is left unconsumed. */
+                        /* 🛑 REFUSE, don't warn-and-continue. Record and Play
+                         * both return without arming on this identical failure,
+                         * and the reset path was fixed to do the same. Unlike
+                         * Reset this is NOT already committed -- nothing has
+                         * _exit()ed yet -- so proceeding would reload the cart,
+                         * find no marker, clamp to slot 1, and freeze adoption
+                         * for the whole replay at mode 2: the pause picker shows
+                         * 1 while the OSD shows the real slot, for the entire
+                         * run. That is the two-pickers-disagree state this work
+                         * exists to prevent, reached through the failure
+                         * branch. The probe refusal directly above already
+                         * demonstrates the pattern. */
                         if (!p8rec_save_slot_marker())
-                            fprintf(stderr, "[REC] could not carry the slot into the replay\n");
-                        if (FILE *pf = fopen("/tmp/pico8_playfile", "w")) { fprintf(pf, "%s\n", full); fclose(pf); }
-                        if (FILE *mm = fopen("/tmp/pico8_recmode",  "w")) { fprintf(mm, "PLAY\n");     fclose(mm); }
-                        if (FILE *rm = fopen("/tmp/pico8_reset_marker", "w")) fclose(rm);
-                        _exit(0);
+                        {
+                            /* Fall through WITHOUT arming, exactly as the probe
+                             * refusal above does -- the mtime baseline is already
+                             * advanced, so this does not re-fire every frame. */
+                            fprintf(stderr, "[REC] could not carry the slot -- not playing\n");
+                            NativeVideoWriter_Notice("Could not start playback", 5);
+                        }
+                        else
+                        {
+                            if (FILE *pf = fopen("/tmp/pico8_playfile", "w")) { fprintf(pf, "%s\n", full); fclose(pf); }
+                            if (FILE *mm = fopen("/tmp/pico8_recmode",  "w")) { fprintf(mm, "PLAY\n");     fclose(mm); }
+                            if (FILE *rm = fopen("/tmp/pico8_reset_marker", "w")) fclose(rm);
+                            _exit(0);
+                        }
                         }
                     }
                 }

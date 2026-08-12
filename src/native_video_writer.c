@@ -470,8 +470,12 @@ void NativeVideoWriter_Notice(const char* msg, int seconds) {
             lines++;
         }
         if (lines == 0) { nv_notice_until_ms = 0; return; }
-        nv_notice_rows = lines * (NV_GLYPH_H + 2) + 3;
-        if (nv_notice_rows > NV_FRAME_HEIGHT) nv_notice_rows = NV_FRAME_HEIGHT;
+        {   /* clamp in a LOCAL, publish once: nv_notice_rows is volatile, so a
+             * two-step store makes the unclamped value observable. */
+            int r = lines * (NV_GLYPH_H + 2) + 3;
+            if (r > NV_FRAME_HEIGHT) r = NV_FRAME_HEIGHT;
+            nv_notice_rows = r;
+        }
     }
 
     /* nv_notice_rows is set above and read by the same consumer. Order it
