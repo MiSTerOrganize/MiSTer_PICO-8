@@ -332,7 +332,23 @@ static void nv_draw_fps(volatile uint16_t* dst) {
  * Log lines are KEPT. This is the headline; the log is the detail.
  * ========================================================================== */
 static char     nv_notice_text[NV_COLS * NV_NOTICE_MAX + 1];
-static uint64_t nv_notice_until_ns = 0;
+/* 32-BIT MILLISECONDS, mirroring OpenBOR_7533. A naturally-aligned 32-bit
+ * access is single-copy atomic on ARM32; a uint64_t is not.
+ *
+ * PICO-8 is immune to the tear TODAY -- verified, not assumed: every
+ * NativeVideoWriter_Notice call site is in mister_main.cpp on the main thread,
+ * and neither audio_thread_func nor the keepalive lambda contains one. The
+ * width is here so it STAYS immune. The failure it forecloses is not subtle:
+ * a torn read lands the deadline far in the future, nv_notice_rows_now() never
+ * returns 0 again, and the top rows hold one frozen message for the rest of the
+ * session. Anyone adding a notice from a thread should not have to know that.
+ *
+ * 🛑 Not a seqlock (assumes one writer) and not __atomic_load_n on 8 bytes (can
+ * emit a libatomic call this build does not link). See the OpenBOR copy. */
+static volatile uint32_t nv_notice_until_ms = 0;   /* 0 == no notice live */
+
+/* No notice runs longer than this; anything further out cannot be real. */
+#define NV_NOTICE_MAX_MS  30000u
 
 /* THE NOTICE IS STATIC: written into each buffer ONCE and then left alone.
  *
@@ -388,9 +404,19 @@ static int nv_wrap_take(const char** p) {
 }
 
 /* 0 when no notice is live. The publisher starts its copy at this row. */
+static uint32_t nv_now_ms(void) {
+    return (uint32_t)(nv_now_ns() / 1000000ull);
+}
+
 static int nv_notice_rows_now(void) {
-    if (!nv_notice_until_ns) return 0;
-    if (nv_now_ns() >= nv_notice_until_ns) return 0;
+    const uint32_t until = nv_notice_until_ms;   /* read once */
+    int32_t rem;
+    if (!until) return 0;
+    /* SIGNED difference, not `now >= until`: wrap-correct (the time_after
+     * idiom) across the 49-day rollover of the millisecond counter. */
+    rem = (int32_t)(until - nv_now_ms());
+    if (rem <= 0) return 0;
+    if ((uint32_t)rem > NV_NOTICE_MAX_MS) return 0;   /* cannot be a real deadline */
     return nv_notice_rows;
 }
 
@@ -407,7 +433,7 @@ void NativeVideoWriter_NoticeRepaint(void) {
 }
 
 void NativeVideoWriter_Notice(const char* msg, int seconds) {
-    if (!msg) { nv_notice_until_ns = 0; return; }
+    if (!msg) { nv_notice_until_ms = 0; return; }
     size_t i = 0;
     while (msg[i] && i < sizeof(nv_notice_text) - 1) {
         char c = msg[i];
@@ -427,12 +453,20 @@ void NativeVideoWriter_Notice(const char* msg, int seconds) {
             q += take;
             lines++;
         }
-        if (lines == 0) { nv_notice_until_ns = 0; return; }
+        if (lines == 0) { nv_notice_until_ms = 0; return; }
         nv_notice_rows = lines * (NV_GLYPH_H + 2) + 3;
         if (nv_notice_rows > NV_FRAME_HEIGHT) nv_notice_rows = NV_FRAME_HEIGHT;
     }
 
-    nv_notice_until_ns = nv_now_ns() + (uint64_t)seconds * 1000000000ull;
+    /* nv_notice_rows is set above and read by the same consumer. Order it
+     * BEFORE the deadline behind a barrier, so a reader seeing a live deadline
+     * necessarily sees the height that belongs to it. */
+    __sync_synchronize();
+    {
+        uint32_t until = nv_now_ms() + (uint32_t)seconds * 1000u;
+        if (!until) until = 1u;   /* 0 is the "no notice" sentinel */
+        nv_notice_until_ms = until;
+    }
 
     /* Bump the generation LAST, behind a barrier: it is what triggers the
      * repaint, so it must change only once the text and height it refers to
