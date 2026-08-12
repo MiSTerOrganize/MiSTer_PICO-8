@@ -180,8 +180,27 @@ always @(posedge clk) begin
 		//     this pulse only fires when the pause menu publishes. Those are
 		//     mutually exclusive inputs -- one person cannot drive both at once.
 		//   - The boot config push is the one automatic multi-chunk write, and
-		//     `armed` is still low then (it waits for arm_valid, which needs the
-		//     ARM binary, spawned about a second later), so nothing pulses.
+		//     nothing pulses during it.
+		//
+		//     🛑 NOT because `armed` is still low. It was written that way here
+		//     -- "it waits for arm_valid, which needs the ARM binary, spawned
+		//     about a second later" -- and that is FALSE, and contradicted by
+		//     this same file at the top: arm_valid is set unconditionally on the
+		//     reader's first successful ctrl read, one vblank after reset, with
+		//     no ARM participation at all.
+		//
+		//     The real reason, which happens to be stronger: `last_arm_seq`
+		//     tracks UNCONDITIONALLY, so at the cycle `armed` releases the
+		//     baseline already equals arm_seq. A pulse then needs arm_seq to
+		//     CHANGE, which needs a write to DDR3 0x04 -- and only
+		//     NativeVideoWriter_PublishReplaySlot ever writes it (Init
+		//     deliberately does not). During a boot config push arm_seq is a
+		//     stable stale constant, so nothing pulses whether `armed` is high
+		//     or not.
+		//
+		//     This matters because this comment is the recorded justification
+		//     for leaving a known hazard open. Anyone re-verifying it would have
+		//     been checking the wrong claim.
 		//
 		// If a reverted OSD setting is ever reported alongside a pause-menu slot
 		// change, this is the first place to look: pass `status` in and gate the
