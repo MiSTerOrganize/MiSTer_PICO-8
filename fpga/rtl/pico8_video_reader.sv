@@ -232,6 +232,7 @@ reg  [6:0]  beat_count;
 reg         first_frame_loaded;
 reg  [4:0]  stale_vblank_count;
 reg         preloading;
+reg         ctrl_beat_owed;   // a ctrl read was abandoned; its reply is still owed
 reg  [19:0] timeout_cnt;
 
 // Audio registers (ddr_clk domain — fills DCFIFO from DDR3)
@@ -389,6 +390,7 @@ always @(posedge ddr_clk) begin
         // alone gates when the value becomes meaningful, and `armed` in the
         // UI is then belt-and-braces rather than load-bearing.
         arm_valid          <= 1'b0;
+        ctrl_beat_owed     <= 1'b0;
         prev_frame_counter <= 30'd0;
         active_buffer      <= 1'b0;
         buf_base_addr      <= 29'd0;
@@ -697,7 +699,25 @@ always @(posedge ddr_clk) begin
             end
 
             ST_WAIT_CTRL: begin
-                if (ddr_dout_ready) begin
+                // 🛑 DISCARD THE REPLY TO AN ABANDONED READ.
+                //
+                // A ctrl read given up on at TIMEOUT_MAX leaves the controller
+                // still owing a beat. Nothing cancels it, so it lands on the
+                // NEXT visit here and would be latched as this read's answer.
+                // For ctrl_word that is merely a stale frame counter; for the
+                // ARM slot it is worse -- last_arm_seq is registered, so a
+                // one-off garbage arm_seq reads as a real publish and pushes a
+                // garbage slot into BOTH pickers, which is precisely the class
+                // of silent disagreement replay_slot_ui exists to prevent.
+                //
+                // Only ever one beat is owed: this read is burstcnt 1. If the
+                // owed beat never arrives, the timeout below simply retries a
+                // poll later (~1 s) -- self-limiting either way.
+                if (ddr_dout_ready && ctrl_beat_owed) begin
+                    ctrl_beat_owed <= 1'b0;
+                    timeout_cnt    <= 20'd0;   // keep waiting for the real reply
+                end
+                else if (ddr_dout_ready) begin
                     ctrl_word   <= ddr_dout[31:0];
                     // The ARM publishes its pause-menu replay slot in the
                     // spare upper half of this same qword, so it arrives for
@@ -712,8 +732,11 @@ always @(posedge ddr_clk) begin
                     timeout_cnt <= 20'd0;
                     state       <= ST_CHECK_CTRL;
                 end
-                else if (timeout_cnt == TIMEOUT_MAX)
-                    state <= ST_IDLE;
+                else if (timeout_cnt == TIMEOUT_MAX) begin
+                    // Abandoning: the controller still owes this read's beat.
+                    ctrl_beat_owed <= 1'b1;
+                    state          <= ST_IDLE;
+                end
                 else
                     timeout_cnt <= timeout_cnt + 20'd1;
             end

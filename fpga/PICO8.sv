@@ -291,6 +291,46 @@ wire  [2:0] nv_arm_slot;
 wire  [7:0] nv_arm_seq;
 wire        nv_arm_valid;
 
+// SERIALISE THE TWO WRITE-BACK REQUESTS. hps_io EDGE-detects status_set, so
+// `ss_statusUpdate | rs_statusUpdate` loses one of them whenever the two pulse
+// on ADJACENT cycles: the OR never falls between, hps_io sees a single rise,
+// and the second request is silently dropped.
+//
+// That is not merely a lost duplicate. status_in is sampled at the edge, and
+// the two slots update on their own cycles -- so the surviving pulse can
+// capture the OTHER picker's PRE-update value and write the stale one back,
+// which then reads as the OSD reverting a slot the user just moved.
+//
+// This queues each request and emits them as distinct pulses with a guaranteed
+// low cycle between, so hps_io sees two rises. Since status_in always carries
+// the CURRENT ss_slot and rs_slot, the later pulse necessarily writes both
+// settled values.
+//
+// OpenBOR needs none of this: it has a single write-back source.
+reg ss_pend       = 1'b0;
+reg rs_pend       = 1'b0;
+reg status_set_q  = 1'b0;
+always @(posedge clk_sys) begin
+	status_set_q <= 1'b0;                 // default low: forces the gap
+	if (!status_set_q) begin              // only start a pulse from a low cycle
+		if (ss_pend) begin
+			status_set_q <= 1'b1;
+			ss_pend      <= 1'b0;
+		end
+		else if (rs_pend) begin
+			status_set_q <= 1'b1;
+			rs_pend      <= 1'b0;
+		end
+	end
+
+	// 🛑 CAPTURE LAST. Last assignment wins in a single always block, so a
+	// request arriving on the very cycle its own pending bit is being dequeued
+	// must be written AFTER the dequeue or it is silently swallowed -- which
+	// would drop exactly the back-to-back case this exists to fix.
+	if (ss_statusUpdate) ss_pend <= 1'b1;
+	if (rs_statusUpdate) rs_pend <= 1'b1;
+end
+
 hps_io #(.CONF_STR(CONF_STR), .VDNUM(2)) hps_io
 (
 	.clk_sys(clk_sys),
@@ -303,7 +343,7 @@ hps_io #(.CONF_STR(CONF_STR), .VDNUM(2)) hps_io
 	// disturbs a setting the core does not own.
 	//   96 + 10 + 2 + 16 + 3 + 1 == 128
 	.status_in({96'd0, status[31:22], ss_slot, status[19:4], rs_slot, status[0]}),
-	.status_set(ss_statusUpdate | rs_statusUpdate),
+	.status_set(status_set_q),   // serialised above; a bare OR loses adjacent pulses
 	.status_menumask(cfg),
 	.info_req(ss_info_req),
 	.info(ss_info),

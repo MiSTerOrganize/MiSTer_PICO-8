@@ -158,6 +158,29 @@ always @(posedge clk) begin
 		// Checked SECOND so that if both move on the same cycle the ARM wins:
 		// it is the side that just acted on a real button press, whereas the
 		// OSD value is whatever was already sitting in the status word.
+		//
+		// 🛑 THIS BRANCH HAS NO IMMUNITY TO THE HALF-WRITTEN-STATUS HAZARD.
+		// The note on the OSD branch above explains why pulsing there is
+		// harmful; removing it there did NOT retire the hazard, and this
+		// comment used to read as though it had. The pulse below can still land
+		// mid-push and capture status_in with the high half pre-push.
+		//
+		// It is left as-is deliberately, because the window is not reachable in
+		// practice and the module cannot close it by itself:
+		//   - This module only sees status_slot and OSD_play, never the full
+		//     status word, so it cannot detect that a push is in flight. A
+		//     settled-detector would mean passing `status` in and widening the
+		//     interface on both cores.
+		//   - A push only happens when the user changes an OSD setting, and
+		//     this pulse only fires when the pause menu publishes. Those are
+		//     mutually exclusive inputs -- one person cannot drive both at once.
+		//   - The boot config push is the one automatic multi-chunk write, and
+		//     `armed` is still low then (it waits for arm_valid, which needs the
+		//     ARM binary, spawned about a second later), so nothing pulses.
+		//
+		// If a reverted OSD setting is ever reported alongside a pause-menu slot
+		// change, this is the first place to look: pass `status` in and gate the
+		// pulse on it having been stable for a few cycles.
 		if (!armed) begin
 			armed <= arm_valid;
 		end
