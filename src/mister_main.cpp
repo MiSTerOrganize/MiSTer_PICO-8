@@ -2664,6 +2664,20 @@ int main(int argc, char **argv)
                         }
                         else
                         {
+                        /* Carry the slot across the respawn. PICO-8 normally
+                         * persists it at ADOPTION, which covers an OSD move --
+                         * but a slot moved ONLY in the pause menu never triggers
+                         * adoption (the pub-fresh poll is consumed, and the next
+                         * one finds rslot already equal), so nothing had written
+                         * the marker. After this respawn the recovery block
+                         * found none, the slot clamped to 1, and adoption is
+                         * frozen for the whole replay at mode 2.
+                         *
+                         * Unlike OpenBOR's equivalent this cannot clobber a
+                         * pending marker: PICO-8's recovery read runs before
+                         * this poll ever does, so nothing is left unconsumed. */
+                        if (!p8rec_save_slot_marker())
+                            fprintf(stderr, "[REC] could not carry the slot into the replay\n");
                         if (FILE *pf = fopen("/tmp/pico8_playfile", "w")) { fprintf(pf, "%s\n", full); fclose(pf); }
                         if (FILE *mm = fopen("/tmp/pico8_recmode",  "w")) { fprintf(mm, "PLAY\n");     fclose(mm); }
                         if (FILE *rm = fopen("/tmp/pico8_reset_marker", "w")) fclose(rm);
