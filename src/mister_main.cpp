@@ -2674,6 +2674,20 @@ int main(int argc, char **argv)
                  * words here as there instead of resetting the cart to find
                  * out. Refusals stay put; only a valid take resets. */
                 {
+                    /* 🛑 A Play pressed during the ~1-2 s respawn window is
+                     * DISCARDED, deliberately and silently -- stated here
+                     * because from the outside it looks like a dropped press.
+                     *
+                     * Record and Play both _exit() and let Master_Daemon
+                     * respawn us, so briefly nothing reads 0x0C while the FPGA
+                     * keeps counting presses. On restart rs_primed is false and
+                     * we adopt whatever rs_seq reached as the baseline.
+                     *
+                     * Queuing would be worse: the press that armed THIS respawn
+                     * is the one still echoing, so honouring it would restart
+                     * the cart again as soon as it loaded, and a Play queued
+                     * behind a Record arm would discard the take just started.
+                     * Nothing survives the exit to report against either. */
                     static bool     rs_primed = false;
                     static unsigned rs_last_seq = 0;
                     uint32_t rw    = NativeVideoWriter_ReadReplay();
