@@ -310,7 +310,7 @@ end
 //           the same slot as a NEW event rather than as no change.
 reg  [1:0] rs_cmd_lat;
 reg  [2:0] rs_slot_lat;
-reg  [7:0] rs_seq;
+reg  [7:0] rs_seq = 8'd0;   // NOT reset -- see the reset branch below
 
 always @(posedge ddr_clk) begin
     // rs_slot_lat tracks the CURRENT slot every cycle, unconditionally. That
@@ -329,7 +329,21 @@ always @(posedge ddr_clk) begin
     if (reset) begin
         rs_cmd_lat  <= 2'd0;
         rs_slot_lat <= 3'd0;
-        rs_seq      <= 8'd0;
+        // 🛑 rs_seq is deliberately NOT reset, for the same reason arm_seq is
+        // not reset further up this file: the ARM keeps its own copy of the
+        // sequence and does NOT restart when the core does.
+        //
+        // Zeroing it here made the first Play after a core reset land on
+        // rs_seq == 1 while the ARM's rs_last_seq still held whatever it had
+        // reached before -- so that Play was DROPPED whenever the two happened
+        // to coincide, 1 time in 256, and the button simply did nothing.
+        // (It cannot fire a SPURIOUS play instead: rs_cmd_lat above still
+        // resets to 0, and the ARM requires cmd == 1 as well as a seq change.)
+        //
+        // Letting the counter free-run removes the transition entirely: every
+        // press changes the value the ARM last saw, whether or not a reset
+        // happened in between. Wrapping is harmless -- only inequality is
+        // tested, never ordering.
     end
     else if (rs_play) begin
         rs_cmd_lat  <= 2'd1;
