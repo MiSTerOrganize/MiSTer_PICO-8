@@ -1112,9 +1112,15 @@ static bool p8rec_load(std::string const &cart_path,
             NativeVideoWriter_Notice("Made by a newer core - update to play it", 6);
         else
             NativeVideoWriter_Notice("Recorded by an older core - re-record it", 6);
-        /* No p8rec_reset() here: it is defined further down, and every other
-         * refusal in this function just returns false -- the caller owns the
-         * teardown. */
+        /* No p8rec_reset() here: it is defined further down, and the caller
+         * owns that teardown.
+         *
+         * The FILE* is a different matter and this comment used to cover for
+         * it: `f` is opened in this function and is not visible to the caller,
+         * so nothing else can close it. The sibling cart-mismatch refusal above
+         * closes it; this branch did not, leaking a descriptor on every
+         * version-mismatched take the user tries. */
+        fclose(f);
         return false;
     }
 
@@ -1977,6 +1983,12 @@ int main(int argc, char **argv)
                 NativeVideoWriter_Notice("Could not start playback", 5);
                 return;
             }
+            /* A SLOT play is defined by the slot marker alone. Clear any
+             * playfile first: the PLAY branch in the next process consumes one
+             * unconditionally and lets it OVERRIDE the slot, so a leftover from
+             * an OSD pick that never completed would silently open a different
+             * take than the one this row shows. */
+            unlink("/tmp/pico8_playfile");
             FILE *m = fopen("/tmp/pico8_recmode", "w");
             if (m) { fputs("PLAY", m); fclose(m); }
             FILE *r = fopen("/tmp/pico8_reset_marker", "w");
@@ -2755,10 +2767,23 @@ int main(int argc, char **argv)
                             {
                                 /* Refused: it has already said why on screen.
                                  * Fall through and keep playing -- do NOT reset.
-                                 * The slot is deliberately NOT moved here, so a
-                                 * refusal leaves both pickers where they were --
-                                 * matching OpenBOR, which only commits the slot
-                                 * once every check has passed. */
+                                 *
+                                 * This branch does not commit `want`, matching
+                                 * OpenBOR, which only commits once every check
+                                 * has passed.
+                                 *
+                                 * 🛑 That is NOT the same as "a refusal leaves
+                                 * both pickers where they were", which is what
+                                 * this comment used to claim. The adoption
+                                 * branch above has usually ALREADY moved
+                                 * g_rec_slot on this very poll -- whenever
+                                 * mode==0 and the pub-fresh skip was not taken,
+                                 * which is the ordinary case of moving the OSD
+                                 * picker and then pressing Play. Adopting there
+                                 * is correct (the OSD is the side that moved),
+                                 * so the behaviour is right; only the claim was
+                                 * wrong. The freeze this describes really only
+                                 * bites at mode==2 or on a skipped poll. */
                                 fprintf(stderr, "[REC] OSD replay refused: %s\n", why);
                                 NativeVideoWriter_Notice(why, 6);
                             }
@@ -2775,6 +2800,10 @@ int main(int argc, char **argv)
                                 }
                                 else
                                 {
+                                /* Same as the pause-menu arm: a SLOT play must
+                                 * not inherit a stale playfile, which the PLAY
+                                 * branch would honour over the slot. */
+                                unlink("/tmp/pico8_playfile");
                                 if (FILE *mm = fopen("/tmp/pico8_recmode", "w"))
                                 { fprintf(mm, "PLAY\n"); fclose(mm); }
                                 if (FILE *rm = fopen("/tmp/pico8_reset_marker", "w")) fclose(rm);
