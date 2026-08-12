@@ -2739,8 +2739,25 @@ int main(int argc, char **argv)
                         g_rec_slot = rslot;
                         /* The slot has to survive the reset: Play and Record
                          * both respawn the process, so a choice held only in
-                         * memory dies with it. */
-                        p8rec_save_slot_marker();
+                         * memory dies with it.
+                         *
+                         * This is the ONE of five call sites that does not
+                         * refuse on failure, and that is deliberate rather than
+                         * an oversight: the other four are ARMING, where an
+                         * unwritten marker means the next process resolves to
+                         * slot 1 and records or plays the WRONG take. Adoption
+                         * arms nothing -- g_rec_slot above is already correct
+                         * in memory, and whichever arm path runs next writes
+                         * the marker itself and checks it there. Refusing here
+                         * would throw away a correct adoption to prevent
+                         * nothing.
+                         *
+                         * It must still be VISIBLE, though. Ignoring the result
+                         * outright meant a failing /tmp produced no trace at
+                         * all until something later behaved oddly. */
+                        if (!p8rec_save_slot_marker())
+                            fprintf(stderr, "[REC] could not persist the OSD slot"
+                                            " (arming will retry and report)\n");
                       }
 
                         if (rcmd == 1u && rseq != rs_last_seq) {
