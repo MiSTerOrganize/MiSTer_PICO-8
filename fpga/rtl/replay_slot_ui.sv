@@ -121,10 +121,15 @@ always @(posedge clk) begin
 	old_play       <= OSD_play;
 
 	if (reset) begin
-		// The reader resets arm_seq to 0 on this same edge. Without dropping
-		// `armed` here, last_arm_seq would still hold the pre-reset value and
-		// the release of reset would read as an ARM move to slot 0 -- which
-		// snapped the user's OSD slot to 1 on every reset.
+		// The reader clears arm_valid on reset, so drop `armed` with it and
+		// re-baseline off the next arm_valid.
+		//
+		// 🛑 This comment used to say "the reader resets arm_seq to 0 on this
+		// same edge", which F2 made false -- arm_seq/arm_slot are no longer
+		// reset at all, precisely so there is no transition for two modules on
+		// one asynchronous reset to disagree about. Dropping `armed` is still
+		// correct, but it is now belt-and-braces rather than load-bearing: the
+		// baseline is re-established by arm_valid either way.
 		armed <= 1'b0;
 
 		// `slot` is deliberately NOT reset. It holds the user's chosen slot,

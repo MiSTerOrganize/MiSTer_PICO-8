@@ -378,7 +378,20 @@ static volatile uint32_t nv_notice_until_ms = 0;   /* 0 == no notice live */
  * while a frame is mid-publish cannot mark the NEW message as already painted
  * and leave the OLD one on screen for its full duration. A stale generation
  * cannot match, so the next frame repaints. Generation 0 means "no notice". */
-static int nv_notice_rows = 0;
+/* 🛑 volatile, and PAIRED with nv_notice_until_ms below.
+ *
+ * These two are written together by the swap thread and read together by
+ * the engine thread every frame. Making only the deadline volatile left the
+ * height as a plain load the compiler may cache (-flto) and the CPU may
+ * reorder on weakly-ordered ARM32 -- so the reader could pair the NEW
+ * deadline with the PREVIOUS message's height, skipping the wrong number of
+ * rows: stale pixels below the band, or a black strip the paint never
+ * covers. That is the artifact class the static-notice design exists to
+ * eliminate.
+ *
+ * The writer's __sync_synchronize() is a release; without the acquire in
+ * nv_notice_rows_now() it guarantees nothing to the reader. */
+static volatile int nv_notice_rows = 0;
 static volatile unsigned nv_notice_gen = 0;
 static unsigned nv_notice_painted_gen[2] = { 0, 0 };
 
@@ -417,6 +430,9 @@ static int nv_notice_rows_now(void) {
     rem = (int32_t)(until - nv_now_ms());
     if (rem <= 0) return 0;
     if ((uint32_t)rem > NV_NOTICE_MAX_MS) return 0;   /* cannot be a real deadline */
+    /* ACQUIRE side of the writer's release. Ordered AFTER the deadline read, so
+     * a live deadline implies the height published with it. */
+    __sync_synchronize();
     return nv_notice_rows;
 }
 

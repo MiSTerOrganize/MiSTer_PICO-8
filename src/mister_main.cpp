@@ -1917,20 +1917,32 @@ int main(int argc, char **argv)
          * so the respawn re-mounts the same cart). */
         g_vm->add_extcmd("reset", [](std::string const &) {
             if (g_rec_mode == 1) {
-                FILE *m = fopen("/tmp/pico8_recmode", "w");
-                if (m) { fputs("REC", m); fclose(m); }
-                /* Carry the slot, exactly as Record and Play do. Without this the
-                 * re-armed take fell back to the default, so Stop wrote a slot
-                 * the user never chose -- destroying whatever was in it, and then
-                 * Play read a third slot and replayed someone else's take. Both
-                 * cores had it; reported on hardware 2026-08-07. */
-                /* One writer for this marker, so a failure is reported the same
-                 * way everywhere. Cannot refuse here -- the reset is already
-                 * committed -- so warn loudly instead. */
-                if (!p8rec_save_slot_marker())
-                    fprintf(stderr, "[REC] WARNING: could not carry the slot across the reset\n");
-                fprintf(stderr, "[REC] reset while recording -- restarting the take"
-                                " in slot %d\n", g_rec_slot);
+                /* 🛑 SLOT FIRST, AND CHECKED, THEN recmode.
+                 *
+                 * Carry the slot, exactly as Record and Play do. Without this
+                 * the re-armed take fell back to the default, so Stop wrote a
+                 * slot the user never chose -- destroying whatever was in it,
+                 * and then Play read a third slot and replayed someone else's
+                 * take. Both cores had it; reported on hardware 2026-08-07.
+                 *
+                 * The ORDER is the other half, and this core was left on the
+                 * old one. Writing /tmp/pico8_recmode first meant a FAILED slot
+                 * write still re-armed the recorder: the respawn then found no
+                 * readable marker, p8rec_slot_now() clamped to 1, and Stop
+                 * overwrote slot 1's take while the user believed they were on
+                 * slot 5. Reset cannot refuse -- it is already committed -- but
+                 * it must not re-arm against a slot nobody knows. Come up idle
+                 * instead. (OpenBOR was fixed this way in 10deadc; this is the
+                 * matching half.) */
+                if (!p8rec_save_slot_marker()) {
+                    fprintf(stderr, "[REC] could not carry the slot -- resetting"
+                                    " WITHOUT re-arming\n");
+                } else {
+                    FILE *m = fopen("/tmp/pico8_recmode", "w");
+                    if (m) { fputs("REC", m); fclose(m); }
+                    fprintf(stderr, "[REC] reset while recording -- restarting the take"
+                                    " in slot %d\n", g_rec_slot);
+                }
             } else if (g_rec_mode == 2) {
                 fprintf(stderr, "[REC] reset during playback -- playback ended\n");
             }
