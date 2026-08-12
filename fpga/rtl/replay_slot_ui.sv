@@ -88,12 +88,35 @@ always @(posedge clk) begin
 	rs_play      <= 1'b0;
 	statusUpdate <= 1'b0;
 
-	// Track the previous sample of everything we edge-detect, EVERY cycle --
-	// including while unarmed and while in reset. That is what makes the
-	// baseline self-maintaining: whatever arm_seq is when we start caring, it
-	// is already sitting in last_arm_seq, so starting to care cannot itself
-	// look like a change.
-	lastOSDsetting <= status_slot;
+	// ---------------------------------------------------------------------
+	// 🛑 THESE THREE TRACKERS HAVE THREE DIFFERENT CORRECT PLACEMENTS.
+	// They look like a group. They are not a group. Collapsing them -- in
+	// either direction -- silently reintroduces a bug that has already
+	// shipped once each:
+	//
+	//   last_arm_seq  UNCONDITIONAL. Moving it into the else re-opens the
+	//                 stale-DDR3 adoption: arm_seq only becomes real at the
+	//                 reader's first ctrl read, and if the baseline is not
+	//                 already tracking by then, that first sample reads as a
+	//                 command and rewrites the user's saved OSD slot.
+	//
+	//   old_play      UNCONDITIONAL. Tracking it through reset is what stops
+	//                 a persisted status[9] toggle in a boot config push
+	//                 firing a spurious Play. This is a FEATURE of the reset
+	//                 branch, not an oversight.
+	//
+	//   lastOSDsetting  INSIDE THE ELSE. Unconditional, it advances during
+	//                 reset while its consumer (the adopt below) is skipped,
+	//                 so an OSD slot change landing in the reset window is
+	//                 SWALLOWED -- the tracker catches up, the value is never
+	//                 applied, and nothing re-reads status_slot unless the
+	//                 user moves it AGAIN. The two pickers then disagree
+	//                 permanently, which is the one thing this module exists
+	//                 to prevent. Freezing the tracker instead preserves the
+	//                 difference so it is adopted on reset release.
+	//
+	// Do not "make them consistent".
+	// ---------------------------------------------------------------------
 	last_arm_seq   <= arm_seq;
 	old_play       <= OSD_play;
 
@@ -109,6 +132,11 @@ always @(posedge clk) begin
 		// here would be indistinguishable from a real move to Slot 1.
 	end
 	else begin
+		// Frozen during reset -- see the placement note above. This is the
+		// tracker whose consumer is inside this same else, so the two must
+		// be gated together or a change lands in the gap and is lost.
+		lastOSDsetting <= status_slot;
+
 		// The OSD picker moved.
 		//
 		// No statusUpdate on this branch, deliberately. It would be pure

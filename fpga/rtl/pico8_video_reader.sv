@@ -379,8 +379,15 @@ always @(posedge ddr_clk) begin
         ddr_burstcnt       <= 8'd1;
         ddr_addr           <= 29'd0;
         ctrl_word          <= 32'd0;
-        arm_slot           <= 3'd0;
-        arm_seq            <= 8'd0;
+        // 🛑 arm_slot/arm_seq are deliberately NOT reset. Zeroing them made
+        // reset itself produce a spurious arm_seq transition, which
+        // replay_slot_ui then had to defend against by dropping `armed` on
+        // the same edge -- coupling two modules to one ASYNCHRONOUS,
+        // unsynchronised reset. If either observed an edge the other missed,
+        // the adopt-garbage-slot bug came straight back. Leaving them alone
+        // removes the transition, so there is nothing to race: arm_valid
+        // alone gates when the value becomes meaningful, and `armed` in the
+        // UI is then belt-and-braces rather than load-bearing.
         arm_valid          <= 1'b0;
         prev_frame_counter <= 30'd0;
         active_buffer      <= 1'b0;
