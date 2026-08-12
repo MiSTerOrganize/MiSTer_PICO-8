@@ -84,7 +84,7 @@ Extract the release zip to the root of your MiSTer SD card (`/media/fat/`):
 | Logs (`/media/fat/logs/PICO-8/pico8.log`) | ✅ |
 | Configs (`/media/fat/config/`) | ✅ |
 | MGLs (`_Other/*.mgl` one-click launchers) | ✅ |
-| Gameplay Recordings / TAS | ✅ `.inp` recordings — the pause menu **or** the MiSTer OSD ("Replay Slot" + "Play Replay"), plus "Load Replay" for a file someone sent you; deterministic, hands-free, press any button to take over (see [Recording & Replay](#recording--replay)) |
+| Gameplay Recordings / TAS | ✅ `.inp` recordings — 8 slots per cart, reachable from the pause menu **or** the MiSTer OSD ("Replay Slot" + "Play Replay"), plus "Load Replay" for a file someone sent you; deterministic, hands-free, press any button to take over (see [Recording & Replay](#recording--replay)) |
 | Gamepad | ✅ |
 | Keyboard | ✅ (cart browser; blocked when gamepad connected) |
 | Mouse | ❌ no (PICO-8 spec exists but zepto8 hasn't wired `stat(32,33,34)`) |
@@ -214,9 +214,16 @@ is logged) — just press any button to take over.
 
 **From the MiSTer OSD** (a second way to reach the same eight slots):
 
-- **Replay Slot** — pick 1-8. This is the *same* slot the pause menu shows: move
-  it in either place and the other follows, so the two can never disagree about
-  which slot you are on.
+- **Replay Slot** — pick 1-8. This is the *same* slot the pause menu shows:
+  move it in either place and the other follows, so you are never picking a
+  slot in one place and recording to another.
+
+  One deliberate exception: **while a recording or replay is running, the slot
+  stops following.** Whatever slot the take started on stays its target until it
+  ends, so that moving the picker mid-take cannot silently retarget Stop onto a
+  different slot and overwrite the recording sitting there. The OSD picker will
+  still move while you turn it — it just is not the live target until the take
+  finishes.
 - **Play Replay** — plays that slot. The cart restarts and the recording runs
   hands-free (press any button to take over). If the slot is empty it says so
   and leaves your game alone, rather than restarting the cart to tell you.
