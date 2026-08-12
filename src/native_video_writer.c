@@ -610,7 +610,21 @@ void NativeVideoWriter_WriteFrame(const void* rgba8_pixels, int width, int heigh
      * notice, drawn once, and copying cart pixels over them every frame is
      * precisely what made the notice flicker. The copy is a flat run over the
      * whole frame here (no per-row loop, since the FPGA does the 2x/1.75x
-     * scaling), so the band is simply the first nv_top*WIDTH pixels. */
+     * scaling), so the band is simply the first nv_top*WIDTH pixels.
+     *
+     * 🛑 This evaluates the expiry independently of nv_draw_overlays() below,
+     * and that is DELIBERATE -- do not "fix" it into a single hoisted read.
+     * OpenBOR carries the identical shape and the same adjudication (see the
+     * note at the end of its NativeVideoWriter_DrawOverlaysAt): whichever way
+     * the copy and the overlay straddle the expiry instant is benign -- one
+     * frame keeps the band a moment longer, or loses it a moment early, and
+     * neither shows stale or half-written pixels. It is recorded here because
+     * an audit re-raised it as a PICO-8-only divergence, which it is not.
+     *
+     * The "read ONCE per frame" rule next to OpenBOR's copy is a DIFFERENT
+     * case and still holds: there, two COPY paths write an intermediate and
+     * read it back, so disagreeing within a frame leaves a band of last
+     * frame's averaged pixels. That one is not benign. This one is. */
     int total_pixels = NV_FRAME_WIDTH * NV_FRAME_HEIGHT;
     int first_pixel  = nv_notice_rows_now() * NV_FRAME_WIDTH;
     for (int i = first_pixel; i < total_pixels; i++) {
