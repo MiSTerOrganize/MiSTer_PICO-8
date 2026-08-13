@@ -6,6 +6,10 @@
 # That exception is enforced by check C, not by trust.
 # Regenerate with --update-baseline, and say in the commit
 # message which answer each new site got.
+elseif m == 2 then
 if (stat(149) and cur.ask) or (cur.askrec and stat(148) != 0) then
+if m == 1 then
 local m = stat(148)
+or (m == 2 and "replaying..." or stat(216))
 t = stat(148) == 1 and "lose recording" or "are you sure" }
+wintitle = m == 1 and "recording..."

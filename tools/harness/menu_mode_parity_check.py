@@ -77,7 +77,17 @@ CORES = {
     },
     "pico8": {
         "file": "src/pico8/bios.p8",
+        # 🛑 The GLOBAL alone is not the symbol set. OpenBOR says so above --
+        # grepping only mrec_mode "would miss every branch that matters and
+        # give a check that passes vacuously" -- and this core had precisely
+        # that miss: bios.p8 does `local m = stat(148)` and then branches on
+        # `m`, so check B reviewed 3 sites here against OpenBOR's 12.
+        #
+        # `m` cannot be listed literally (one letter matches everything), so
+        # alias_of names the assignment to resolve; the local is then matched
+        # on word boundaries only.
         "symbols": ["stat(148)"],
+        "alias_of": r"local\s+(\w+)\s*=\s*stat\(148\)",
         "ignore": [],
         "comment": ("--",),
         "confirm_anchor": "cur.askrec",
@@ -95,14 +105,29 @@ def detect():
 
 
 def conditional_sites(path, cfg):
-    """Every non-comment line mentioning a mode symbol, normalized."""
+    """Every non-comment line mentioning a mode symbol, normalized.
+
+    Resolves a LOCAL ALIAS first (cfg["alias_of"]). A core that copies the
+    mode into a local and then branches on the local is invisible to a
+    global-only symbol list -- which is not hypothetical: PICO-8 does
+    `local m = stat(148)` and reviewed 3 sites where OpenBOR reviewed 12.
+    """
+    src = open(path, encoding="utf-8", errors="replace").read()
+    syms = list(cfg["symbols"])
+    alias_re = cfg.get("alias_of")
+    aliases = sorted(set(re.findall(alias_re, src))) if alias_re else []
     out = []
-    for i, raw in enumerate(open(path, encoding="utf-8",
-                                 errors="replace").read().splitlines(), 1):
+    for i, raw in enumerate(src.splitlines(), 1):
         st = raw.strip()
         if not st or st.startswith(cfg["comment"]):
             continue
-        if not any(sym in st for sym in cfg["symbols"]):
+        hit = any(sym in st for sym in syms)
+        if not hit and aliases:
+            # word boundaries: a one-letter local would otherwise match
+            # every line in the file
+            hit = any(re.search(r"\b" + re.escape(a) + r"\b", st)
+                      for a in aliases)
+        if not hit:
             continue
         if any(ig in st for ig in cfg["ignore"]):
             continue
@@ -153,6 +178,20 @@ def rows_pico8(src):
     idle = seg[marks[2][0] + marks[2][1]:marks[3][0]]
     common = seg[marks[3][0] + marks[3][1]:]
 
+    # 🛑 This count is TEXT, not structure, and that is a known limit worth
+    # stating rather than hiding. It cannot see a row added by any other
+    # form, so refuse outright if one appears instead of silently
+    # undercounting -- an undercount reads as "shape unchanged".
+    for _alt in ("entries[#entries", "insert(entries", "addall(entries"):
+        if _alt in seg:
+            raise SystemExit(
+                "menu_mode_parity_check: rows are added by %r as well as\n"
+                "  add(entries, ...), so the per-branch count is not the row\n"
+                "  count and check A is measuring the wrong thing. Teach this\n"
+                "  function the new form before trusting the result." % _alt)
+    # A row wrapped in a mode conditional keeps this count while changing the
+    # SHAPE -- that is F8, and it is caught by check B, which now sees the
+    # local alias (F7) and flags the new conditional as an unreviewed site.
     c = common.count("add(entries,")
     return {"recording": rec.count("add(entries,") + c,
             "playing": play.count("add(entries,") + c,
@@ -262,9 +301,27 @@ def main():
         print("         is measuring nothing.")
         fail += 1
     else:
+        # 🛑 EVALUATE the predicate; do not pattern-match its spelling. The
+        # denylist here knew ==, != and ~= only, so `mrec_mode > 1` sailed
+        # through -- playback-only, the exact MIRROR of the defect that
+        # shipped. So did >= 2, < 2 and <= 1.
+        #
+        # The real rule is one sentence: the gate must not be able to tell
+        # mode 1 from mode 2. A take is CAPTURED at 1 and REPLAYED at 2, so
+        # any predicate that separates them shows a different menu on each
+        # side of a replay, and injected navigation lands on a different row.
+        # Comparing against 0 is fine and is the sanctioned form.
         sym = re.escape(cfg["confirm_sym"])
-        bad = re.search(sym + r"\s*(==\s*-?\d+|!=\s*-?[1-9]\d*|~=\s*-?[1-9]\d*)",
-                        gate)
+        bad = None
+        for _m in re.finditer(sym + r"\s*(==|!=|~=|>=|<=|>|<)\s*(-?\d+)", gate):
+            _op, _n = _m.group(1), int(_m.group(2))
+            _f = {"==": lambda v: v == _n, "!=": lambda v: v != _n,
+                  "~=": lambda v: v != _n, ">=": lambda v: v >= _n,
+                  "<=": lambda v: v <= _n, ">": lambda v: v > _n,
+                  "<": lambda v: v < _n}[_op]
+            if _f(1) != _f(2):        # separates recording from playback
+                bad = _m
+                break
         if bad:
             print("FAIL  C  quit confirm is gated on a SPECIFIC mode: %s"
                   % bad.group(0))
