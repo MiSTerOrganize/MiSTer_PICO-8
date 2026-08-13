@@ -453,9 +453,30 @@ static bool p8snap_read(FILE *f, std::vector<P8SnapFile> &v)
         /* These files now arrive from OTHER PEOPLE, so the name is untrusted.
          *
          * Bare filename only -- never a path -- so nothing can be written
-         * outside the scratch. Embedded NULs are handled: nm is length-counted,
-         * so find() scans all nl bytes, and the later c_str() truncation can
-         * only shorten a name, never re-introduce a separator.
+         * outside the scratch.
+         *
+         * 🛑 AN EMBEDDED NUL IS REFUSED OUTRIGHT, and the reasoning that used to
+         * stand here is why. It said: "nm is length-counted, so find() scans all
+         * nl bytes, and the later c_str() truncation can only shorten a name,
+         * never re-introduce a separator." Both halves are true and the
+         * conclusion was still wrong, because it only considered the SEPARATOR
+         * check. Truncation cannot add a '/', but it CAN cut away the required
+         * extension -- which is the whole point of the whitelist below.
+         *
+         * The exploit, measured against this code: an entry named
+         * "mygame.p8\0.p8d.txt" (nl = 18) has size() 18 and its last 8 BYTES are
+         * ".p8d.txt", so every test below passes. p8snap_to_dir then builds the
+         * path and calls .c_str(), which stops at the NUL, and the attacker's
+         * blob lands as .scratch/mygame.p8 -- exactly the cstore overlay this
+         * whitelist exists to stop. Z8_SAVES_DIR points at the scratch,
+         * get_path_cstore resolves <basename>.p8 inside it, and load_cart
+         * splices the ROM over the real cart before the first frame.
+         *
+         * The defect is a SEMANTIC MISMATCH: validated with length-counted
+         * std::string semantics, used with NUL-terminated C semantics. Refusing
+         * the NUL makes the two agree by construction, which is how OpenBOR's
+         * extractor is immune -- it NUL-terminates first, then checks with
+         * strrchr/strcasecmp, so check and use share one view of the string.
          *
          * AND the extension must be .p8d.txt. A snapshot carries CARTDATA. The
          * bare-name check alone accepted an entry called <cart>.p8 -- which is
@@ -474,6 +495,7 @@ static bool p8snap_read(FILE *f, std::vector<P8SnapFile> &v)
         size_t extlen = strlen(SNAP_EXT);
         if (nm.empty() || nm.find('/') != std::string::npos
                        || nm.find('\\') != std::string::npos
+                       || nm.find('\0') != std::string::npos   /* see above */
                        || nm == "." || nm == ".."
                        || nm.size() <= extlen
                        || nm.compare(nm.size() - extlen, extlen, SNAP_EXT) != 0)

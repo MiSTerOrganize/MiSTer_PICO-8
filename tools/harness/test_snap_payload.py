@@ -149,6 +149,19 @@ def main():
             ("wrong extension .txt", "mygame.txt"),
             ("shell script", "evil.sh"),
             ("no extension", "mygame"),
+            # 🛑 THE SEMANTIC-MISMATCH CASE. Validated with length-counted
+            # std::string semantics, used with NUL-terminated C semantics via
+            # .c_str(). "mygame.p8\0.p8d.txt" has size() 18 and its last EIGHT
+            # BYTES are ".p8d.txt", so every check above it passes -- and then
+            # the write truncates at the NUL and lands the attacker's blob as
+            # <scratch>/mygame.p8, which is exactly the cstore overlay the
+            # extension whitelist exists to stop. The code CARRIED a comment
+            # arguing this was safe ("truncation can only shorten a name, never
+            # re-introduce a separator") -- true of separators, blind to the
+            # extension. Neither this suite nor OpenBOR's covered it.
+            ("embedded NUL truncating to <cart>.p8", "mygame.p8\x00.p8d.txt"),
+            ("embedded NUL truncating to a traversal", "..\x00.p8d.txt"),
+            ("trailing NUL after a valid name", "mygame.p8d.txt\x00"),
         ]:
             rc, out = drive("bad.inp", [(entry, b"X")])
             check("refuse: %s" % label, rc == 1, "rc=%d %s" % (rc, out))
