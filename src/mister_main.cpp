@@ -462,7 +462,11 @@ static bool p8snap_read(FILE *f, std::vector<P8SnapFile> &v)
          * file, so a legitimate payload is kilobytes; without the aggregate a
          * shared take could drive this to hundreds of MB on a 1 GB board that
          * shares its RAM with the FPGA. */
-        if (fread(&dl, sizeof(dl), 1, f) != 1 || dl > (16u << 20)) return false;
+        /* 8 MB, not 16: the running total below refuses anything over 8 MB and
+         * starts at zero, so a 16 MB per-entry cap could never bind -- the first
+         * entry to exceed 8 MB failed on the very next line instead. A limit that
+         * cannot fire reads as protection that is not there. */
+        if (fread(&dl, sizeof(dl), 1, f) != 1 || dl > (8u << 20)) return false;
         total += dl;
         if (total > (8u << 20)) return false;
         P8SnapFile sf; sf.name = nm; sf.data.resize(dl);
@@ -723,8 +727,24 @@ static void p8rec_publish_slot()
      * process-local static restarts at 0 while the wire survives the respawn,
      * so it could publish a value already there and the FPGA would see no
      * edge at all. The sequence is derived from the wire instead. */
-    NativeVideoWriter_PublishReplaySlot(p8rec_slot_now());
+    /* 🛑 Flag BEFORE the publish, matching OpenBOR. This set it AFTER, which is
+     * safe here only because the poll that reads it lives in main() alongside
+     * both publish sites -- PICO-8's only other threads are audio and keepalive,
+     * and neither touches replay state.
+     *
+     * That is a real guarantee today and an invisible one: nothing in this file
+     * said the ordering depended on it. The keepalive thread already loops at
+     * 150 ms and is the obvious home if anyone moves this ~0.5 s poll off the
+     * main loop, and at that moment the after-ordering becomes the race OpenBOR
+     * documents at length -- a poll landing between publish and flag adopts the
+     * echo of our own value and reverts the press the user just made.
+     *
+     * Ordering it the safe way costs at most one harmless extra skip (OpenBOR's
+     * own comment says so), and removes the dependency on a fact stated nowhere.
+     * If this ever does move off the main thread, g_rec_pub_fresh must also
+     * become volatile, as OpenBOR's is. */
     g_rec_pub_fresh = true;
+    NativeVideoWriter_PublishReplaySlot(p8rec_slot_now());
 }
 
 /* Returns true if the session can be torn down: the file was written, or there
@@ -792,6 +812,21 @@ static bool p8rec_write(std::string const &cart_path)
         ok = fwrite(&cnt, sizeof(cnt), 1, f) == 1;
         for (size_t i = 0; ok && i < g_rec_ident.size(); i++)
         {
+            /* 🛑 Bound the name to what the READER accepts (> 1024 is refused at
+             * both read sites). This cast was unbounded, so a long enough cart path
+             * produced a take this same build then rejected -- the writer/reader
+             * divergence class fixed on OpenBOR the same day, still open here.
+             *
+             * Skipped rather than truncated: a truncated name compares unequal at
+             * play time and refuses with no reason given, which is vouching falsely
+             * instead of not vouching. The manifest is an integrity aid, so one
+             * absent entry costs a check, not the replay.
+             *
+             * The COUNT needs no equivalent guard -- both push_back sites are capped
+             * at P8REC_IDENT_MAX, so size() cannot exceed 512 and the uint16_t cast
+             * cannot truncate. Stated here because that invariant lives at a distant
+             * add site and is not obvious from this loop. */
+            if (g_rec_ident[i].name.size() > 1024) continue;
             uint16_t nl = (uint16_t)g_rec_ident[i].name.size();
             ok = fwrite(&nl, sizeof(nl), 1, f) == 1
               && fwrite(g_rec_ident[i].name.data(), 1, nl, f) == nl
