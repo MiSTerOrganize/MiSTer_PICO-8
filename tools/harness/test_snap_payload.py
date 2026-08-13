@@ -28,6 +28,7 @@ notice renderer. The payload is the part that parses untrusted names.
 """
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -86,6 +87,19 @@ def cut_source():
         raise SystemExit("struct P8SnapFile not found in mister_main.cpp")
     struct_decl = src[st:src.find("\n", st) + 1]
 
+    # File-scope constants the cut function needs. Carried FROM THE REAL SOURCE,
+    # never re-typed here: the whole argument for cutting is that a copy of the
+    # logic would pass while the shipped code rotted, and a copy of a constant
+    # rots exactly the same way. P8REC_SNAP_EXT is shared with the snapshot
+    # WRITER precisely so the two cannot drift, so this test must not be the
+    # thing that reintroduces a second spelling of it.
+    defines = re.findall(r"^#define\s+P8REC_SNAP_EXT\s+.*$", src, re.M)
+    if len(defines) != 1:
+        raise SystemExit("expected exactly one #define P8REC_SNAP_EXT in "
+                         "mister_main.cpp, found %d -- if it was renamed or "
+                         "inlined, fix this cut rather than re-typing the value"
+                         % len(defines))
+
     fs = src.find("static bool p8snap_read")
     if fs < 0:
         raise SystemExit("p8snap_read not found in mister_main.cpp")
@@ -93,7 +107,7 @@ def cut_source():
     fe = src.find("\n}\n", fs)
     if fe < 0:
         raise SystemExit("could not find the end of p8snap_read")
-    return struct_decl + "\n" + src[fs:fe + 3]
+    return defines[0] + "\n" + struct_decl + "\n" + src[fs:fe + 3]
 
 
 def compile_probe(work, body):

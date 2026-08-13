@@ -107,6 +107,18 @@ static volatile bool g_return_to_browser = false;
 #define P8REC_MAX_FRAMES 2000000u   /* ~9.2 h at 60 fps; caps a runaway file */
 #define P8REC_CART_LEN   256   /* holds a relative path now, not just a basename */
 
+/* The ONE cartdata suffix. Both the snapshot writer and the snapshot reader
+ * filter on it, and until now each spelled it as its own local literal in its
+ * own function -- so changing one and not the other would have produced a
+ * writer that emits takes its own reader refuses, silently and permanently.
+ *
+ * That is not hypothetical: OpenBOR had exactly that divergence twice on
+ * 2026-08-13 (a .scr the embed loop wrote and the reader rejected, and an
+ * unbounded identity name), and neither parser suite could see it because both
+ * exercise only the READER. One constant removes the class by construction,
+ * which beats adding a check that the two literals still match. */
+#define P8REC_SNAP_EXT   ".p8d.txt"
+
 static int         g_rec_mode = 0;   /* 0 = idle, 1 = recording, 2 = playing */
 /* Set when -test is passed. The golden-trace harness owns Z8_TEST_SEED in that
  * mode, so the recorder must never unset it. Declared here (not beside
@@ -388,7 +400,7 @@ static std::vector<P8SnapFile> p8snap_from_dir(std::string const &dir)
          * elsewhere. Closing that needs the overlay verified some other way --
          * it is not reopened by putting it back in the payload. */
         {
-            static const char *EXT = ".p8d.txt";
+            static const char *EXT = P8REC_SNAP_EXT;
             size_t el = strlen(EXT);
             if (n.size() <= el || n.compare(n.size() - el, el, EXT) != 0) continue;
             bool used = false;
@@ -496,7 +508,7 @@ static bool p8snap_read(FILE *f, std::vector<P8SnapFile> &v)
          * A malformed payload REFUSES rather than skipping the entry: playing on
          * with fewer save files than were recorded is a desync dressed up as a
          * warning. (User-confirmed 2026-08-02.) */
-        static const char *SNAP_EXT = ".p8d.txt";
+        static const char *SNAP_EXT = P8REC_SNAP_EXT;
         size_t extlen = strlen(SNAP_EXT);
         if (nm.empty() || nm.find('/') != std::string::npos
                        || nm.find('\\') != std::string::npos
