@@ -152,10 +152,15 @@ static const char *P8REC_DIR = "/media/fat/replays/PICO-8";
  * silently: the row reads "used" or "empty" before you commit, and a notice
  * names the slot afterwards.
  *
- * 0 means "not chosen yet", which is NOT the same as slot 1: Record then takes
- * the first FREE slot so a first-timer cannot clobber anything, while Play
- * takes the highest OCCUPIED one so it behaves exactly as it did before slots
- * existed. */
+ * 0 means "not chosen yet". 🛑 It resolves to SLOT 1, not to the first free
+ * slot. This comment used to say "Record then takes the first FREE slot so a
+ * first-timer cannot clobber anything" -- that WAS the behaviour and it was
+ * deliberately removed (see p8rec_slot_now), because it made the menu open
+ * somewhere different depending on what had already been recorded, which is
+ * unpredictable exactly where a user wants predictability. Overwriting stays
+ * VISIBLE rather than prevented: the row reads "used" before you commit and a
+ * notice names the slot after. Do not "restore" first-free on the strength of
+ * a stale sentence -- OpenBOR defaults to 1 too, and the two must match. */
 #define P8REC_SLOTS 8
 static int g_rec_slot = 0;   /* 1..P8REC_SLOTS, 0 = not yet chosen */
 /* Set when a write fails AT THE FRAME CAP, so the cap block reports once
@@ -930,6 +935,19 @@ static bool p8rec_probe(std::string const &cart_path,
     if (container > P8REC_CONTAINER)
     { fclose(f); snprintf(why, whysz, "Made by a newer core - update to play it"); return false; }
     if (container < P8REC_CONTAINER)
+    { fclose(f); snprintf(why, whysz, "Recorded by an older core - re-record it"); return false; }
+
+    /* 🛑 And CHECK the engine version here, not only at load. This probe
+     * exists so a bad pick is refused BEFORE the content reset -- arming a
+     * damaged take costs the session and explains itself only in the next
+     * process. `ver` was read and then never compared, so a version-mismatched
+     * take passed, the cart reset, and only then did p8rec_load refuse. That is
+     * exactly the cost the probe was added to avoid, and it lands on the
+     * refusal a take received from someone ELSE triggers most predictably.
+     * Same wording and direction as the container check above. */
+    if (ver > P8REC_ENGINE_VER)
+    { fclose(f); snprintf(why, whysz, "Made by a newer core - update to play it"); return false; }
+    if (ver < P8REC_ENGINE_VER)
     { fclose(f); snprintf(why, whysz, "Recorded by an older core - re-record it"); return false; }
 
     /* skip seed + frame count + crc, then read the identity section */
@@ -2466,6 +2484,16 @@ int main(int argc, char **argv)
                                         " -- recording stopped\n",
                                 (unsigned)g_rec_frames.size());
                         NativeVideoWriter_Notice("Out of memory - stopped. Saves off until reset.", 6);
+                        /* 🛑 FLUSH, do not discard. This called p8rec_reset(),
+                         * which clears the frames -- so the take was GONE, while
+                         * the frame-cap path directly below SAVES what it has.
+                         * Two "cannot record any more" paths with opposite
+                         * outcomes, and the one that destroys hours of capture is
+                         * the one the user cannot see coming. Nothing about a
+                         * failed allocation invalidates the frames already
+                         * buffered; the notice even says "stopped", not
+                         * "discarded". Write them, exactly as the cap does. */
+                        p8rec_write();
                         p8rec_reset();
                     }
                 } else {
