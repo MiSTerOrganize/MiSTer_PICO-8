@@ -2495,7 +2495,6 @@ int main(int argc, char **argv)
                         fprintf(stderr, "[REC] out of memory at %u frames"
                                         " -- recording stopped\n",
                                 (unsigned)g_rec_frames.size());
-                        NativeVideoWriter_Notice("Out of memory - stopped. Saves off until reset.", 6);
                         /* 🛑 FLUSH, do not discard. This called p8rec_reset(),
                          * which clears the frames -- so the take was GONE, while
                          * the frame-cap path directly below SAVES what it has.
@@ -2504,8 +2503,30 @@ int main(int argc, char **argv)
                          * the one the user cannot see coming. Nothing about a
                          * failed allocation invalidates the frames already
                          * buffered; the notice even says "stopped", not
-                         * "discarded". Write them, exactly as the cap does. */
-                        p8rec_write();
+                         * "discarded". Write them, exactly as the cap does.
+                         *
+                         * Announced AFTER the write, for the reason the cap path
+                         * below states about itself: a notice that claims an
+                         * outcome before attempting it is wrong whenever the
+                         * attempt fails, and this one has a REASON to fail --
+                         * the allocator just said no. A user told "stopped" who
+                         * then finds no take has been lied to twice.
+                         *
+                         * 🛑 The success string is BYTE-IDENTICAL to OpenBOR's,
+                         * and must stay that way -- an earlier version of this
+                         * edit reworded it to "stopped and saved" and silently
+                         * broke notice parity with the other core.
+                         *
+                         * The failure string has no OpenBOR twin, and that is a
+                         * MECHANISM difference rather than a divergence: PICO-8
+                         * writes inline here and knows the result, while OpenBOR
+                         * defers the flush to its stop path via the recstop
+                         * marker, so it cannot know yet and reports a failed
+                         * save from that path instead. */
+                        bool saved = p8rec_write(g_cart_path_for_rec);
+                        NativeVideoWriter_Notice(
+                            saved ? "Out of memory - stopped. Saves off until reset."
+                                  : "Out of memory - stopped. Could not save the take.", 6);
                         p8rec_reset();
                     }
                 } else {
