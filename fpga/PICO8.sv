@@ -223,7 +223,20 @@ assign LED_POWER[0]= FB ? led[2] : act_cnt2[26] ? act_cnt2[25:18] > act_cnt2[7:0
 localparam CONF_STR = {
 	"PICO-8;;",
 	"SC0,P8 PNG,Load Cart;",
-	"SC1,INP,Load Replay;",
+	// "SC1,INP,Load Replay;" REMOVED -- superseded by the 8-slot Replay
+	// Slot picker below. Two OSD routes to one feature, and this was the
+	// awkward one: the SC1 browser opens at the core's games/ HomeDir, so
+	// the replays tree is only reachable by navigating up and out, which
+	// is the very problem the slot picker was added to solve.
+	//
+	// The ARM-side .s1 handling is deliberately KEPT: an MGL can still
+	// write .s1 with index="1", so that path stays reachable -- it just
+	// leaves the menu. Do not delete it as dead code.
+	//
+	// Trade-off, stated: a take someone SENT you can no longer be played
+	// by browsing to it. Rename it to <content-id>_<slot>.inp in
+	// /media/fat/replays/<BinaryName>/ and it appears in that slot. The
+	// cart-derived stem is visible from your own takes in that folder.
 	"-;",
 	"OCE,H Position (CRT),0,+1,+2,+3,-3,-2,-1;",
 	"OFH,V Position (CRT),0,+1,+2,+3,-3,-2,-1;",

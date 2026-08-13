@@ -2049,9 +2049,24 @@ int main(int argc, char **argv)
                     if (m) { fputs("REC", m); fclose(m); }
                     fprintf(stderr, "[REC] reset while recording -- restarting the take"
                                     " in slot %d\n", g_rec_slot);
+                    /* On screen too. This core _exit(0)s immediately below, so
+                     * the message has to survive the respawn -- OpenBOR carries
+                     * it in a recwarn marker and PICO-8 had no equivalent, so
+                     * this adds the twin. Consumed beside the recmode read. */
+                    {
+                        FILE *wn = fopen("/tmp/pico8_recwarn", "w");
+                        if (wn) {
+                            fprintf(wn, "Reset - recording restarted in slot %d", g_rec_slot);
+                            fclose(wn);
+                        }
+                    }
                 }
             } else if (g_rec_mode == 2) {
                 fprintf(stderr, "[REC] reset during playback -- playback ended\n");
+                {
+                    FILE *wn = fopen("/tmp/pico8_recwarn", "w");
+                    if (wn) { fputs("Reset - replay stopped", wn); fclose(wn); }
+                }
             }
             FILE *r = fopen("/tmp/pico8_reset_marker", "w");
             if (r) fclose(r);
@@ -2206,6 +2221,30 @@ int main(int argc, char **argv)
                     }
                     fclose(sf);
                     unlink("/tmp/pico8_recslot");
+                }
+            }
+
+            /* Consume any message the PREVIOUS process left for us. OpenBOR
+             * has had this since the handler needed to report save-scratch
+             * failures the engine could not see; PICO-8 had no equivalent, so a
+             * reset that restarted a take could only ever reach stderr.
+             *
+             * Read once and unlink, so a message cannot repeat on the next
+             * launch -- a stale marker outliving its event is the same defect
+             * the recmode guard below exists for. Bounded read; the writer's
+             * strings are far shorter. */
+            {
+                FILE *wn = fopen("/tmp/pico8_recwarn", "rb");
+                if (wn) {
+                    char wb[96];
+                    size_t n = fread(wb, 1, sizeof(wb) - 1, wn);
+                    fclose(wn);
+                    unlink("/tmp/pico8_recwarn");
+                    if (n > 0) {
+                        wb[n] = 0;
+                        NativeVideoWriter_Notice(wb, 5);
+                        fprintf(stderr, "[REC] %s\n", wb);
+                    }
                 }
             }
 
