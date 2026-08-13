@@ -347,6 +347,29 @@ extern "C" void p8rec_note_cart_file(const char *resolved_path)
         for (size_t i = 0; i < g_rec_ident.size(); i++)
             if (g_rec_ident[i].name == nm) return;
         if (g_rec_ident.size() >= P8REC_IDENT_MAX) return;
+        /* 🛑 Bound the NAME here, at the add site, for the same reason the count
+         * above is bounded here: the writer emits `cnt` BEFORE its loop, so
+         * anything the loop skips leaves the file declaring N entries and
+         * containing N-1, and both readers loop exactly `cnt` times.
+         *
+         * A round-9 fix put this bound in the write loop as a `continue` and
+         * made things strictly worse: before it, a >1024 name was written and
+         * the reader refused cleanly; after it, the manifest desynchronised and
+         * the reader walked into the frame block, so the take failed its CRC and
+         * reported "damaged" instead. One refusal became a corrupt file.
+         *
+         * OpenBOR is the model -- it computes its entry count first, writes it,
+         * then writes the entry under the same condition, so the two can never
+         * disagree. Filtering at the source is the same shape.
+         *
+         * 1024 is what both read sites accept. A skipped entry costs the take
+         * one integrity check, which is what "does not vouch for it" above
+         * already means for an unhashable cart. */
+        if (nm.size() > 1024) {
+            fprintf(stderr, "[REC] cart path too long for the manifest (%u) -- not vouched for\n",
+                    (unsigned)nm.size());
+            return;
+        }
         P8RecIdent e; e.name = nm; memcpy(e.hash, h, sizeof(h));
         g_rec_ident.push_back(e);
         return;
@@ -812,21 +835,18 @@ static bool p8rec_write(std::string const &cart_path)
         ok = fwrite(&cnt, sizeof(cnt), 1, f) == 1;
         for (size_t i = 0; ok && i < g_rec_ident.size(); i++)
         {
-            /* 🛑 Bound the name to what the READER accepts (> 1024 is refused at
-             * both read sites). This cast was unbounded, so a long enough cart path
-             * produced a take this same build then rejected -- the writer/reader
-             * divergence class fixed on OpenBOR the same day, still open here.
+            /* 🛑 NOTHING may be skipped in this loop. `cnt` was written above,
+             * before it, and both readers loop exactly `cnt` times -- so a skipped
+             * entry leaves the file declaring N and containing N-1, and the reader
+             * walks into the frame block. A round-9 fix put a name-length
+             * `continue` here and produced exactly that: a corrupt take that fails
+             * its CRC and reports "damaged", where before it the reader had refused
+             * cleanly. The bound now lives at the add site (p8rec_note_cart_file),
+             * alongside the count bound that is there for this same reason.
              *
-             * Skipped rather than truncated: a truncated name compares unequal at
-             * play time and refuses with no reason given, which is vouching falsely
-             * instead of not vouching. The manifest is an integrity aid, so one
-             * absent entry costs a check, not the replay.
-             *
-             * The COUNT needs no equivalent guard -- both push_back sites are capped
-             * at P8REC_IDENT_MAX, so size() cannot exceed 512 and the uint16_t cast
-             * cannot truncate. Stated here because that invariant lives at a distant
-             * add site and is not obvious from this loop. */
-            if (g_rec_ident[i].name.size() > 1024) continue;
+             * Both length and count are therefore guaranteed by construction here:
+             * size() <= P8REC_IDENT_MAX (512) and every name <= 1024, so neither
+             * uint16_t cast can truncate. */
             uint16_t nl = (uint16_t)g_rec_ident[i].name.size();
             ok = fwrite(&nl, sizeof(nl), 1, f) == 1
               && fwrite(g_rec_ident[i].name.data(), 1, nl, f) == nl

@@ -33,6 +33,40 @@ jobs:
         with:
           submodules: false
 
+      # 🛑 THE GATES RUN HERE, BEFORE THE BUILD, so a failure stops the SHIP.
+      #
+      # These same checks also run in diff_harness.yml -- but that is a separate
+      # workflow with no `needs:` or `workflow_run:` relationship to this one, so
+      # the two fire in PARALLEL on the same push. A commit that broke the .inp
+      # parser would still reach the commit-back and the DB dispatch, shipping to
+      # every update_all user, while the harness went red minutes later. Running
+      # them again here costs a couple of minutes of a runner and converts that
+      # race into a gate.
+      #
+      # Kept in diff_harness.yml as well: it additionally builds the headless
+      # engine and runs the corpus scan, and it fires on pushes this workflow's
+      # paths-ignore filter deliberately skips.
+      # 🛑 SHIP-ONLY GATE. Pushing to main IS the ship, and the standing rule is
+      # that a new RBF and a new ARM binary go together. CI builds only the ARM
+      # half, so without this a source push that moved the wire contract would
+      # auto-ship a binary against whatever bitstream is in _Other/ -- and the
+      # replay-slot picker adds a NEW DDR3 word, so under the old RBF that offset
+      # is dead space holding the previous core's leftovers.
+      #
+      # Restricted to main deliberately: a workflow_dispatch validation build on
+      # a branch SHOULD still run while the RBF is being recompiled. It is the
+      # ship that must wait, not the verification.
+      - name: Gate - RBF and ARM binary ship together (main only)
+        if: github.ref == 'refs/heads/main'
+        run: python3 tools/harness/test_rbf_arm_contract.py
+      - name: Gate - CI staleness guard
+        run: python3 -m pip install --quiet pyyaml && python3 tools/harness/test_ci_staleness_guard.py
+      - name: Gate - pause-menu mode parity (replay desync)
+        run: python3 tools/harness/menu_mode_parity_check.py
+      - name: Gate - save-payload parser (untrusted input)
+        run: python3 tools/harness/test_snap_payload.py
+      - name: Gate - recorder slot selection
+        run: python3 tools/harness/test_slot_selection.py
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
         with:
@@ -92,7 +126,16 @@ jobs:
 
       - name: Commit fresh ARM binary back to repo
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        continue-on-error: true   # don't lose the artifact upload if push races
+        # 🛑 NO continue-on-error here. It used to carry it, with the honest
+        # reason "don't lose the artifact upload if push races" -- but it also
+        # swallowed the retry loop's own `exit 1`, the one written so a stale
+        # ship chain cannot look green. GitHub marked the step failed and the
+        # JOB success, so an exhausted commit-back reported GREEN while the
+        # binary never reached main: exactly the silent staleness the loop
+        # exists to prevent, and a divergence from OpenBOR, which never had it.
+        #
+        # The artifact concern was real and is fixed where it belongs -- on the
+        # packaging and upload steps, which now run with if: always().
         env:
           # For the staleness guard's `gh api` ancestry query. Read-only use of
           # the repo's own token; the DB/release dispatches below still use the
@@ -235,6 +278,11 @@ jobs:
           fi
 
       - name: Package release zip
+        # if: always() so a commit-back that loses a push race still leaves a
+        # deployable artifact. This is where the artifact concern belongs --
+        # NOT on the commit-back step, where continue-on-error also swallowed
+        # the exhaustion exit that keeps a stale ship chain from looking green.
+        if: always()
         run: |
           mkdir -p release-staging/games/PICO-8 release-staging/_Other release-staging/docs/PICO-8
           cp build-arm/PICO-8 release-staging/games/PICO-8/
@@ -258,6 +306,11 @@ jobs:
           cd release-staging && zip -r ../MiSTer-PICO-8-release.zip _Other/ docs/ games/
 
       - name: Upload artifact
+        # if: always() so a commit-back that loses a push race still leaves a
+        # deployable artifact. This is where the artifact concern belongs --
+        # NOT on the commit-back step, where continue-on-error also swallowed
+        # the exhaustion exit that keeps a stale ship chain from looking green.
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: MiSTer-PICO-8-release
