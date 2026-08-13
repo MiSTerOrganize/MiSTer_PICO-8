@@ -124,7 +124,7 @@ static std::string g_cart_path_for_rec;
  * principled reason for replays alone to hide under games/.
  *
  * The old layout put takes in games/PICO-8/Replays and the scratch INSIDE the
- * real saves directory, so a stray glob over saves/PICO-8/* would have destroyed
+ * real saves directory, so a stray glob over saves/PICO-8/ * would have destroyed
  * user progress -- a hazard that had to be carefully worked around rather than
  * not existing. Nothing of the user's lives under this tree, so rm -rf on it is
  * always safe.
@@ -192,7 +192,7 @@ static bool g_rec_cap_failed = false;
  * picker lists directories as well as files, so a snapshot folder beside each
  * take turned it into a list of decoys that appear EMPTY when opened (they hold
  * .p8d.txt, and the picker filters to .inp). But hiding it inside the REAL saves
- * directory meant a careless glob over saves/PICO-8/* would have destroyed user
+ * directory meant a careless glob over saves/PICO-8/ * would have destroyed user
  * progress -- a hazard that then had to be worked around everywhere. A leading
  * dot solves the picker problem without putting anything near the user's data.
  *
