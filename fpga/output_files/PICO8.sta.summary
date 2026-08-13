@@ -3,107 +3,107 @@ TimeQuest Timing Analyzer Summary
 ------------------------------------------------------------
 
 Type  : Setup 'pll_hdmi|pll_hdmi_inst|altera_pll_i|cyclonev_pll|counter[0].output_counter|divclk'
-Slack : 0.342
+Slack : 0.352
 TNS   : 0.000
 
 Type  : Setup 'emu|pll|pll_inst|altera_pll_i|general[0].gpll~PLL_OUTPUT_COUNTER|divclk'
-Slack : 0.823
+Slack : 0.834
 TNS   : 0.000
 
 Type  : Setup 'sysmem|fpga_interfaces|clocks_resets|h2f_user0_clk'
-Slack : 2.452
+Slack : 2.007
 TNS   : 0.000
 
 Type  : Setup 'spi_sck'
-Slack : 6.175
+Slack : 5.788
 TNS   : 0.000
 
 Type  : Setup 'FPGA_CLK1_50'
-Slack : 7.381
+Slack : 7.928
 TNS   : 0.000
 
 Type  : Setup 'FPGA_CLK2_50'
-Slack : 12.085
+Slack : 13.201
 TNS   : 0.000
 
 Type  : Setup 'pll_audio|pll_audio_inst|altera_pll_i|general[0].gpll~PLL_OUTPUT_COUNTER|divclk'
-Slack : 14.154
+Slack : 15.490
 TNS   : 0.000
 
 Type  : Setup 'emu|pll|pll_inst|altera_pll_i|general[2].gpll~PLL_OUTPUT_COUNTER|divclk'
-Slack : 36.044
+Slack : 36.171
 TNS   : 0.000
 
 Type  : Hold 'emu|pll|pll_inst|altera_pll_i|general[0].gpll~PLL_OUTPUT_COUNTER|divclk'
-Slack : 0.243
+Slack : 0.244
 TNS   : 0.000
 
 Type  : Hold 'pll_hdmi|pll_hdmi_inst|altera_pll_i|cyclonev_pll|counter[0].output_counter|divclk'
-Slack : 0.254
-TNS   : 0.000
-
-Type  : Hold 'pll_audio|pll_audio_inst|altera_pll_i|general[0].gpll~PLL_OUTPUT_COUNTER|divclk'
-Slack : 0.257
+Slack : 0.252
 TNS   : 0.000
 
 Type  : Hold 'emu|pll|pll_inst|altera_pll_i|general[2].gpll~PLL_OUTPUT_COUNTER|divclk'
-Slack : 0.260
+Slack : 0.261
 TNS   : 0.000
 
-Type  : Hold 'FPGA_CLK2_50'
-Slack : 0.272
+Type  : Hold 'pll_audio|pll_audio_inst|altera_pll_i|general[0].gpll~PLL_OUTPUT_COUNTER|divclk'
+Slack : 0.262
 TNS   : 0.000
 
 Type  : Hold 'sysmem|fpga_interfaces|clocks_resets|h2f_user0_clk'
-Slack : 0.354
+Slack : 0.329
 TNS   : 0.000
 
 Type  : Hold 'spi_sck'
-Slack : 0.371
+Slack : 0.332
 TNS   : 0.000
 
 Type  : Hold 'FPGA_CLK1_50'
+Slack : 0.393
+TNS   : 0.000
+
+Type  : Hold 'FPGA_CLK2_50'
 Slack : 0.412
 TNS   : 0.000
 
-Type  : Recovery 'pll_hdmi|pll_hdmi_inst|altera_pll_i|cyclonev_pll|counter[0].output_counter|divclk'
-Slack : 3.468
+Type  : Recovery 'emu|pll|pll_inst|altera_pll_i|general[0].gpll~PLL_OUTPUT_COUNTER|divclk'
+Slack : 3.250
 TNS   : 0.000
 
-Type  : Recovery 'emu|pll|pll_inst|altera_pll_i|general[0].gpll~PLL_OUTPUT_COUNTER|divclk'
-Slack : 3.498
+Type  : Recovery 'pll_hdmi|pll_hdmi_inst|altera_pll_i|cyclonev_pll|counter[0].output_counter|divclk'
+Slack : 3.503
 TNS   : 0.000
 
 Type  : Recovery 'sysmem|fpga_interfaces|clocks_resets|h2f_user0_clk'
-Slack : 5.967
+Slack : 4.944
 TNS   : 0.000
 
 Type  : Recovery 'FPGA_CLK1_50'
-Slack : 16.507
+Slack : 16.625
 TNS   : 0.000
 
 Type  : Recovery 'emu|pll|pll_inst|altera_pll_i|general[2].gpll~PLL_OUTPUT_COUNTER|divclk'
-Slack : 44.655
-TNS   : 0.000
-
-Type  : Removal 'pll_hdmi|pll_hdmi_inst|altera_pll_i|cyclonev_pll|counter[0].output_counter|divclk'
-Slack : 0.611
+Slack : 44.493
 TNS   : 0.000
 
 Type  : Removal 'FPGA_CLK1_50'
-Slack : 0.986
+Slack : 1.057
+TNS   : 0.000
+
+Type  : Removal 'pll_hdmi|pll_hdmi_inst|altera_pll_i|cyclonev_pll|counter[0].output_counter|divclk'
+Slack : 1.151
 TNS   : 0.000
 
 Type  : Removal 'emu|pll|pll_inst|altera_pll_i|general[2].gpll~PLL_OUTPUT_COUNTER|divclk'
-Slack : 1.068
+Slack : 1.241
 TNS   : 0.000
 
 Type  : Removal 'sysmem|fpga_interfaces|clocks_resets|h2f_user0_clk'
-Slack : 2.142
+Slack : 2.480
 TNS   : 0.000
 
 Type  : Removal 'emu|pll|pll_inst|altera_pll_i|general[0].gpll~PLL_OUTPUT_COUNTER|divclk'
-Slack : 2.387
+Slack : 3.469
 TNS   : 0.000
 
 Type  : Minimum Pulse Width 'emu|pll|pll_inst|altera_pll_i|general[0].gpll~FRACTIONAL_PLL|vcoph[0]'
@@ -119,27 +119,27 @@ Slack : 1.196
 TNS   : 0.000
 
 Type  : Minimum Pulse Width 'pll_hdmi|pll_hdmi_inst|altera_pll_i|cyclonev_pll|counter[0].output_counter|divclk'
-Slack : 1.939
+Slack : 1.938
 TNS   : 0.000
 
 Type  : Minimum Pulse Width 'emu|pll|pll_inst|altera_pll_i|general[0].gpll~PLL_OUTPUT_COUNTER|divclk'
-Slack : 3.337
+Slack : 3.328
 TNS   : 0.000
 
 Type  : Minimum Pulse Width 'sysmem|fpga_interfaces|clocks_resets|h2f_user0_clk'
-Slack : 3.598
+Slack : 3.586
 TNS   : 0.000
 
 Type  : Minimum Pulse Width 'spi_sck'
-Slack : 4.252
-TNS   : 0.000
-
-Type  : Minimum Pulse Width 'FPGA_CLK2_50'
-Slack : 9.206
+Slack : 4.257
 TNS   : 0.000
 
 Type  : Minimum Pulse Width 'FPGA_CLK1_50'
-Slack : 9.208
+Slack : 9.201
+TNS   : 0.000
+
+Type  : Minimum Pulse Width 'FPGA_CLK2_50'
+Slack : 9.204
 TNS   : 0.000
 
 Type  : Minimum Pulse Width 'FPGA_CLK3_50'
@@ -147,11 +147,11 @@ Slack : 9.730
 TNS   : 0.000
 
 Type  : Minimum Pulse Width 'pll_audio|pll_audio_inst|altera_pll_i|general[0].gpll~PLL_OUTPUT_COUNTER|divclk'
-Slack : 18.906
+Slack : 18.922
 TNS   : 0.000
 
 Type  : Minimum Pulse Width 'emu|pll|pll_inst|altera_pll_i|general[2].gpll~PLL_OUTPUT_COUNTER|divclk'
-Slack : 21.875
+Slack : 21.877
 TNS   : 0.000
 
 ------------------------------------------------------------
