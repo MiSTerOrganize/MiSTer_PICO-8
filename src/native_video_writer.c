@@ -448,6 +448,24 @@ void NativeVideoWriter_NoticeRepaint(void) {
     nv_notice_painted_gen[1] = 0;
 }
 
+/* NO WRITER LOCK HERE, and that is deliberate -- do not "restore parity" with
+ * OpenBOR by adding one.
+ *
+ * OpenBOR's copy takes a mutex because it has TWO writer threads: the engine
+ * thread and a dedicated swap thread that calls Notice() from the .s1 poll and
+ * from every refusal inside mrec_arm_slot_play. Two overlapping calls there
+ * splice the text, and the line count measured from that text is the band
+ * height every frame-copy path skips.
+ *
+ * This core has one writer. Every caller -- main(), p8rec_write, p8rec_load,
+ * p8rec_note_cart_file -- runs on the engine thread; the audio pthread and the
+ * keepalive std::thread never call it. The difference is architectural, the
+ * same one that made the two recorder desync bugs invert between the cores:
+ * PICO-8 hot-swaps IN-PROCESS on the main loop, so there is no swap thread to
+ * race with. A lock here would be contention guarding nothing.
+ *
+ * If this core ever grows a second thread that reports to the user, this
+ * becomes a real hazard and the lock comes with it. */
 void NativeVideoWriter_Notice(const char* msg, int seconds) {
     if (!msg) { nv_notice_until_ms = 0; return; }
     size_t i = 0;
