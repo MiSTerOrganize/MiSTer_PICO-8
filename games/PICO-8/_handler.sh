@@ -59,18 +59,35 @@ rmdir "$GAMEDIR/Replays" 2>/dev/null
 # Runs BEFORE the marker is consumed just below: its presence is the
 # evidence, so this has to read it first.
 if [ -f /tmp/pico8_recmode ] && [ ! -f /tmp/pico8_reset_marker ]; then
-    # recwarn too, matching OpenBOR. It is the only one of these four that
-    # produces a USER-VISIBLE message, and the binary consumes it
-    # unconditionally at startup -- so a handler spawn killed before the binary
-    # starts leaves it for the next launch, of any cart, with no take involved.
-    #
-    # It belongs INSIDE this guard, not above it. Clearing it unconditionally
-    # would destroy the reset notice the BINARY writes immediately before
-    # _exit(0), since this handler respawns after that; and keying it on
-    # reset_marker alone would eat the hot-swap notice, which travels with
-    # hotswap_marker instead. Only the stale-recmode case is safe to clear.
-    rm -f /tmp/pico8_recmode /tmp/pico8_recslot /tmp/pico8_playfile \
-          /tmp/pico8_recwarn 2>/dev/null
+    rm -f /tmp/pico8_recmode /tmp/pico8_recslot /tmp/pico8_playfile 2>/dev/null
+fi
+
+# ── Stale recwarn ────────────────────────────────────────────────────
+# recwarn gets its OWN rule, keyed on the reset marker rather than on recmode.
+#
+# It is the only one of these that produces a USER-VISIBLE message, and the
+# binary consumes it unconditionally at startup, so a leftover is shown on the
+# next launch of ANY cart with no take involved.
+#
+# Keying it on recmode did not cover it: the playback-reset path writes recwarn
+# and NO recmode (mister_main.cpp:2067), so the guard above is structurally
+# unable to see that one. Killed after the marker is consumed but before the
+# binary starts, it orphaned permanently.
+#
+# The right key is the marker, because a recwarn that is legitimately WAITING
+# for this launch always arrives with one -- both writers (:2057 recording,
+# :2067 playback) fall through to the reset_marker write at :2071.
+#
+# NO hotswap clause here, unlike OpenBOR. This core hot-swaps IN-PROCESS on the
+# main loop, so there is no exit, no respawn, and no marker: the recorder is
+# discarded in place and any notice is shown by the same process that wrote it.
+# OpenBOR's swap thread _exit(1)s, which is why it needs the extra term.
+#
+# 🛑 Must stay ABOVE the marker consumption below -- it is asking what the
+# PREVIOUS process left behind, and consuming the marker first would make every
+# legitimate notice look like a leftover.
+if [ ! -f /tmp/pico8_reset_marker ]; then
+    rm -f /tmp/pico8_recwarn 2>/dev/null
 fi
 
 if [ -f /tmp/pico8_reset_marker ]; then
