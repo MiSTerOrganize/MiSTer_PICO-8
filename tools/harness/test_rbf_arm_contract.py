@@ -71,13 +71,26 @@ check(named in rbfs, "version.txt names an rbf that exists",
       "version.txt=%r present=%s" % (named, rbfs))
 
 # ---- B. the RBF is not older than the RTL it must implement ---------------
+# 🛑 REFUSE ON A SHALLOW CLONE. This half is git-history-based, and
+# actions/checkout@v4 defaults to depth 1, where every tracked file reports the
+# shallow-boundary commit as its last change. The rbf and the RTL then tie on
+# %ct, `rbf_when >= newest` is trivially true, and this printed a green PASS
+# while being structurally unable to evaluate -- a check that confirms itself.
+# Measured on one tip commit: FULL clone FAIL/exit 1, depth-1 clone PASS/exit 0.
+# The workflow also sets fetch-depth: 0; this guard is what stops the check
+# silently degrading again if that checkout is ever changed back.
+shallow = git("rev-parse", "--is-shallow-repository")
+check(shallow != "true", "the clone has real history (not shallow)",
+      "a depth-1 clone makes every file's last-commit time identical, so the "
+      "comparison below cannot fail -- set fetch-depth: 0 on the checkout")
+
 # Tracked RTL, excluding the vendored framework (sys/) we do not author.
 rtl = [f for f in git("ls-files", "fpga").split("\n")
        if f.endswith((".sv", ".v", ".qip")) and "/sys/" not in f and not f.startswith("fpga/sys/")]
 check(bool(rtl), "found tracked RTL to compare against",
       "an empty list would make the comparison below vacuously pass")
 
-if rbfs and rtl:
+if rbfs and rtl and shallow != "true":
     rbf_path = "_Other/" + (named if named in rbfs else rbfs[0])
     rbf_when = git("log", "-1", "--format=%ct", "--", rbf_path)
     newest, newest_f = 0, ""

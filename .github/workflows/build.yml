@@ -56,6 +56,22 @@ jobs:
       # Restricted to main deliberately: a workflow_dispatch validation build on
       # a branch SHOULD still run while the RBF is being recompiled. It is the
       # ship that must wait, not the verification.
+      # The gate below reads per-file commit times, which a depth-1 checkout
+      # cannot answer -- every tracked file reports the shallow boundary, so the
+      # rbf and the RTL tie and the comparison can never fail. It reported a
+      # green PASS in that state until 2026-08-13.
+      #
+      # blob:none, NOT fetch-depth: 0. This repo's history is ~450 MB, almost
+      # all of it committed rbf and ARM-binary blobs; a blobless unshallow gets
+      # every commit and tree while leaving those on the server. GitHub honours
+      # the filter (a file:// remote does not, so a local repro of this prints
+      # "filtering not recognized" and is a worst case, not a representative one).
+      #
+      # || true: an already-complete clone makes --unshallow an error, and the
+      # checker refuses on its own if this step fails to do its job.
+      - name: Deepen history for the RBF/ARM contract gate
+        if: github.ref == 'refs/heads/main'
+        run: git fetch --unshallow --filter=blob:none || true
       - name: Gate - RBF and ARM binary ship together (main only)
         if: github.ref == 'refs/heads/main'
         run: python3 tools/harness/test_rbf_arm_contract.py

@@ -59,7 +59,18 @@ rmdir "$GAMEDIR/Replays" 2>/dev/null
 # Runs BEFORE the marker is consumed just below: its presence is the
 # evidence, so this has to read it first.
 if [ -f /tmp/pico8_recmode ] && [ ! -f /tmp/pico8_reset_marker ]; then
-    rm -f /tmp/pico8_recmode /tmp/pico8_recslot /tmp/pico8_playfile 2>/dev/null
+    # recwarn too, matching OpenBOR. It is the only one of these four that
+    # produces a USER-VISIBLE message, and the binary consumes it
+    # unconditionally at startup -- so a handler spawn killed before the binary
+    # starts leaves it for the next launch, of any cart, with no take involved.
+    #
+    # It belongs INSIDE this guard, not above it. Clearing it unconditionally
+    # would destroy the reset notice the BINARY writes immediately before
+    # _exit(0), since this handler respawns after that; and keying it on
+    # reset_marker alone would eat the hot-swap notice, which travels with
+    # hotswap_marker instead. Only the stale-recmode case is safe to clear.
+    rm -f /tmp/pico8_recmode /tmp/pico8_recslot /tmp/pico8_playfile \
+          /tmp/pico8_recwarn 2>/dev/null
 fi
 
 if [ -f /tmp/pico8_reset_marker ]; then
