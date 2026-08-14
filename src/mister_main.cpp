@@ -213,9 +213,14 @@ static bool g_rec_cap_failed = false;
  * files are script-saves despite the directory we named "savestates".) */
 /* Hidden siblings of the takes, so the OSD picker (which filters to .inp and
  * hides dotdirs) never shows them, while everything recorder-owned stays in one
- * tree. Snapshots get their own dir rather than sitting loose beside the takes:
- * they are per-take directories, and the browser DOES list directories. */
-static const char *P8REC_STATE   = "/media/fat/replays/PICO-8/.snapshots";
+ * tree.
+ *
+ * There is deliberately no .snapshots here. OpenBOR keeps per-take save
+ * snapshots in one (pruned to 20); PICO-8 does not need it, because the
+ * snapshot travels INSIDE the .inp as a payload section (p8snap_write /
+ * p8snap_read) rather than beside it. The directory used to be created on every
+ * launch and never written to -- worse than dead, since it implied a store a
+ * future writer would have inherited with no prune on either side. */
 static const char *P8REC_SCRATCH = "/media/fat/replays/PICO-8/.scratch";
 static const char *P8REC_ARMSNAP = "/media/fat/replays/PICO-8/.armsnap";
 static const char *P8_REAL_SAVES = "/media/fat/saves/PICO-8";
@@ -2372,7 +2377,13 @@ int main(int argc, char **argv)
              * the RECORD run is isolated too, the replay shows exactly what the
              * user saw while recording. */
             mkdir(P8REC_DIR, 0777);
-            mkdir(P8REC_STATE, 0777);      /* per-take snapshot store */
+            /* No .snapshots dir. OpenBOR keeps per-take save snapshots in one
+             * (and prunes it to 20); PICO-8 does not need it -- the snapshot
+             * travels INSIDE the .inp as a payload section (p8snap_write /
+             * p8snap_read), so there is nothing to store beside the take. The
+             * directory was created on every launch and never written to, which
+             * is worse than useless: it implied a store that a future writer
+             * would have inherited with no prune on either side. */
             mkdir(P8REC_SCRATCH, 0777);    /* armsnap is created by p8_copy_dir */
 
             if (g_rec_mode == 1) {

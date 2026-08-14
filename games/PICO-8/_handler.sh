@@ -21,7 +21,10 @@ cd "$GAMEDIR" || exit 1
 # remembers a browse directory (Selected_S[]) while it still exists, so if this
 # vanished, "Load Replay" would snap back to games/ and the takes would look
 # gone. Also the binary can then assume the tree exists on the write path.
-mkdir -p "$LOGDIR" "$GAMEDIR/Carts" "$REPLAYS" "$REPLAYS/.snapshots"
+# No .snapshots: PICO-8 carries a take's save snapshot INSIDE the .inp as a
+# payload section, so unlike OpenBOR there is nothing to store beside the take.
+# It was created every launch and never written to.
+mkdir -p "$LOGDIR" "$GAMEDIR/Carts" "$REPLAYS"
 
 # Retire the pre-2026-08-02 location. rmdir (not rm -rf) is the whole point: it
 # refuses on a non-empty directory, so anyone holding takes in there keeps them
