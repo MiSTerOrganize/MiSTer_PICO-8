@@ -448,13 +448,53 @@ static std::vector<P8SnapFile> p8snap_from_dir(std::string const &dir)
     return out;
 }
 
+/* 🛑 THE WRITER MUST NOT EMIT WHAT p8snap_read REFUSES.
+ *
+ * These four bounds mirror the reader's exactly (count 4096, name 512, entry
+ * 8 MB, running total 8 MB). Without them this function wrote nl/dl/c straight
+ * out of the vector with no limit, so a payload over any reader bound produced
+ * a take THIS BUILD then refused -- permanently, with nothing pointing at the
+ * cause. OpenBOR shipped precisely that bug twice (an unbounded strlen(name)
+ * against a reader refusing >= 512, and a .scr the embed included and the
+ * reader rejected), which is why its test_writer_reader_agree.py exists.
+ *
+ * Not reachable today -- p8snap_from_dir filters to .p8d.txt AND to what the
+ * run touched, so a payload is a file or two of a few hundred bytes. That is an
+ * argument about today's filter, not a property of this function, and the
+ * filter is one edit from changing. Bounding here costs four comparisons.
+ *
+ * 🛑 Fix the WRITER, never the reader. Widening a reader bound to accept what
+ * the writer emits is how a usability bug becomes an untrusted-input hole --
+ * these takes are shared between strangers and the core runs as root.
+ */
 static bool p8snap_write(FILE *f, std::vector<P8SnapFile> const &v)
 {
     uint32_t c = (uint32_t)v.size();
+    if (c > 4096u) {
+        fprintf(stderr, "[REC] payload has %u files -- over the 4096 the reader"
+                        " accepts; not writing a take that cannot be replayed\n", c);
+        return false;
+    }
+    {   /* aggregate first: the reader refuses on a running total, so a set of
+         * individually-legal entries can still be rejected as a whole. */
+        size_t total = 0;
+        for (size_t i = 0; i < v.size(); i++) total += v[i].data.size();
+        if (total > (8u << 20)) {
+            fprintf(stderr, "[REC] payload totals %lu bytes -- over the 8 MB the"
+                            " reader accepts; not writing it\n", (unsigned long)total);
+            return false;
+        }
+    }
     if (fwrite(&c, sizeof(c), 1, f) != 1) return false;
     for (size_t i = 0; i < v.size(); i++) {
         uint32_t nl = (uint32_t)v[i].name.size();
         uint32_t dl = (uint32_t)v[i].data.size();
+        if (nl > 512u || dl > (8u << 20)) {
+            fprintf(stderr, "[REC] payload entry '%.64s' is out of range"
+                            " (name %u, data %u) -- not writing it\n",
+                    v[i].name.c_str(), nl, dl);
+            return false;
+        }
         if (fwrite(&nl, sizeof(nl), 1, f) != 1) return false;
         if (nl && fwrite(v[i].name.data(), 1, nl, f) != nl) return false;
         if (fwrite(&dl, sizeof(dl), 1, f) != 1) return false;

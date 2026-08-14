@@ -83,6 +83,12 @@ jobs:
         run: python3 tools/harness/test_snap_payload.py
       - name: Gate - recorder slot selection
         run: python3 tools/harness/test_slot_selection.py
+      # The payload gate above cuts the READER out and drives it with malformed
+      # input -- so it cannot see a WRITER that emits something illegal. This is
+      # that half: it extracts each side's bounds from the shipped source and
+      # asserts they agree. OpenBOR shipped this exact blind spot twice.
+      - name: Gate - writer/reader agreement
+        run: python3 tools/harness/test_writer_reader_agree.py
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
         with:
