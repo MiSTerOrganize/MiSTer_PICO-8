@@ -53,9 +53,11 @@ jobs:
       # replay-slot picker adds a NEW DDR3 word, so under the old RBF that offset
       # is dead space holding the previous core's leftovers.
       #
-      # Restricted to main deliberately: a workflow_dispatch validation build on
-      # a branch SHOULD still run while the RBF is being recompiled. It is the
-      # ship that must wait, not the verification.
+      # Restricted to the SHIP refs -- main and tags -- deliberately: a
+      # workflow_dispatch validation build on a branch SHOULD still run while the
+      # RBF is being recompiled. It is the ship that must wait, not the
+      # verification. Tags count as a ship because the release published below
+      # goes to the pinning-tool/manual-download channel.
       # The gate below reads per-file commit times, which a depth-1 checkout
       # cannot answer -- every tracked file reports the shallow boundary, so the
       # rbf and the RTL tie and the comparison can never fail. It reported a
@@ -69,11 +71,16 @@ jobs:
       #
       # || true: an already-complete clone makes --unshallow an error, and the
       # checker refuses on its own if this step fails to do its job.
+      # Tags too, not main only. `on: push tags: ['v*']` publishes a GitHub
+      # Release further down, and with these gated to main a tag cut from a
+      # commit carrying diagnostic markers -- or one whose RBF and ARM binary do
+      # not pair -- shipped to the pinning-tool/manual-download channel with no
+      # gate having run at all.
       - name: Deepen history for the RBF/ARM contract gate
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
         run: git fetch --unshallow --filter=blob:none || true
-      - name: Gate - RBF and ARM binary ship together (main only)
-        if: github.ref == 'refs/heads/main'
+      - name: Gate - RBF and ARM binary ship together (main and tags)
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
         run: python3 tools/harness/test_rbf_arm_contract.py
       - name: Gate - CI staleness guard
         run: python3 -m pip install --quiet pyyaml && python3 tools/harness/test_ci_staleness_guard.py
@@ -185,7 +192,13 @@ jobs:
           # for research only and MUST NOT land on main (where DB rebuild would pick up
           # its hash and ship it via db.json to end users). Binary still uploads as
           # workflow artifact below for manual deploy testing.
-          if grep -rqE "TEMPORARY PROFILE|TEMPORARY DIAG|TEMPORARY SUB-PROFILE|REVERT AFTER MEASURED" src/ games/PICO-8/bios.p8 2>/dev/null; then
+          # No 2>/dev/null: grep exits 2 on a missing path, which `if` reads
+          # exactly like "no markers found", so moving src/ would turn this gate
+          # into a silent pass. Assert the paths exist, then let grep speak.
+          for p in src games/PICO-8/bios.p8; do
+            [ -e "$p" ] || { echo "::error::diagnostic gate cannot scan '$p' (missing) — refusing to commit blind"; exit 1; }
+          done
+          if grep -rqE "TEMPORARY PROFILE|TEMPORARY DIAG|TEMPORARY SUB-PROFILE|REVERT AFTER MEASURED" src games/PICO-8/bios.p8; then
             echo "[CI gate] Diagnostic markers detected in src/ or bios.p8 — SKIPPING binary commit-back."
             echo "[CI gate] Binary built successfully and uploads as workflow artifact for manual deploy."
             echo "[CI gate] Will commit binary back automatically once diagnostic markers are removed."
@@ -322,6 +335,12 @@ jobs:
           # branch path instead of the manual-sync one.
           cp src/pico8/bios.p8 release-staging/games/PICO-8/
           cp games/PICO-8/_handler.sh release-staging/games/PICO-8/
+          # Assert exactly one, as refresh_release.yml already does for the
+          # same shipped set. An unasserted glob let this zip carry two
+          # bitstreams while the rolling `latest` path hard-failed -- two ship
+          # paths disagreeing about the same invariant.
+          _n=$(ls _Other/PICO-8*.rbf | wc -l)
+          [ "$_n" = "1" ] || { echo "::error::expected exactly 1 PICO-8 RBF, found $_n"; exit 1; }
           cp _Other/PICO-8*.rbf release-staging/_Other/
           cp docs/PICO-8/README.md release-staging/docs/PICO-8/
           chmod +x release-staging/games/PICO-8/PICO-8 release-staging/games/PICO-8/_handler.sh
