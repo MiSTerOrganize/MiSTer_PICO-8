@@ -123,7 +123,7 @@ static volatile bool g_return_to_browser = false;
  * DATA region. Size IS the grammar -- there is nothing else to check, because
  * nothing parses it.
  *
- * A #define rather than pico8::cart::ROM_DATA_BYTES at the use site, for one
+ * A #define rather than z8::pico8::cart::ROM_DATA_BYTES at the use site, for one
  * reason: p8snap_read is CUT OUT of this file and compiled standalone by
  * tools/harness/test_snap_payload.py, with no engine headers. A reference to
  * the C++ constant would break that cut -- and the cut is what makes the test
@@ -472,13 +472,13 @@ static std::vector<P8SnapFile> p8snap_from_dir(std::string const &dir)
              * compiled without engine headers -- see the define), so the tie is
              * asserted here, where both are in scope. A mismatch would make the
              * writer emit overlays this build's own reader refuses. */
-            static_assert(P8REC_ROM_BYTES == (int)pico8::cart::ROM_DATA_BYTES,
+            static_assert(P8REC_ROM_BYTES == (int)z8::pico8::cart::ROM_DATA_BYTES,
                           "P8REC_ROM_BYTES must equal cart::ROM_DATA_BYTES");
             /* Parsed with the same loader the engine uses, on OUR file. A cart
              * this build cannot read is skipped rather than sent half-formed:
              * the replay then lacks the overlay and desyncs VISIBLY, which
              * beats shipping bytes whose meaning we could not establish. */
-            pico8::cart c;
+            z8::pico8::cart c;
             if (!c.load(dir + "/" + n)) {
                 fprintf(stderr, "[REC] could not read the cstore overlay %s "
                                 "-- not carrying it\n", n.c_str());
@@ -486,8 +486,8 @@ static std::vector<P8SnapFile> p8snap_from_dir(std::string const &dir)
             }
             P8SnapFile sf;
             sf.name = n + ".p8rom";
-            sf.data.resize(pico8::cart::ROM_DATA_BYTES);
-            memcpy(&sf.data[0], &c.get_rom()[0], pico8::cart::ROM_DATA_BYTES);
+            sf.data.resize(z8::pico8::cart::ROM_DATA_BYTES);
+            memcpy(&sf.data[0], &c.get_rom()[0], z8::pico8::cart::ROM_DATA_BYTES);
             out.push_back(sf);
             continue;
         }
