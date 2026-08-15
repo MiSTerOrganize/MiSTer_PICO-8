@@ -15,6 +15,7 @@
 #endif
 
 #include "compat_format.h"
+#include <cstdio>    // std::remove (drop a truncated cart in save_p8)
 #include <cstring>    // memset, memcpy (MiSTer shim patch)
 #include <fstream>   // std::ofstream
 #include <lol/file>  // lol::file
@@ -886,7 +887,43 @@ bool cart::save_p8(std::string const &filename) const
 
     ret += '\n';
 
-    std::ofstream(filename) << ret;
+    /* 🛑 RETURN THE TRUTH. This was `std::ofstream(filename) << ret; return true;`
+     * -- a temporary stream, no open check, no write check, and success reported
+     * unconditionally. Every caller believes it: cart::save -> vm::save_cart ->
+     * vm::api_cstore, which is the whole persistence path for cstore().
+     *
+     * It hid nothing in practice (the MiSTer save dir exists and is created by
+     * get_path_cstore), which is exactly why it survived four months -- but a
+     * return value that CANNOT say "no" is not a check, and the next real
+     * failure here would have been invisible in the same way.
+     *
+     * Checked in three places, because they fail differently: open (missing
+     * directory, permissions, read-only card), write (card full, I/O error),
+     * and close -- the last one matters most, since a buffered stream can
+     * accept every << and only fail when the final flush hits the card.
+     * save_png already reports its encoder's error; this is now consistent
+     * with it. */
+    std::ofstream f(filename, std::ios::binary);
+    if (!f.is_open())
+    {
+        lol::msg::error("cannot save cart: could not open %s\n", filename.c_str());
+        return false;
+    }
+
+    f << ret;
+    bool ok = f.good();
+    f.close();
+    if (!ok || f.fail())
+    {
+        lol::msg::error("cannot save cart: failed writing %s\n", filename.c_str());
+        /* A truncated .p8 left on disk is worse than none: it parses, so the
+         * next load would splice half a cart in and desync silently rather
+         * than fall back to the pristine file. p8_copy_file takes the same
+         * line on a short copy. */
+        std::remove(filename.c_str());
+        return false;
+    }
+
     return true;
 }
 

@@ -85,6 +85,33 @@ jobs:
           cp src/pico8/bios.p8 ./bios.p8     # BIOS resolves via cwd (empty data-path prefix)
           ./build/z8headless --cart tools/test_carts/shapes.p8 --frames 90 --dump 1,30,60,89 --out out
           ls -la out
+      # save_p8 used to end `std::ofstream(filename) << ret; return true;` -- no
+      # open check, no write check, success reported unconditionally, all the way
+      # up through cart::save -> vm::save_cart -> api_cstore. It hid nothing in
+      # practice, which is exactly why it survived four months: a return value
+      # that CANNOT say "no" is not a check, and the next real failure here would
+      # have been invisible in the same way.
+      #
+      # ENOTDIR is the failure injection because it cannot be bypassed: chmod is
+      # useless here since CI runs as root, and the first version of this test
+      # "passed" by writing the file anyway.
+      - name: cstore reports a failed write (save_p8 returns the truth)
+        run: |
+          set -e
+          mkdir -p out
+          printf 'pico-8 cartridge // http://www.pico-8.com\nversion 42\n__lua__\npoke(0x3100,0x5a)\ncstore()\n' > out/cst.p8
+          : > out/blocker                      # a regular FILE, so a dir under it is ENOTDIR
+          Z8_SAVES_DIR=out/wr ./build/z8headless --cart out/cst.p8 --frames 2 --dump list --out out > out/ok.log 2>&1 || true
+          Z8_SAVES_DIR=out/blocker/sub ./build/z8headless --cart out/cst.p8 --frames 2 --dump list --out out > out/bad.log 2>&1 || true
+          # the driver must actually have run -- usage or a nil-value error would
+          # otherwise read as "no failure reported"
+          grep -qE "^usage:|attempt to call a nil value" out/bad.log && { echo "TEST DID NOT RUN"; cat out/bad.log; exit 1; } || true
+          test -f out/wr/cst.p8 || { echo "FAIL: the writable case did not persist"; exit 1; }
+          grep -q "cannot save cart" out/bad.log || { echo "FAIL: no open error reported"; cat out/bad.log; exit 1; }
+          grep -q "could not persist" out/bad.log || { echo "FAIL: api_cstore swallowed the failure"; cat out/bad.log; exit 1; }
+          test ! -f out/blocker/sub/cst.p8 || { echo "FAIL: a partial cart was left behind"; exit 1; }
+          echo "OK: persists when it can, reports both failures when it cannot, leaves no partial"
+
       - name: Golden-master trace determinism check (--test)
         run: |
           # Two boot-to-frame-120 runs must produce byte-identical hash

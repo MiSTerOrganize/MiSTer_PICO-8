@@ -901,13 +901,22 @@ void vm::api_cstore(int16_t in_dst, int16_t in_src, opt<int16_t> in_size, opt<st
         auto reload_cart = std::make_shared<cart>();
         load_cart(*reload_cart, name);
         reload_cart->set_from_ram(m_ram, dst, src, size);
-        save_cart(*reload_cart, reload_cart->get_filename());
+        /* save_cart's result was discarded here. PICO-8's cstore() has no
+         * return value, so the cart cannot be told -- but the DEVELOPER can,
+         * and silence was the only reason a failed persist would look
+         * identical to a good one. save_p8 now returns the truth; this is
+         * what makes that truth reach anybody. */
+        if (!save_cart(*reload_cart, reload_cart->get_filename()))
+            lol::msg::error("cstore: could not persist %s\n",
+                            reload_cart->get_filename().c_str());
     }
     else
     {
         // from same cart
         m_cart.set_from_ram(m_ram, dst, src, size);
-        save_cart(m_cart, m_cart.get_filename());
+        if (!save_cart(m_cart, m_cart.get_filename()))
+            lol::msg::error("cstore: could not persist %s\n",
+                            m_cart.get_filename().c_str());
     }
 
     update_registers();
