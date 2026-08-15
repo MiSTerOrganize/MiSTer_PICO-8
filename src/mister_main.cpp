@@ -1154,14 +1154,44 @@ static bool p8rec_probe(std::string const &cart_path,
     if (ver < P8REC_ENGINE_VER)
     { fclose(f); snprintf(why, whysz, "Recorded by an older core - re-record it"); return false; }
 
-    /* skip seed + frame count + crc, then read the identity section */
-    if (fseek(f, 4 + 4 + 4, SEEK_CUR) != 0)
+    /* skip seed, KEEP the frame count (the payload sits just past the frame
+     * block, and the no-vouch check below needs to find it), skip crc */
+    uint32_t nfr = 0;
+    if (fseek(f, 4, SEEK_CUR) != 0
+     || fread(&nfr, sizeof(nfr), 1, f) != 1
+     || fseek(f, 4, SEEK_CUR) != 0)
     { fclose(f); snprintf(why, whysz, "Recording is truncated - not playing"); return false; }
 
     uint16_t cnt = 0;
     if (fread(&cnt, sizeof(cnt), 1, f) != 1 || cnt > P8REC_IDENT_MAX)
     { fclose(f); snprintf(why, whysz, "Recording is damaged - not playing"); return false; }
-    if (cnt == 0) { fclose(f); return true; }   /* pre-v5 take: unverifiable, still plays */
+    if (cnt == 0)
+    {
+        /* 🛑 NO MANIFEST = NOTHING CHECKED THE CART, so this take may play but
+         * may not RESTORE FILES. It used to return true unconditionally, which
+         * meant one take worked against ANY cart -- the same defect OpenBOR had,
+         * and what turns a targeted take into a universal one.
+         *
+         * Playing unverified is survivable (frame stream only, visible desync at
+         * worst). A payload is cartdata and a cart-ROM overlay written where the
+         * engine loads them. p8rec_load refuses the same case; this refuses it
+         * BEFORE the reset, so the user is not bounced to the title first.
+         *
+         * The count sits immediately after the frame block. A short/absent read
+         * means there is no payload to worry about, so it plays. */
+        uint32_t pc = 0;
+        long here = ftell(f);
+        if (here >= 0
+         && fseek(f, here + (long)nfr * (long)sizeof(uint32_t), SEEK_SET) == 0
+         && fread(&pc, sizeof(pc), 1, f) == 1 && pc > 0u)
+        {
+            fclose(f);
+            snprintf(why, whysz, "Recording does not say which game - not playing");
+            return false;
+        }
+        fclose(f);
+        return true;
+    }
 
     uint16_t nl = 0;
     uint8_t want[NSHA1_DIGEST_LEN];
@@ -1385,6 +1415,28 @@ static bool p8rec_load(std::string const &cart_path,
     }
     bool snap_ok = (got == n) && p8snap_read(f, g_rec_snap);
     fclose(f);
+    /* 🛑 A TAKE THAT DOES NOT SAY WHICH CART IT IS MAY NOT RESTORE FILES.
+     *
+     * An empty manifest means NOTHING compared this take against the loaded
+     * cart -- the verify above is guarded on !g_rec_ident.empty(). Playing it
+     * is survivable: unverified input drives only the frame stream and the
+     * worst case is a visible desync. Its payload is different in kind --
+     * cartdata and a cart-ROM overlay, chosen by whoever made the take, written
+     * where the engine will load them, against a cart nothing matched.
+     *
+     * Same rule and same wording as OpenBOR's extractor, and the same finding:
+     * the identity count of 0 skipped the content guard on BOTH cores, which is
+     * what turns a targeted take into one that works against anything. Found by
+     * the notice-set parity check refusing to let the fix land on one core. */
+    if (snap_ok && g_rec_ident.empty() && !g_rec_snap.empty())
+    {
+        g_rec_frames.clear();
+        g_rec_snap.clear();
+        fprintf(stderr, "[REC] %s carries save data but does not identify the cart"
+                        " it was recorded from -- not playing\n", in.c_str());
+        NativeVideoWriter_Notice("Recording does not say which game - not playing", 6);
+        return false;
+    }
     if (got == n && !snap_ok)
     {
         g_rec_frames.clear();
