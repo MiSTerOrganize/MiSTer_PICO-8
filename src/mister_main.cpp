@@ -229,10 +229,12 @@ static bool g_rec_cap_failed = false;
  * hides dotdirs) never shows them, while everything recorder-owned stays in one
  * tree.
  *
- * There is deliberately no .snapshots here. OpenBOR keeps per-take save
- * snapshots in one (pruned to 20); PICO-8 does not need it, because the
- * snapshot travels INSIDE the .inp as a payload section (p8snap_write /
- * p8snap_read) rather than beside it. The directory used to be created on every
+ * There is deliberately no .snapshots here, on EITHER core. The snapshot
+ * travels INSIDE the .inp as a payload section (p8snap_write / p8snap_read)
+ * rather than beside it. This used to say OpenBOR keeps a per-take store
+ * pruned to 20 -- true when it was written, removed from OpenBOR in
+ * ef4bd35, and the sort of cross-core claim that rots silently because
+ * nothing here fails when the OTHER core changes. The directory used to be created on every
  * launch and never written to -- worse than dead, since it implied a store a
  * future writer would have inherited with no prune on either side. */
 static const char *P8REC_SCRATCH = "/media/fat/replays/PICO-8/.scratch";
@@ -2521,10 +2523,11 @@ int main(int argc, char **argv)
              * the RECORD run is isolated too, the replay shows exactly what the
              * user saw while recording. */
             mkdir(P8REC_DIR, 0777);
-            /* No .snapshots dir. OpenBOR keeps per-take save snapshots in one
-             * (and prunes it to 20); PICO-8 does not need it -- the snapshot
-             * travels INSIDE the .inp as a payload section (p8snap_write /
-             * p8snap_read), so there is nothing to store beside the take. The
+            /* No .snapshots dir, on either core -- the snapshot travels
+             * INSIDE the .inp as a payload section (p8snap_write /
+             * p8snap_read), so there is nothing to store beside the take.
+             * (OpenBOR kept such a store when this was written; it was
+             * removed in ef4bd35.) The
              * directory was created on every launch and never written to, which
              * is worse than useless: it implied a store that a future writer
              * would have inherited with no prune on either side. */

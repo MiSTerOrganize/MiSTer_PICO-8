@@ -10,9 +10,10 @@ GAMEDIR="/media/fat/games/PICO-8"
 LOGDIR="/media/fat/logs/PICO-8"
 
 # Recorder tree: top-level and per-core, alongside saves/ savestates/ config/
-# logs/. Takes are <cart>_<slot>.inp, slots 1..8. The dot-directories hold the
-# save-state snapshots a take carries and the isolated scratch a session runs
-# against; dot-prefixed so the OSD "Load Replay" picker never lists them.
+# logs/. Takes are <cart>_<slot>.inp, slots 1..8. The one dot-directory here is
+# .scratch, the isolated save state a session runs against; dot-prefixed so the
+# OSD "Load Replay" picker never lists it. There is no snapshot store -- see
+# the mkdir below.
 REPLAYS="/media/fat/replays/PICO-8"
 
 cd "$GAMEDIR" || exit 1
@@ -21,9 +22,11 @@ cd "$GAMEDIR" || exit 1
 # remembers a browse directory (Selected_S[]) while it still exists, so if this
 # vanished, "Load Replay" would snap back to games/ and the takes would look
 # gone. Also the binary can then assume the tree exists on the write path.
-# No .snapshots: PICO-8 carries a take's save snapshot INSIDE the .inp as a
-# payload section, so unlike OpenBOR there is nothing to store beside the take.
-# It was created every launch and never written to.
+# No .snapshots: a take's save snapshot rides INSIDE the .inp as a payload
+# section, so there is nothing to store beside the take. That is now true of
+# BOTH cores -- OpenBOR's store went in ef4bd35 -- and this said "unlike
+# OpenBOR" for a while afterwards. It was created every launch and never
+# written to.
 mkdir -p "$LOGDIR" "$GAMEDIR/Carts" "$REPLAYS"
 
 # Retire the pre-2026-08-02 location. rmdir (not rm -rf) is the whole point: it
