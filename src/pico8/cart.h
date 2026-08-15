@@ -85,6 +85,18 @@ public:
     bool save(std::string const& filename) const;
     void set_from_ram(memory const& ram, int in_dst, int in_src, int in_size);
 
+    /* Overlay the cart's ROM DATA region from a raw, fixed-size byte block.
+     *
+     * Same effect as set_from_ram(other_rom, 0, 0, offsetof(memory, code)) --
+     * the region cstore() can reach -- but the source is opaque bytes rather
+     * than a parsed cart. That is the point: it lets a shared recording carry a
+     * cstore overlay WITHOUT the cart decoder ever running on a stranger's
+     * file, and a fixed-size block has no structure to abuse. It cannot reach
+     * the Lua section by construction, so an overlay is data, never code.
+     * Refuses anything that is not exactly ROM_DATA_BYTES long. */
+    static constexpr size_t ROM_DATA_BYTES = offsetof(memory, code);
+    bool set_rom_data(uint8_t const *src, size_t size);
+
     std::string preprocess_code() const;
 
 private:

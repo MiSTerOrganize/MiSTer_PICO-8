@@ -709,6 +709,19 @@ void cart::set_from_ram(memory const &ram, int in_dst, int in_src, int in_size)
     ::memcpy(&m_rom[in_dst], &ram[in_src], amount);
 }
 
+bool cart::set_rom_data(uint8_t const *src, size_t size)
+{
+    /* EXACT size, not "at least". A short block would leave the tail of the
+     * region holding the local cart's bytes -- a half-applied overlay, which
+     * is the silent-desync shape this whole payload format exists to avoid --
+     * and a long one means the sender is describing something this build does
+     * not understand, which is a refusal, not a truncation. */
+    if (!src || size != ROM_DATA_BYTES)
+        return false;
+    ::memcpy(&m_rom[0], src, ROM_DATA_BYTES);
+    return true;
+}
+
 std::vector<uint8_t> cart::get_compressed_code() const
 {
     return code::compress(m_code);

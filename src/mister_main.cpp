@@ -119,6 +119,20 @@ static volatile bool g_return_to_browser = false;
  * which beats adding a check that the two literals still match. */
 #define P8REC_SNAP_EXT   ".p8d.txt"
 
+/* The second allowed payload kind: a cstore overlay, reduced to the raw ROM
+ * DATA region. Size IS the grammar -- there is nothing else to check, because
+ * nothing parses it.
+ *
+ * A #define rather than pico8::cart::ROM_DATA_BYTES at the use site, for one
+ * reason: p8snap_read is CUT OUT of this file and compiled standalone by
+ * tools/harness/test_snap_payload.py, with no engine headers. A reference to
+ * the C++ constant would break that cut -- and the cut is what makes the test
+ * exercise the SHIPPED reader instead of a copy of it. The two are tied
+ * together by a static_assert further down, where the engine header is in
+ * scope, so they cannot drift. */
+#define P8REC_ROM_BYTES  0x4300
+#define P8REC_ROM_EXT    ".p8rom"
+
 static int         g_rec_mode = 0;   /* 0 = idle, 1 = recording, 2 = playing */
 /* Set when -test is passed. The golden-trace harness owns Z8_TEST_SEED in that
  * mode, so the recorder must never unset it. Declared here (not beside
@@ -415,26 +429,67 @@ static std::vector<P8SnapFile> p8snap_from_dir(std::string const &dir)
     while ((e = readdir(d)) != NULL) {
         std::string n = e->d_name;
         if (n == "." || n == "..") continue;
-        /* Only what the run touched, and only cartdata.
+        /* Only what the run touched, and only in a form the reader can trust.
          *
-         * The .p8d.txt filter is load-bearing, not tidiness: the READER refuses
-         * any payload entry that is not cartdata, because a <cart>.p8 entry is a
-         * cstore overlay and vm::load_cart would splice it over the cart's ROM.
-         * Without the same filter here, a cart that uses cstore would write a
-         * take its own reader then rejects outright.
+         * TWO kinds of persistent state exist here, and they are carried very
+         * differently:
          *
-         * Consequence, accepted with that security fix: a cstore overlay is NOT
-         * carried, so a cart relying on one replays against un-overlaid ROM
-         * elsewhere. Closing that needs the overlay verified some other way --
-         * it is not reopened by putting it back in the payload. */
+         *   .p8d.txt  cartdata -- inert bytes the cart reads back. Carried
+         *             verbatim.
+         *   <cart>.p8 a cstore OVERLAY -- a complete cart file. NEVER carried
+         *             verbatim: vm::load_cart would then hand a stranger's file
+         *             to the cart decoder, and an entry named <cart>.p8 landing
+         *             in the scratch IS the ROM-overlay attack the reader's
+         *             whitelist exists to stop.
+         *
+         * The overlay is converted instead: parsed HERE, where the file is our
+         * own, and emitted as exactly cart::ROM_DATA_BYTES of opaque bytes
+         * under <name>.p8rom. That region ends at offsetof(memory, code), so
+         * what travels is data, never Lua -- the same bound a real cstore()
+         * writes within. The far side does a fixed-size read and a memcpy,
+         * with no parser on the untrusted path at all.
+         *
+         * This is what closes the gap the previous fix left open: a cart using
+         * cstore -- Virtua Racing, which packs track GEOMETRY into its data
+         * carts -- used to replay against un-overlaid ROM on any other machine.
+         * A .inp must be FULLY SELF-CONTAINED. */
+        bool is_overlay = false;
         {
             static const char *EXT = P8REC_SNAP_EXT;
             size_t el = strlen(EXT);
-            if (n.size() <= el || n.compare(n.size() - el, el, EXT) != 0) continue;
+            bool is_cartdata = n.size() > el && n.compare(n.size() - el, el, EXT) == 0;
+            is_overlay = !is_cartdata && n.size() > 3
+                         && n.compare(n.size() - 3, 3, ".p8") == 0;
+            if (!is_cartdata && !is_overlay) continue;
             bool used = false;
             for (size_t i = 0; i < g_rec_used.size() && !used; i++)
                 if (g_rec_used[i] == n) used = true;
             if (!used) continue;
+        }
+        if (is_overlay) {
+            /* 🛑 The reader's size grammar and the engine's overlay region are
+             * ONE number. p8snap_read cannot say so itself (it is cut and
+             * compiled without engine headers -- see the define), so the tie is
+             * asserted here, where both are in scope. A mismatch would make the
+             * writer emit overlays this build's own reader refuses. */
+            static_assert(P8REC_ROM_BYTES == (int)pico8::cart::ROM_DATA_BYTES,
+                          "P8REC_ROM_BYTES must equal cart::ROM_DATA_BYTES");
+            /* Parsed with the same loader the engine uses, on OUR file. A cart
+             * this build cannot read is skipped rather than sent half-formed:
+             * the replay then lacks the overlay and desyncs VISIBLY, which
+             * beats shipping bytes whose meaning we could not establish. */
+            pico8::cart c;
+            if (!c.load(dir + "/" + n)) {
+                fprintf(stderr, "[REC] could not read the cstore overlay %s "
+                                "-- not carrying it\n", n.c_str());
+                continue;
+            }
+            P8SnapFile sf;
+            sf.name = n + ".p8rom";
+            sf.data.resize(pico8::cart::ROM_DATA_BYTES);
+            memcpy(&sf.data[0], &c.get_rom()[0], pico8::cart::ROM_DATA_BYTES);
+            out.push_back(sf);
+            continue;
         }
         std::string p = dir + "/" + n;
         struct stat st;
@@ -463,10 +518,12 @@ static std::vector<P8SnapFile> p8snap_from_dir(std::string const &dir)
  * against a reader refusing >= 512, and a .scr the embed included and the
  * reader rejected), which is why its test_writer_reader_agree.py exists.
  *
- * Not reachable today -- p8snap_from_dir filters to .p8d.txt AND to what the
- * run touched, so a payload is a file or two of a few hundred bytes. That is an
- * argument about today's filter, not a property of this function, and the
- * filter is one edit from changing. Bounding here costs four comparisons.
+ * Not reachable today -- p8snap_from_dir filters to cartdata and converted
+ * cstore overlays AND to what the run touched, so a payload is a handful of
+ * files, the largest being one ROM_DATA_BYTES (17 KiB) block per overlay. That
+ * is an argument about today's filter, not a property of this function, and the
+ * filter is one edit from changing -- it has already changed twice. Bounding
+ * here costs four comparisons.
  *
  * 🛑 Fix the WRITER, never the reader. Widening a reader bound to accept what
  * the writer emits is how a usability bug becomes an untrusted-input hole --
@@ -579,18 +636,53 @@ static bool p8snap_read(FILE *f, std::vector<P8SnapFile> &v)
          *
          * A malformed payload REFUSES rather than skipping the entry: playing on
          * with fewer save files than were recorded is a desync dressed up as a
-         * warning. (User-confirmed 2026-08-02.) */
+         * warning. (User-confirmed 2026-08-02.)
+         *
+         * 🛑 .p8rom IS THE SECOND ALLOWED KIND, AND IT IS NOT A CART. It is a
+         * cstore overlay reduced by the WRITER to exactly cart::ROM_DATA_BYTES
+         * of opaque bytes -- the region ending at offsetof(memory, code), which
+         * is all a real cstore() can reach. Two properties make it admissible
+         * where a <cart>.p8 is not: nothing parses it (a fixed-size read and a
+         * memcpy, so the cart decoder never sees a stranger's file), and it
+         * cannot express a __lua__ section, so an overlay is data and never
+         * code. The exact-size check is the whole grammar.
+         *
+         * It is admitted because a .inp must be FULLY SELF-CONTAINED: a cart
+         * that uses cstore -- Virtua Racing packs track geometry into its data
+         * carts -- otherwise replays against un-overlaid ROM on any machine but
+         * the one that recorded it. Refusing it was safe and lost that, which
+         * is a fidelity regression, not an accepted cost.
+         *
+         * 🛑 The name must still not end in .p8: an entry the scratch presents
+         * as <cart>.p8 is the ROM-overlay attack, and ".p8rom" ends in "rom",
+         * so the two cannot be confused. Do NOT relax this into "ends with .p8
+         * or .p8rom". */
         static const char *SNAP_EXT = P8REC_SNAP_EXT;
+        static const char *ROM_EXT  = P8REC_ROM_EXT;
         size_t extlen = strlen(SNAP_EXT);
+        size_t romlen = strlen(ROM_EXT);
+        bool is_cartdata = nm.size() > extlen
+                        && nm.compare(nm.size() - extlen, extlen, SNAP_EXT) == 0;
+        bool is_overlay  = nm.size() > romlen
+                        && nm.compare(nm.size() - romlen, romlen, ROM_EXT) == 0;
         if (nm.empty() || nm.find('/') != std::string::npos
                        || nm.find('\\') != std::string::npos
                        || nm.find('\0') != std::string::npos   /* see above */
                        || nm == "." || nm == ".."
-                       || nm.size() <= extlen
-                       || nm.compare(nm.size() - extlen, extlen, SNAP_EXT) != 0)
+                       || (!is_cartdata && !is_overlay))
         {
             fprintf(stderr, "[REC] snapshot payload contains an unsafe or "
                             "non-cartdata name -- not playing\n");
+            return false;
+        }
+        if (is_overlay && sf.data.size() != (size_t)P8REC_ROM_BYTES)
+        {
+            /* An overlay of the wrong length is either truncation or a sender
+             * describing something this build does not understand. Both are
+             * refusals: half an overlay is a world neither machine ever had. */
+            fprintf(stderr, "[REC] snapshot payload has a %u-byte cart overlay "
+                            "(expected %u) -- not playing\n",
+                    (unsigned)sf.data.size(), (unsigned)P8REC_ROM_BYTES);
             return false;
         }
         v.push_back(sf);

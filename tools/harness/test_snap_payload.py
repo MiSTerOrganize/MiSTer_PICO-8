@@ -93,12 +93,19 @@ def cut_source():
     # rots exactly the same way. P8REC_SNAP_EXT is shared with the snapshot
     # WRITER precisely so the two cannot drift, so this test must not be the
     # thing that reintroduces a second spelling of it.
-    defines = re.findall(r"^#define\s+P8REC_SNAP_EXT\s+.*$", src, re.M)
-    if len(defines) != 1:
-        raise SystemExit("expected exactly one #define P8REC_SNAP_EXT in "
-                         "mister_main.cpp, found %d -- if it was renamed or "
-                         "inlined, fix this cut rather than re-typing the value"
-                         % len(defines))
+    #
+    # P8REC_ROM_BYTES / P8REC_ROM_EXT joined the list when a cstore overlay
+    # became carryable: the reader's grammar for one is ENTIRELY its size, so a
+    # re-typed value here would be a test that agrees with itself.
+    defines = []
+    for name in ("P8REC_SNAP_EXT", "P8REC_ROM_BYTES", "P8REC_ROM_EXT"):
+        got = re.findall(r"^#define\s+" + name + r"\s+.*$", src, re.M)
+        if len(got) != 1:
+            raise SystemExit("expected exactly one #define %s in "
+                             "mister_main.cpp, found %d -- if it was renamed or "
+                             "inlined, fix this cut rather than re-typing the "
+                             "value" % (name, len(got)))
+        defines += got
 
     fs = src.find("static bool p8snap_read")
     if fs < 0:
@@ -107,7 +114,7 @@ def cut_source():
     fe = src.find("\n}\n", fs)
     if fe < 0:
         raise SystemExit("could not find the end of p8snap_read")
-    return defines[0] + "\n" + struct_decl + "\n" + src[fs:fe + 3]
+    return "\n".join(defines) + "\n" + struct_decl + "\n" + src[fs:fe + 3]
 
 
 def compile_probe(work, body):
@@ -147,6 +154,48 @@ def main():
 
         rc, out = drive("empty.inp", [])
         check("empty payload: accepted, zero entries", rc == 0 and "ACCEPTED 0" in out, out)
+
+        # ---- the cstore overlay: the SECOND allowed kind ---------------------
+        #
+        # 🛑 A .p8rom IS NOT A CART, and the difference is the security
+        # property. The writer reduces a cstore overlay to exactly the ROM DATA
+        # region -- ending at offsetof(memory, code) -- so nothing parses it on
+        # the far side, it cannot express a __lua__ section, and its size IS its
+        # entire grammar. A <cart>.p8 stays refused (first case in the whitelist
+        # loop below), because THAT would reach the cart decoder and the ROM
+        # overlay path with a stranger's file.
+        #
+        # Carried because a .inp must be FULLY SELF-CONTAINED: a cart that uses
+        # cstore -- Virtua Racing packs track geometry into its data carts --
+        # otherwise replays against un-overlaid ROM on any other machine.
+        ROM = 0x4300
+        rc, out = drive("overlay.inp", [("mygame.p8.p8rom", b"\xa5" * ROM)])
+        check("valid overlay: accepted at exactly %d bytes" % ROM,
+              rc == 0 and "ACCEPTED 1" in out, out)
+
+        rc, out = drive("overlay_mix.inp", [("mygame.p8d.txt", b"CARTDATA"),
+                                            ("mygame.p8.p8rom", b"\x00" * ROM)])
+        check("valid overlay: accepted alongside cartdata",
+              rc == 0 and "ACCEPTED 2" in out, out)
+
+        # Size is the grammar, so both sides of the boundary are asserted -- an
+        # off-by-one in either direction is visible, and a short block would
+        # otherwise leave the tail of the region holding local bytes: an overlay
+        # half from each machine, which is a world neither ever had.
+        for label, n in [("one byte short", ROM - 1), ("one byte long", ROM + 1),
+                         ("empty", 0), ("a single byte", 1)]:
+            rc, out = drive("overlay_bad.inp", [("mygame.p8.p8rom", b"Z" * n)])
+            check("refuse: overlay %s (%d bytes)" % (label, n), rc == 1,
+                  "rc=%d %s" % (rc, out))
+
+        # 🛑 The name must not be able to present as a cart. ".p8rom" ends in
+        # "rom", so it cannot collide with the <cart>.p8 the scratch resolves --
+        # but a NUL truncating .p8rom back to .p8 would, and that is the exact
+        # 2026-08-02 defect re-aimed at the new extension.
+        rc, out = drive("overlay_nul.inp",
+                        [("mygame.p8\x00.p8rom", b"\xa5" * ROM)])
+        check("refuse: overlay name truncating to <cart>.p8", rc == 1,
+              "rc=%d %s" % (rc, out))
 
         # ---- the whitelist: this is the control ----------------------------
         for label, entry in [

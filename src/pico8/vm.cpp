@@ -23,6 +23,11 @@
 #include <filesystem>
 #include "compat_format.h"
 #include <cstring>    // memset, memcpy (MiSTer shim patch)
+#include <cstdio>     // fopen/fread/fclose -- the carried cstore overlay is read
+                      // as raw bytes, never through the cart decoder. Named
+                      // explicitly rather than inherited from lol/engine.h: new
+                      // code carries its own includes, or it compiles here and
+                      // breaks in the next tree that does not pull it in.
 #include <cstdlib>    // getenv, atoi (Z8_TEST_SEED deterministic-trace seeding)
 #include <cmath>      // std::abs (MiSTer shim patch)
 #include <unistd.h>   // _exit (MiSTer Reset Cart pause-menu handler)
@@ -560,6 +565,44 @@ bool vm::load_cart(cart &target_cart, std::string const& filename)
             reload_cart->load(name_cstore);
             // copy save cart rom to loaded cart rom
             target_cart.set_from_ram(reload_cart->get_rom(), 0, 0, offsetof(memory, code));
+        }
+        else
+        {
+            /* A cstore overlay carried inside a shared recording.
+             *
+             * A .inp must be FULLY SELF-CONTAINED: hand it to another MiSTer
+             * and it reproduces the same screen, reading nothing off that
+             * card. For a cart that uses cstore() the persisted state IS the
+             * overlay, so without this the replay runs against un-overlaid ROM
+             * and diverges -- Virtua Racing packs track GEOMETRY into its data
+             * carts, so "just data" is the whole world.
+             *
+             * 🛑 IT IS A RAW BLOCK, NEVER A .p8, AND THAT IS THE SECURITY
+             * PROPERTY. The recording writer converts its own overlay into
+             * exactly ROM_DATA_BYTES of opaque bytes, so a stranger's file
+             * never reaches the cart decoder and cannot express a __lua__
+             * section at all. The region ends at offsetof(memory, code), so an
+             * overlay is data by construction, exactly as a real cstore() is.
+             * Do not "simplify" this into loading the block as a cart.
+             *
+             * Second, so ordering cannot surprise: the run's OWN cstore writes
+             * take precedence (the branch above), because a replay that has
+             * already saved must see what it saved. The carried block is the
+             * starting state only. */
+            std::string name_rom = name_cstore + ".p8rom";
+            if (file_exists(name_rom))
+            {
+                FILE *f = fopen(name_rom.c_str(), "rb");
+                if (f)
+                {
+                    std::vector<uint8_t> buf(cart::ROM_DATA_BYTES + 1);
+                    size_t n = fread(&buf[0], 1, buf.size(), f);
+                    fclose(f);
+                    /* n == size only if the file is LONGER than expected, which
+                     * set_rom_data then refuses along with anything short. */
+                    target_cart.set_rom_data(&buf[0], n);
+                }
+            }
         }
     }
     return has_loaded;
