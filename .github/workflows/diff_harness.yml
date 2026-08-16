@@ -67,6 +67,16 @@ jobs:
       # which broke Play permanently on a zero-padded copy.
       - name: Recorder slot-selection tests
         run: python3 tools/harness/test_slot_selection.py
+      # The golden GATE itself cannot run here -- the trace corpus is gitignored
+      # and the cart library is not in any repo -- so it runs locally, next to
+      # the data. What CAN run here is the guard on it: golden_check.sh must
+      # reproduce trace_worker.sh's run conditions exactly, because a golden is
+      # only comparable to a run made the same way. A condition changed in one
+      # and not the other makes every layout-sensitive cart drift at once and
+      # the gate blames the engine. Pure text comparison, no corpus needed.
+      - name: Golden-gate worker sync (produces vs checks)
+        run: python3 tools/harness/test_golden_check_sync.py
+
       - name: Build z8headless (engine-only, fully static, with -g for addr2line)
         run: |
           cmake -B build -DBUILD_HEADLESS=ON -DSKIP_SDL_FRONTEND=ON -DCMAKE_BUILD_TYPE=Release \

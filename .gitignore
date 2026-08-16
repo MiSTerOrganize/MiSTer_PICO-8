@@ -24,3 +24,6 @@ build-arm/
 *.o
 *.a
 *.bak
+
+# Golden-gate scratch: staged z8headless + per-run results. Regenerable.
+tools/harness/.golden_gate_work/
