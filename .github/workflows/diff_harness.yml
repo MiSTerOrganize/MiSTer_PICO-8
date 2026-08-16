@@ -132,6 +132,18 @@ jobs:
           test "$(wc -l < out/trace_a.txt)" -eq 120
           echo "trace deterministic OK:"
           head -5 out/trace_a.txt
+      # The determinism check above runs two traces of ONE cart and diffs them
+      # against EACH OTHER. That proves the engine is reproducible and is blind
+      # to it being deterministically WRONG -- every frame of every cart can
+      # shift identically and still pass. This step is the missing half: compare
+      # against STORED goldens, so a behaviour change has to be acknowledged.
+      #
+      # Only the 28 repo-owned carts, because CI can only legitimately see those
+      # -- the 3,302-cart corpus is third-party content in no repo, and its
+      # goldens are gitignored in a repo with no remote. The corpus gate runs
+      # locally (tools/harness/golden_gate.sh); this is the CI-visible subset.
+      - name: Golden traces for repo-owned carts (behaviour regression gate)
+        run: Z8=./build/z8headless bash tools/harness/repo_golden_gate.sh
       - name: Stage binary bundle
         run: |
           mkdir -p bundle
