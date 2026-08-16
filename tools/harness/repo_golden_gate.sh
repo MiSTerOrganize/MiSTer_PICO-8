@@ -50,7 +50,10 @@ mkdir -p "$GOLDENS"
 
 # The cart set is derived from git, not from a hand-kept list, so a cart added
 # to the repo cannot silently sit outside the gate.
-mapfile -t CARTS < <(cd "$REPO" && git ls-files | grep -iE '\.p8$' | grep -vE '^src/' | sort)
+# bios.p8 is excluded: it is the BIOS, not a cart, so tracing it 'as a cart'
+# exercises a path no user takes -- and every real cart below already runs
+# through it, so a BIOS regression still shows up here, 27 times over.
+mapfile -t CARTS < <(cd "$REPO" && git ls-files | grep -iE '\.p8$' | grep -vE '^src/' | grep -vE '(^|/)bios\.p8$' | sort)
 [ "${#CARTS[@]}" -gt 0 ] || { echo "ERROR: no repo-owned carts found" >&2; exit 2; }
 
 pass=0; fail=0; new=0
