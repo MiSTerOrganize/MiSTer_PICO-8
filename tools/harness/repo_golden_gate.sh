@@ -39,6 +39,14 @@ REBASE=0
 [ "${1:-}" = "--rebaseline" ] && REBASE=1
 
 Z8="${Z8:-$REPO/build/z8headless}"
+# 🛑 MUST be absolute: the run loop cd's into each cart's directory, so a
+# relative Z8 (CI passes ./build/z8headless) stops resolving and every cart
+# comes back rc=127. Verified locally only with an absolute path first time
+# round, which is exactly why CI caught what the local run could not.
+case "$Z8" in
+    /*) ;;
+    *)  Z8="$(cd "$(dirname "$Z8")" 2>/dev/null && pwd)/$(basename "$Z8")" ;;
+esac
 [ -x "$Z8" ] || { echo "ERROR: no z8headless at $Z8 (set Z8=, or build it first)" >&2; exit 2; }
 
 # bios.p8 must sit in the datadir the engine is pointed at.
@@ -56,7 +64,7 @@ mkdir -p "$GOLDENS"
 mapfile -t CARTS < <(cd "$REPO" && git ls-files | grep -iE '\.p8$' | grep -vE '^src/' | grep -vE '(^|/)bios\.p8$' | sort)
 [ "${#CARTS[@]}" -gt 0 ] || { echo "ERROR: no repo-owned carts found" >&2; exit 2; }
 
-pass=0; fail=0; new=0
+pass=0; fail=0; new=0; runfail=0
 FAILED=()
 
 for rel in "${CARTS[@]}"; do
@@ -72,9 +80,12 @@ for rel in "${CARTS[@]}"; do
     rm -rf "$h"
 
     if [ $rc -ne 0 ] || [ ! -s "$t" ]; then
+        # Counted separately from DIFF on purpose. Reporting a binary that
+        # never ran as "drifted" sends the reader hunting a behaviour change
+        # that did not happen -- rc=127 is a missing binary, not a regression.
         echo "RUNFAIL  $rel (rc=$rc)"
-        FAILED+=("$rel (run failed)")
-        fail=$((fail + 1)); rm -f "$t"; continue
+        FAILED+=("$rel (run failed, rc=$rc)")
+        runfail=$((runfail + 1)); rm -f "$t"; continue
     fi
 
     if [ "$REBASE" -eq 1 ]; then
@@ -111,7 +122,11 @@ if [ "$REBASE" -eq 1 ]; then
     echo "re-baselined $pass cart(s). Commit tools/harness/repo_goldens/ and say WHY."
     exit 0
 fi
-echo "repo golden gate: $pass matched, $fail drifted, $new without a golden"
+echo "repo golden gate: $pass matched, $fail drifted, $new without a golden, $runfail did not run"
+if [ "$runfail" -gt 0 ]; then
+    echo "  🛑 $runfail cart(s) did not RUN. That is not drift -- rc=127 means the"
+    echo "     binary was not found (a relative Z8 breaks once we cd into a cart dir)."
+fi
 if [ "${#FAILED[@]}" -gt 0 ]; then
     echo
     echo "NOT MATCHING:"; printf '  %s\n' "${FAILED[@]}"
