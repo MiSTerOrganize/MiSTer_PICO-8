@@ -14,6 +14,12 @@ on:
     # -Wl,--build-id=none at link time; this filter avoids the trigger.)
     paths-ignore:
       - 'tools/**'
+      # Markdown cannot change the ARM binary, so a docs edit must not rebuild
+      # and re-commit it -- that re-ships ~2.2 MB to every update_all user for
+      # nothing. Demonstrated 2026-08-16: a docs/dev/** push triggered a full
+      # rebuild. Shipped docs still propagate -- dispatch_db.yml and
+      # refresh_release.yml both trigger on docs/** and are unaffected by this.
+      - 'docs/**'
   pull_request:
     branches: [main]
   workflow_dispatch:
