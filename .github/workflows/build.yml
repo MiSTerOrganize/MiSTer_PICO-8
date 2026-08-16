@@ -118,8 +118,41 @@ jobs:
               if [ ! -f "$SDL_PREFIX/lib/libSDL.a" ]; then
                 echo "=== Building SDL 1.2.15 (static, fbcon, ALSA) ==="
                 cd /tmp
-                wget -q https://www.libsdl.org/release/SDL-1.2.15.tar.gz
+                # Fetch with mirrors, an integrity check and a retry pass.
+                # `wget && tar xzf` alone is not enough: a mirror answering 200
+                # with a truncated body or an HTML error page makes wget exit 0,
+                # so the corrupt file sails through and tar dies with "Error is
+                # not recoverable" -- the failure still visible on the OpenBOR_4086
+                # repo CI run. `tar tzf` lists without extracting, proving gzip
+                # integrity in milliseconds. Mirrors handle a bad mirror; the
+                # outer retry handles a network blip that hits them all at once.
+                # Mirrors the fetch_verify in OpenBOR_7533 (parity, 2026-08-15).
+                fetch_verify() {
+                  _fv_out="$1"; shift
+                  _fv_try=1
+                  while [ $_fv_try -le 3 ]; do
+                    for _fv_url in "$@"; do
+                      rm -f "$_fv_out"
+                      if wget -q "$_fv_url" -O "$_fv_out" && tar tzf "$_fv_out" >/dev/null 2>&1; then
+                        return 0
+                      fi
+                      echo "WARN: $_fv_url did not yield a valid archive; trying the next mirror" >&2
+                    done
+                    if [ $_fv_try -lt 3 ]; then
+                      echo "WARN: every mirror for $_fv_out failed on round $_fv_try; retrying" >&2
+                      sleep 3
+                    fi
+                    _fv_try=$((_fv_try + 1))
+                  done
+                  rm -f "$_fv_out"
+                  return 1
+                }
+                fetch_verify SDL-1.2.15.tar.gz \
+                  https://www.libsdl.org/release/SDL-1.2.15.tar.gz \
+                  https://github.com/libsdl-org/SDL-1.2/releases/download/release-1.2.15/SDL-1.2.15.tar.gz \
+                  || { echo "ERROR: could not fetch a valid SDL-1.2.15.tar.gz" >&2; exit 1; }
                 tar xzf SDL-1.2.15.tar.gz
+                [ -d SDL-1.2.15 ] || { echo "ERROR: SDL-1.2.15 did not extract" >&2; exit 1; }
                 cd SDL-1.2.15
                 ./configure \
                   --prefix=$SDL_PREFIX \
