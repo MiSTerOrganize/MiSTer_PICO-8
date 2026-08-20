@@ -1,5 +1,10 @@
 name: Build MiSTer ARM
-run-name: ${{ inputs.reason || github.event.head_commit.message || github.ref_name }}
+# Empty on push, so GitHub falls back to its own default -- the commit
+# message, which the Actions UI renders as the FIRST LINE. Passing the raw
+# message here instead put the whole multi-line body in the run title.
+# Dispatch still gets a real label (the reason, else the branch), which is
+# the point of overriding at all -- its default is just the workflow name.
+run-name: "${{ inputs.reason || (github.event_name == 'workflow_dispatch' && github.ref_name) || '' }}"
 
 on:
   push:
