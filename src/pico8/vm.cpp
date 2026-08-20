@@ -836,13 +836,58 @@ void vm::api_reload(int16_t in_dst, int16_t in_src, opt<int16_t> in_size, opt<st
 
     if (filename.has_value())
     {
-        std::string name = get_path_active_dir() + "/" + filename.value();
-        // tmp fix: if extension is not .p8 or .png, set it to .p8
-        if (!lol::ends_with(lol::tolower(name), ".p8") && !lol::ends_with(lol::tolower(name), ".png"))
-            name += ".p8";
+        // A cart may name a sibling by BBS id, exactly as load() does.
+        // KONSAIRI streams its map and sfx banks with
+        // reload(dst, src, size, "#konsairi_b-3"). bios.p8 resolves the '#'
+        // form for load(), but reload() is bound straight to C++ and never
+        // did, so the lookup became a literal file named "#konsairi_b-3.p8",
+        // failed, and the destination was zero-filled -- a black screen the
+        // instant the game swapped banks. Try the same candidates bios.p8
+        // tries for load(), in the same order.
+        std::string arg = filename.value();
+        std::string dir = get_path_active_dir() + "/";
+        std::string cand[6];
+        int ncand = 0;
+
+        if (!arg.empty() && arg[0] == '#')
+        {
+            std::string full = arg.substr(1);
+            cand[ncand++] = dir + full + ".p8.png";
+            cand[ncand++] = dir + full;
+            cand[ncand++] = dir + full + ".p8";
+            size_t us = full.find_last_of('_');
+            if (us != std::string::npos && us + 1 < full.size())
+            {
+                std::string tail = full.substr(us + 1);
+                cand[ncand++] = dir + tail + ".p8.png";
+                cand[ncand++] = dir + tail + ".p8";
+            }
+        }
+        else
+        {
+            std::string base = dir + arg;
+            // tmp fix: if extension is not .p8 or .png, set it to .p8
+            if (!lol::ends_with(lol::tolower(base), ".p8")
+                 && !lol::ends_with(lol::tolower(base), ".png"))
+                base += ".p8";
+            cand[ncand++] = base;
+            // ... and the .p8.png steganography variant, because a cart that
+            // asks for "levels.p8" is usually shipped as "levels.p8.png".
+            // bios.p8's load() already falls back this way.
+            if (!lol::ends_with(lol::tolower(base), ".png"))
+                cand[ncand++] = base + ".png";
+        }
+
         // Load cart from a file
         auto reload_cart = std::make_shared<cart>();
-        bool ok = load_cart(*reload_cart, name);
+        bool ok = false;
+        std::string name = cand[0];
+        for (int i = 0; i < ncand && !ok; ++i)
+            if (load_cart(*reload_cart, cand[i]))
+            {
+                ok = true;
+                name = cand[i];
+            }
         // Log both success and failure — rare-event (per bank swap, not per
         // frame). Tells us the exact sequence of bank loads, which maps to
         // AW's game-part transitions: bank_11 = game_part2, bank_16 = part3,
