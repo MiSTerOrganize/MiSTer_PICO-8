@@ -1729,6 +1729,124 @@ void vm::api_rectfill(int16_t x0, int16_t y0, int16_t x1, int16_t y1,
         hline(x0, x1, y, color_bits);
 }
 
+// Rounded rectangles. PICO-8 0.2.6 added rrect/rrectfill; carts call them
+// without defining them, so a cart that reaches one on an engine that lacks it
+// dies with "attempt to call global 'rrectfill' (a nil value)". 169 carts in
+// the library call rrectfill and 133 call rrect.
+//
+// Manual (0.2.7a6): RRECT(X, Y, W, H, R, [COL]) -- note WIDTH and HEIGHT plus a
+// corner radius, NOT the two corners rect/rectfill take. W and H must both be
+// more than 0 for the shape to be drawn, and R is clamped to 0..min(w,h)/2.
+//
+// Corner shape: a quarter circle centred at (x0+r, y0+r) for the top left, a
+// pixel kept when dx*dx + dy*dy <= r*r. That is checkable against the manual's
+// own worked example -- it says radius 2 leaves "3 pixels missing at each
+// corner", and this rule removes exactly 3: the top row loses 2 and the row
+// under it loses 1.
+static inline int16_t rrect_inset(int16_t py, int16_t y0, int16_t y1, int16_t r)
+{
+    if (r <= 0)
+        return 0;
+    int dy = 0;
+    if (py < y0 + r)
+        dy = (y0 + r) - py;             // in the top corner band
+    else if (py > y1 - r)
+        dy = py - (y1 - r);             // in the bottom corner band
+    else
+        return 0;                       // straight section between the corners
+    int rem = r * r - dy * dy;
+    if (rem < 0)
+        rem = 0;
+    int run = (int)std::sqrt((double)rem);
+    while ((run + 1) * (run + 1) <= rem)   // guard against sqrt rounding down
+        ++run;
+    while (run > 0 && run * run > rem)
+        --run;
+    return (int16_t)(r - run);
+}
+
+void vm::api_rrectfill(int16_t x, int16_t y, int16_t w, int16_t h, int16_t r,
+                       opt<fix32> c)
+{
+    auto &ds = m_ram.draw_state;
+
+    if (w <= 0 || h <= 0)
+        return;                          // the manual is explicit about this
+
+    int16_t x0 = x - ds.camera.x;
+    int16_t y0 = y - ds.camera.y;
+    int16_t x1 = x0 + w - 1;
+    int16_t y1 = y0 + h - 1;
+
+    if (x1 < 0 || x0 >= 128 || y1 < 0 || y0 >= 128)
+        return;
+
+    int16_t rmax = (int16_t)((w < h ? w : h) / 2);
+    if (r < 0) r = 0;
+    if (r > rmax) r = rmax;
+
+    uint32_t color_bits = to_color_bits(c);
+
+    int16_t ylo = y0 < 0 ? 0 : y0;
+    int16_t yhi = y1 > 127 ? 127 : y1;
+
+    for (int16_t py = ylo; py <= yhi; ++py)
+    {
+        int16_t ins = rrect_inset(py, y0, y1, r);
+        hline(x0 + ins, x1 - ins, py, color_bits);
+    }
+}
+
+void vm::api_rrect(int16_t x, int16_t y, int16_t w, int16_t h, int16_t r,
+                   opt<fix32> c)
+{
+    auto &ds = m_ram.draw_state;
+
+    if (w <= 0 || h <= 0)
+        return;
+
+    int16_t x0 = x - ds.camera.x;
+    int16_t y0 = y - ds.camera.y;
+    int16_t x1 = x0 + w - 1;
+    int16_t y1 = y0 + h - 1;
+
+    if (x1 < 0 || x0 >= 128 || y1 < 0 || y0 >= 128)
+        return;
+
+    int16_t rmax = (int16_t)((w < h ? w : h) / 2);
+    if (r < 0) r = 0;
+    if (r > rmax) r = rmax;
+
+    uint32_t color_bits = to_color_bits(c);
+
+    int16_t ylo = y0 < 0 ? 0 : y0;
+    int16_t yhi = y1 > 127 ? 127 : y1;
+
+    for (int16_t py = ylo; py <= yhi; ++py)
+    {
+        int16_t ins = rrect_inset(py, y0, y1, r);
+
+        if (py == y0 || py == y1)
+        {
+            hline(x0 + ins, x1 - ins, py, color_bits);   // the flat top/bottom
+            continue;
+        }
+
+        // Where the curve steps inward by more than one pixel between rows the
+        // outline would break into dashes, so each row is drawn out to meet
+        // whichever neighbour sits further in. Both neighbours are consulted
+        // because the inset shrinks down the top corners and grows down the
+        // bottom ones.
+        int16_t above = (py == y0) ? ins : rrect_inset(py - 1, y0, y1, r);
+        int16_t below = (py == y1) ? ins : rrect_inset(py + 1, y0, y1, r);
+        int16_t nb = above > below ? above : below;
+        int16_t outer = (int16_t)(nb - 1 > ins ? nb - 1 : ins);
+
+        hline(x0 + ins, x0 + outer, py, color_bits);
+        hline(x1 - outer, x1 - ins, py, color_bits);
+    }
+}
+
 int16_t vm::api_sget(int16_t x, int16_t y)
 {
     return m_ram.get_gfx().safe_get(x, y);

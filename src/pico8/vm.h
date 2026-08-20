@@ -304,6 +304,10 @@ private:
     void private_pause_screen_mode(int16_t mode);
     void api_rect(int16_t x0, int16_t y0, int16_t x1, int16_t y1, opt<fix32> c);
     void api_rectfill(int16_t x0, int16_t y0, int16_t x1, int16_t y1, opt<fix32> c);
+    void api_rrect(int16_t x, int16_t y, int16_t w, int16_t h,
+                   int16_t r, opt<fix32> c);
+    void api_rrectfill(int16_t x, int16_t y, int16_t w, int16_t h,
+                       int16_t r, opt<fix32> c);
     int16_t api_sget(int16_t x, int16_t y);
     void api_sset(int16_t x, int16_t y, opt<int16_t> c);
     void api_spr(int16_t n, int16_t x, int16_t y, opt<fix32> w,
@@ -380,6 +384,8 @@ public:
             { "pset",     bind<&vm::api_pset>() },
             { "rect",     bind<&vm::api_rect>() },
             { "rectfill", bind<&vm::api_rectfill>() },
+            { "rrect",    bind<&vm::api_rrect>() },
+            { "rrectfill", bind<&vm::api_rrectfill>() },
             { "sget",     bind<&vm::api_sget>() },
             { "sset",     bind<&vm::api_sset>() },
             { "spr",      bind<&vm::api_spr>() },

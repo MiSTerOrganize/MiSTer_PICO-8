@@ -50,7 +50,7 @@ std::unordered_set<std::string> api::functions =
     "poke", "poke2", "poke4", "memcpy", "memset", "stat", "printh", "extcmd",
     "btn", "btnp", "cursor", "camera", "circ", "circfill",
     "clip", "cls", "color", "fillp", "fget", "fset", "line", "map", "mget",
-    "mset", "oval", "ovalfill", "pal", "palt", "pget", "pset", "rect", "rectfill",
+    "mset", "oval", "ovalfill", "pal", "palt", "pget", "pset", "rect", "rectfill", "rrect", "rrectfill",
     "serial", "sget", "sset", "spr", "sspr", "music", "sfx", "time", "tline", "_map_display",
     // Implemented in the ZEPTO-8 BIOS
     "cocreate", "coresume", "costatus", "yield", "trace", "stop",
