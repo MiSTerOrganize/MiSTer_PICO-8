@@ -852,6 +852,20 @@ void luaV_execute (lua_State *L) {
       )
       vmcase(OP_FORLOOP,
         lua_Number step = nvalue(ra+2);
+        lua_Number zero = (lua_Number)0;
+        /* A numeric for with a step of ZERO runs its body ZERO times.
+        ** Measured against PICO-8 0.2.7a6: `for v=0,0,0 do n+=1 end` leaves
+        ** n at 0, and so does `for v=3,0,0`. Upstream Lua 5.2 instead raises
+        ** "'for' step is zero"; z8lua carries neither guard, so both sign
+        ** tests below pass trivially when step is 0 (0 <= 0) and the loop
+        ** jumps back forever.
+        **
+        ** That hung KONSAIRI: its phy() does `d = -amid(va,1)` and then
+        ** `for v=va,0,d`, and the cart deliberately snaps small velocities to
+        ** exactly 0 (`cv[a]=inrng(cv[a],0x.001) and 0 or cv[a]`), so va==0
+        ** and d==0 are normal. On real PICO-8 the loop is skipped; here it
+        ** spun and the game never drew a frame. */
+        if (luai_numlt(L, zero, step) || luai_numlt(L, step, zero)) {
         lua_Number idx = luai_numadd(L, (lua_Number)nvalue(ra), step); /* increment index */
         lua_Number limit = nvalue(ra+1);
         /* check for idx sign wrap-around */
@@ -862,6 +876,7 @@ void luaV_execute (lua_State *L) {
           ci->u.l.savedpc += GETARG_sBx(i);  /* jump back */
           setnvalue(ra, idx);  /* update internal index... */
           setnvalue(ra+3, idx);  /* ...and external index */
+        }
         }
       )
       vmcase(OP_FORPREP,
