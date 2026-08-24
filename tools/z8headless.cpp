@@ -60,6 +60,7 @@ int main(int argc, char **argv)
 
     std::string cart, outdir = ".", inputfile, datadir, dumpcode, tracefile;
     int frames = 120, hold = 0, alarm_secs = 0;
+    int ss_at = -1, ss_to = -1;   // --savestate-test A:B (-1 = off)
     uint64_t watchdog = 0;   // 0 = off; abort+dump stuck stack if a step exceeds N instr
     std::set<int> dump;
     bool dump_all = false, verbose = false;
@@ -77,6 +78,12 @@ int main(int argc, char **argv)
         else if (a == "--dumpcode") dumpcode = next();  // write decompressed cart code, then exit
         else if (a == "--test")     tracefile = next(); // golden-master hash trace output
         else if (a == "--watchdog") watchdog = strtoull(next().c_str(), nullptr, 10); // Lua runaway-loop guard
+        else if (a == "--savestate-test") {           // "A:B" -- save at A, compare frame B
+            std::string s = next();
+            size_t c = s.find(':');
+            ss_at = atoi(s.substr(0, c).c_str());
+            ss_to = (c == std::string::npos) ? ss_at + 60 : atoi(s.substr(c + 1).c_str());
+        }
         else if (a == "--alarm")    alarm_secs = atoi(next().c_str()); // wall-clock hang backtrace (C++ loops)
         else if (a == "--dump") {
             std::string s = next();
@@ -155,6 +162,49 @@ int main(int argc, char **argv)
 
     std::vector<lol::u8vec4> fb(128 * 128);
     int held = hold;
+
+    // --savestate-test A:B -- exercise the eris save/load round-trip, which no
+    // other harness here reaches. Run to A, save slot 0, run to B and hash;
+    // then load slot 0 (back to A), run to B again and hash. A faithful
+    // round-trip makes the two hashes equal. Needed because save states
+    // persist __z8_sandbox (the cart's _ENV TABLE) and say nothing about chunk
+    // locals, so any change to what lives in the sandbox vs. in a local is
+    // exactly the kind of thing that can break restore silently.
+    uint32_t ss_h1 = 0, ss_h2 = 0;
+    auto hash_fb = [&]() {
+        uint32_t h = 0;
+        for (int i = 0; i < 128 * 128; ++i) {
+            uint8_t px[3] = { fb[i].r, fb[i].g, fb[i].b };
+            h = tt_crc32(h, px, 3);
+        }
+        return h;
+    };
+    if (ss_at >= 0) {
+        for (int pass = 0; pass < 2; ++pass) {
+            if (pass == 0) {
+                for (int fr = 0; fr < ss_at; ++fr) {
+                    for (int b = 0; b < 6; ++b) vm->button(0, b, (hold >> b) & 1);
+                    vm->step(1.0f / 60.0f);
+                }
+                if (!vm->savestate_save(0)) {
+                    fprintf(stderr, "[savestate-test] SAVE FAILED\n"); return 3;
+                }
+            } else if (!vm->savestate_load(0)) {
+                fprintf(stderr, "[savestate-test] LOAD FAILED\n"); return 3;
+            }
+            for (int fr = ss_at; fr < ss_to; ++fr) {
+                for (int b = 0; b < 6; ++b) vm->button(0, b, (hold >> b) & 1);
+                vm->step(1.0f / 60.0f);
+            }
+            vm->render(fb.data(), fb.size());
+            (pass == 0 ? ss_h1 : ss_h2) = hash_fb();
+        }
+        bool ok = (ss_h1 == ss_h2);
+        fprintf(stderr, "[savestate-test] %s  pre=%08x post=%08x (save@%d run-to %d)\n",
+                ok ? "MATCH" : "MISMATCH", ss_h1, ss_h2, ss_at, ss_to);
+        return ok ? 0 : 1;
+    }
+
     for (int fr = 0; fr < frames; ++fr) {
         auto it = script.find(fr);
         if (it != script.end()) held = it->second;

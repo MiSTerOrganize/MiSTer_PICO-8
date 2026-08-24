@@ -103,7 +103,19 @@ static volatile bool g_return_to_browser = false;
 // recordings (VM semantics, RNG, timestep, input mapping). NOT for
 // render/audio/UI/perf changes -- the fixed timestep makes replay independent
 // of frame cost, so those can never desync a recording.
-#define P8REC_ENGINE_VER 1u
+//
+// v1 -> v2 (2026-08-24): the BIOS reference-parity fixes. Three separate
+// reasons a v1 take can no longer be trusted, any one of which is sufficient:
+//   * API names now resolve inside a function whose parameter is named _ENV.
+//     Carts that previously died on a nil sin()/flr()/circfill() now RUN, so
+//     their execution is not merely shifted, it is entirely different.
+//   * deli() with an out-of-range index no longer deletes a live element, and
+//     add() with an out-of-range position now raises instead of clamping --
+//     both change table contents mid-run (17 carts reach the deli path).
+//   * the added chunk text shifts the Lua heap, and z8lua hashes object keys
+//     by POINTER, so pairs() order moves on object-keyed carts. Measured: 53
+//     of 3,302 golden traces moved, all DET.
+#define P8REC_ENGINE_VER 2u
 #define P8REC_MAX_FRAMES 2000000u   /* ~9.2 h at 60 fps; caps a runaway file */
 #define P8REC_CART_LEN   256   /* holds a relative path now, not just a basename */
 

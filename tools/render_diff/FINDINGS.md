@@ -401,3 +401,298 @@ on x86 headless at the exact race-clock times of the user's corruption photos.
 geometry in scrambled colors, not shattered vertices. NEXT: live DDR3 framebuffer
 capture on the MiSTer while the corruption is on screen (devmem dump of the ARM-written
 RGB565 buffer) to split engine-render-side vs present/FPGA-side.
+
+---
+
+## 2026-08-22 -- 5 carts throw a runtime error in our engine and NOT in the reference
+
+Found while auditing the PICO-8 collection, not while looking for engine bugs.
+All 114 multi-cart folder entries were booted under z8headless for 300 frames:
+114 ran, 0 crashed, 0 hung. Seven emitted a caught Lua error while still
+completing, and each named something that should never be nil.
+
+Running the same seven through the local reference binary (0.2.7a6, `-x`, 25s,
+from each cart's own folder so siblings resolve identically) splits them:
+
+| cart | error | reference |
+|---|---|---|
+| Hide and Seek | `attempt to index local 'pt'` | **same error** |
+| Space 8 | line 309 `compare number with nil` | **same error, same line** |
+| Celeste Theo's Return | line 138 `sin` is nil | clean |
+| Samurise | line 89 `#c` on a number | clean |
+| Into Ruins (v1.06) | line 695 `flr` is nil | clean |
+| Libryinth | line 101 concatenate a table | clean |
+| PICO-BALL | line 1407 `circfill` is nil | clean |
+
+Two are genuine cart behaviour. **Five run clean in the reference and error in
+ours** -- an engine divergence, and three of them fail because a CORE API name
+(`sin`, `flr`, `circfill`) is nil, which cannot be true of a working sandbox. A
+three-line probe calling all three ran clean, so the API exists; those carts are
+reaching a context where it is not bound.
+
+**The mechanism is not proven.** `load()` is implicated and the evidence is
+partial. A two-cart probe -- A loads B from inside `_update` at frame 20 --
+shows z8headless re-executing **A's top-level chunk a second time** and never
+entering B:
+
+```
+A: start, flr=1      <- twice
+A: loading b         <- twice
+(B never entered)
+```
+
+The reference prints each once and also never enters B, because `-x` stops
+there. So `-x` cannot arbitrate this path, and the doubled re-entry in ours is
+an anomaly worth explaining but is not yet established as the cause.
+
+🛑 Do NOT record this as "load() is broken". What is measured: five carts error
+in our engine and not in the reference; our engine re-executes a cart's
+top-level chunk on that path and the reference does not. Closing it needs a
+headless mode that survives the load -- the wrapper approach this directory
+already uses -- or a run on the device.
+
+Also worth noting for whoever picks this up: an earlier attempt to explain the
+seven by "they all call `load()`" was true (7/7) and worthless -- **99 of the
+104 entries call `load()`**. The base rate was computed before the claim was
+made, which is the only reason it did not ship as an explanation.
+
+## 2026-08-23 -- the 5-cart divergence RESOLVED: `_ENV`-swap loses the API. Two red herrings killed.
+
+Closing out the 2026-08-22 entry above. Its two open questions are answered: the
+mechanism is **not** `load()`, and the "top-level chunk runs twice" anomaly was
+never real.
+
+### The mechanism (measured, not inferred)
+
+PICO-8 accepts a function parameter literally named `_ENV`, which rebinds the
+environment for that function's body -- a widely-used cart idiom for
+struct-field shorthand. All three "core API is nil" carts use it:
+
+```lua
+function draw_snow(_ENV)          -- Celeste Theo's Return, entry cart line 135
+ ...
+ x += _g.level_id==4 and spd*3 or sin(off)*spd-_g.cam_spdx   -- line 138: sin
+end
+foreach(fx_snow_alt, draw_snow)   -- called from _update, frame 0
+```
+
+The cart author knows globals are lost -- hence `local _g=_ENV` at line 4 and
+`_g.level_id` -- but writes bare `sin`, `circ`, `spr`. Those work on the
+reference and are nil for us.
+
+Probe `probe/envsem.p8` (`f(_ENV)` called with a plain table, no metatable):
+
+| inside the swapped `_ENV` | reference | ours (before) | agree? |
+|---|---|---|---|
+| `sin` (API name) | **function** | **nil** | **NO** |
+| `myglobal` (cart's own global) | nil | nil | yes |
+| `mytab` (cart's own global table) | nil | nil | yes |
+| `x` (field of the passed table) | 42 | 42 | yes |
+| write `wtest = 123` | goes to the passed table | same | yes |
+
+So the **only** divergence is API names -- user globals correctly do *not* fall
+back, which rules out "the reference chains `_ENV` to the globals table".
+
+`probe/envovr.p8` pins what the binding actually is:
+
+```
+1 pre_override sin0=0        2 post_override sin0=OVR     <- `sin = f` takes effect
+3 env_sin_type=function      4 env_sin_call=0             <- but _ENV.sin is UNCHANGED
+5 inswap sin0=OVR                                         <- the swap sees the override
+7 inswap_add=function foreach=nil printh=nil
+8 inswap_pairs=nil tostr=function setmetatable=nil        <- only a SUBSET survives
+```
+
+Assignment and read both bypass `_ENV` and survive an `_ENV` swap: these names
+behave as **chunk-scope locals (upvalues)**, not table fields. Enumerating all
+127 names in `api::functions` (`probe/envenum.p8`) gives exactly **58** that
+survive -- hot inner-loop functions (math, bitops, peek/poke, drawing
+primitives, `add`/`del`/`deli`, `tostr`/`tonum`/`sub`) -- while `foreach`,
+`printh`, `pairs`, `cls`, `camera`, `btn`, `stat`, `rnd`, `sqrt`, `abs`,
+`cocreate`, `flip` and the rest stay ordinary globals. Full list:
+`probe/visible.txt`.
+
+### The fix, and why it is exactly right
+
+Prepend those 58 names as chunk locals to the cart chunk. Two lines in
+`src/pico8/bios.p8`:
+
+```lua
+__z8_api_prelude = "local max,min,mid,...,deli=max,min,mid,...,deli;"
+...
+local code, ex = __z8_load_code(__z8_api_prelude..cart_code..glue_code, nil, nil, sandbox)
+```
+
+No trailing newline (line numbers are preserved -- verified: Libryinth's error
+stays at line 101), and a trailing `;` so a cart starting with `(` cannot be
+parsed as a call continuation.
+
+Verification:
+
+* `envsem.p8` and `envovr.p8` output is now **byte-identical** to the
+  reference, including the subtle rows 3/4 (override does not touch `_ENV.sin`)
+  and 7/8 (exact membership).
+* All **127** API names match the reference exactly under an `_ENV` swap
+  (`diff` of the enumeration = empty).
+* Celeste Theo's Return, Into Ruins (v1.06) and PICO-BALL: **CLEAN** -- and
+  they genuinely RUN rather than merely stopping the error. Distinct video
+  hashes over 200 frames (`--test`), stock vs patched:
+
+  | cart | stock | patched |
+  |---|---|---|
+  | Celeste Theo's Return | **1** | 101 |
+  | Into Ruins (v1.06) | **1** | 22 |
+  | PICO-BALL | **1** | 4 |
+
+  One distinct frame across 200 is a dead cart re-erroring every tick; the
+  patched runs animate.
+
+**Blast radius, measured.** The prelude costs 58 local slots, so the cart's own
+top-level `local` budget drops from 200 to 142. That sounds like a regression
+risk; measured, it is the opposite -- the reference's own budget is **141**
+(`locals/loc141.p8` OK, `loc142.p8` -> "syntax error line 142"). The reference
+burns the same ~58 slots, which independently confirms the chunk-local
+mechanism, and leaves us one slot *more* permissive than the reference rather
+than less. Scanning the full **8,508**-cart library for syntax errors:
+
+```
+patched syntax-error carts: 104
+stock   syntax-error carts:  104   (the same 104)
+NEWLY_BROKEN_COUNT=0
+```
+
+**Runtime blast radius, measured with the golden gate.** The locally built
+z8headless first reproduced the goldens exactly on the 51-cart subset (51/51
+MATCH), which validates it as a baseline rather than assuming it.
+
+Full corpus with the prelude: **3,249 / 3,302 MATCH, 53 DIFF**. Per the gate's
+own instruction every DIFF was classified rather than assumed --
+`trace_worker.sh` over all 53:
+
+```
+=== class histogram ===
+     53 DET
+=== any NONDET / CRASH / HANG ===
+(none -- all DET)
+```
+
+All 53 are reproducible-but-stale goldens: the documented heap-shift class
+(z8lua hashes object keys by POINTER, so extra chunk text moves `pairs()` order
+on object-keyed carts). Zero NONDET, zero crashes, zero hangs. This is the same
+class and roughly triple the size of the 2026-08-16 re-baseline, where 171 lines
+of BIOS growth moved 19 traces -- expected from *any* change of this breadth, and
+it means **53 goldens need re-baselining with the reason recorded**, per the
+golden README's rule.
+
+### Two red herrings, both killed
+
+**`load()` is not involved.** None of the three fixed carts needed it. The
+2026-08-22 note that all 7 called `load()` was already flagged as worthless
+against a 99/104 base rate; it is now positively excluded.
+
+**"A's top-level chunk executed twice" never happened.** `printh` writes to
+**both stdout and stderr**, so any `2>&1` capture shows every cart line twice.
+Splitting the streams shows each line exactly once. There is no double
+execution and no anomaly to explain.
+
+**Harness note:** z8headless loads `bios.p8` from the *current working
+directory* and only *warns* if it is missing (`bios.cpp` logs and continues).
+Running from a cart's own folder therefore produces a BIOS-less VM whose every
+frame reports a bare `attempt to call a nil value` -- superficially similar to a
+real cart error but with no chunk name or line number. Copy `bios.p8` next to
+the binary and pass the cart by absolute path, as `batch_z8.sh` does.
+
+### Second divergence found on the way: `deli()` clamps an out-of-range index
+
+Unrelated to `_ENV`, found while tracing the two carts that survived the first
+fix. Measured (`probe/deli.p8`, `probe/deli2.p8`):
+
+| call (`t={"a","b","c"}`) | reference | ours |
+|---|---|---|
+| `deli(t,4)` | nil, table **untouched** | `"c"`, and it is **deleted** |
+| `deli(t,0)` / `deli(t,-1)` | nil, untouched | deletes an element |
+| `deli(t,3)`, `deli(t,3.9)`, `deli(t)` | as expected | agree |
+| `add(t,v,i)` for `i` in 1..#t+1 | inserts | agree |
+| `add(t,v,0/5/9/-1)` | **runtime error** "position out of bounds" | silently clamps |
+
+Cause: `i=i and mid(1,i\1,#c) or #c` in the BIOS clamps the index into range
+instead of rejecting it, so an out-of-range `deli` silently deletes a live
+element. Fix (`deli` only so far) returns nil and leaves the table alone;
+`probe/deli.p8` then matches the reference byte-for-byte, and the 51-cart subset
+gate is 51/51 MATCH with both fixes applied. `add`'s out-of-bounds case is
+characterised above but **not yet changed** -- making it raise is a behaviour
+change that needs its own corpus pass.
+
+This one is **reached by real carts**, so it is not theoretical. Instrumenting
+the BIOS to log out-of-range indices, full **8,508**-cart scan at 300
+frames/cart: **17** carts hit out-of-range `deli`, **0** hit out-of-range `add`.
+`Snake 1999 (TweetTweet Jam 9)` hits it **173,206 times** in 300 frames -- a hot
+path -- then `visje` (300), `Drafting Table` (300), `Rewob` (216), `Ace
+Hiragana` (184), `worm` (120), `Picodex Dual` (40), and ten more between 2 and
+12. Every one of those is currently losing a live element on each such call.
+
+Because `add` is never reached out-of-bounds by any cart in the corpus, making
+it raise (to match the reference) is a zero-blast-radius change on this library
+-- but it is still a change from "silently succeeds" to "aborts the cart", so it
+should not ride along with the `deli` fix unexamined.
+
+### STILL OPEN: Samurise and Libryinth are a *third*, separate cause
+
+Both survive **both** fixes, and both are confirmed reference-clean:
+
+* **Samurise** -- `attempt to get length of local 'c' (a number value)`. The
+  failing frame is the **BIOS's own `count()`** (chunk line 89 = `local cnt,
+  max = 0, #c`, verified by dumping the BIOS chunk, not by arithmetic).
+  Instrumented: it is called as `count(6)`. The caller is the cart's embedded
+  Lisp compiler -- DSL source line 165, `(count elem)`, where `elem` comes from
+  `(inext exp i)` and should be a table. `count(<number>)` raises on the
+  reference too, so the divergence is upstream: some value is a number for us
+  and a table there.
+* **Libryinth** -- `attempt to concatenate local 'n' (a table value)` at cart
+  line 101, inside a minified `nK()`.
+
+Ruled out by direct measurement, all byte-identical to the reference:
+`tonum` (31 tokens incl. hex/binary/whitespace forms), `split` (incl. the
+numeric-conversion rule and `split(s,".")`), `sub` (negative/over-range),
+`unpack`, `inext`, `select` (incl. negative indices), `rawget`, string
+indexing `s[i]`, `all`/`count` over strings/tables/nil, `deli`/`add`/`del`.
+
+Next step for whoever picks this up: the cart's AST is built by
+`return tonum(e) or e` in `parse()`, so a token that becomes a number for us
+and a symbol there (or vice versa) would explain it -- but `tonum` itself is
+clean, so the difference is more likely in `consume()`'s tokenisation inputs.
+Wrap a throwaway copy of the cart (never edit the user's file) and dump the AST
+at the `builtin.table` call.
+
+**Useful vehicle:** Samurise's DSL is **Parens-8**, a Lisp-in-PICO-8 that also
+ships standalone as `[Tools]/Parens-8 Repl.p8.png` -- vastly easier to work with
+than a minified game. Caveat, measured rather than assumed: the REPL cart runs
+**CLEAN on both stock and patched**, so it is not an automatic reproduction; it
+idles without evaluating the forms Samurise uses. Feed it the failing form
+(`builtin.table` / `(count elem)` path) rather than expecting it to fail on boot.
+It does independently hit the out-of-range `deli` above (twice), which is how it
+surfaced.
+
+### What shipping needs
+
+The `_ENV` prelude is a **BIOS-only** change (`bios.p8`), so it needs no binary
+rebuild -- but it changes every cart's chunk, so before it ships: the
+conformance suite, a full golden-trace corpus run with a blast-radius diff (a
+change this broad should be expected to move goldens), and the usual hardware
+pass. The `deli` fix is likewise BIOS-only and needs the same. Prototypes live
+in the session scratchpad (`biosfix/`, `biosdeli/`); nothing has been committed.
+
+Two consequences that follow from the project's own rules and are easy to miss:
+
+1. **Bump the recorder's game-logic version stamp** (`P8REC` / `MREC_ENGINE_VER`).
+   The rule is to bump only for a shipped game-LOGIC change that would desync
+   existing takes -- and this is one, twice over: cart-visible name resolution
+   changes, and the chunk-text growth shifts the Lua heap, which moves
+   `pairs()` order on object-keyed carts (the same mechanism that moved Snak's
+   golden). Takes recorded before the change should be refused, not played
+   best-effort.
+2. **Exercise save states.** `persist()`/`unpersist()` key the eris perms table
+   on the API function OBJECTS taken from `_ENV`, and the prelude's locals hold
+   those same objects, so mapping *should* still work -- but that is reasoning,
+   not a measurement, and save/restore is not covered by any headless harness
+   here. Verify it on hardware before shipping.

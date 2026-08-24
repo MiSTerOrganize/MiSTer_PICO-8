@@ -104,8 +104,18 @@ end
 function add(c, x, i)
     if c != nil then
         -- insert at i if specified, otherwise append
-        i=i and mid(1,i\1,#c+1) or #c+1
-        for j=#c,i,-1 do c[j+1]=c[j] end
+        local n=#c
+        if i then
+            i=i\1
+            -- Measured: the reference RAISES for a position outside 1..#c+1
+            -- rather than clamping it. Clamping silently inserted at the wrong
+            -- index. Level 2 so the message points at the cart's own line,
+            -- matching how our other cart-facing errors read.
+            if (i < 1 or i > n+1) error("position out of bounds", 2)
+        else
+            i=n+1
+        end
+        for j=n,i,-1 do c[j+1]=c[j] end
         c[i]=x
         return x
     end
@@ -126,9 +136,15 @@ end
 function deli(c,i)
     if c != nil then
         -- delete at i if specified, otherwise at the end
-        i=i and mid(1,i\1,#c) or #c
+        local n=#c
+        i=i and i\1 or n
+        -- Measured: the reference returns nil and leaves the table UNTOUCHED
+        -- for an index outside 1..#c. Clamping it into range (the old mid()
+        -- form) silently deleted a live element instead -- 17 carts in the
+        -- library reach this, one of them 173k times in 300 frames.
+        if (i < 1 or i > n) return
         local v=c[i]
-        for j=i,#c do c[j]=c[j+1] end
+        for j=i,n do c[j]=c[j+1] end
         return v
     end
 end
@@ -327,6 +343,16 @@ function load(arg, breadcrumb, params)
         if not success and not string.match(arg, '%.png$') then
             success = __load(arg .. ".png", breadcrumb, params)
         end
+        -- A BARE name (no extension at all) never reaches the
+        -- steganography variant above: arg.."png" gives "foo.png", not
+        -- "foo.p8.png". A BBS download IS named <lid>.p8.png, and carts
+        -- restart themselves with load("<lid>") -- Enoshima Picnic,
+        -- Pourlandia, Kaioken God Mode, super mario-16, Frostpunk Pico --
+        -- so without this rung those restarts silently do nothing.
+        if not success and not string.match(arg, '%.png$')
+                       and not string.match(arg, '%.p8$') then
+            success = __load(arg .. ".p8.png", breadcrumb, params)
+        end
     end
     if success then
         -- NOTE: removed `print('ok')` (originally at this position).
@@ -460,6 +486,17 @@ function _set_mainloop_exists(v)
     __z8_is_inside_main_loop=v
 end
 
+-- PICO-8 binds a fixed set of API names as CHUNK-SCOPE LOCALS, not as
+-- fields of the cart's globals table. Measured against the reference:
+-- inside a function whose parameter is named _ENV these still resolve,
+-- assigning to one does NOT write through to _ENV, and a same-named key
+-- in the swapped table does NOT shadow them -- all three are exactly
+-- what a local does. Carts use `function f(_ENV)` for field shorthand
+-- and still call bare sin()/circfill()/flr(); without this they were nil.
+-- The 58 names are the measured set (probe: all 127 API names enumerated).
+-- No trailing newline: cart line numbers must not shift. Trailing ';' so a
+-- cart whose first line opens with '(' cannot parse as a call continuation.
+__z8_api_prelude = "local max,min,mid,ceil,flr,cos,sin,atan2,band,bor,bxor,bnot,shl,shr,lshr,rotl,rotr,tostr,tonum,srand,ord,chr,sub,peek,peek2,peek4,poke,poke2,poke4,memcpy,memset,circ,circfill,clip,color,fillp,fget,fset,line,mget,mset,oval,ovalfill,pal,palt,pget,pset,rect,rectfill,sget,sset,spr,sspr,time,tline,add,del,deli=max,min,mid,ceil,flr,cos,sin,atan2,band,bor,bxor,bnot,shl,shr,lshr,rotl,rotr,tostr,tonum,srand,ord,chr,sub,peek,peek2,peek4,poke,poke2,poke4,memcpy,memset,circ,circfill,clip,color,fillp,fget,fset,line,mget,mset,oval,ovalfill,pal,palt,pget,pset,rect,rectfill,sget,sset,spr,sspr,time,tline,add,del,deli;"
 function __z8_run_cart(cart_code)
     local glue_code = [[--
         if (_init) _init()
@@ -533,7 +570,7 @@ function __z8_run_cart(cart_code)
         -- executed, and nothing will work. This is also PICO-8’s behaviour.
         -- The code has to be appended as a string because the functions
         -- may be stored in local variables.
-        local code, ex = __z8_load_code(cart_code..glue_code, nil, nil,
+        local code, ex = __z8_load_code(__z8_api_prelude..cart_code..glue_code, nil, nil,
                                         sandbox)
         if not code then
             color(14) print('syntax error')
