@@ -336,10 +336,36 @@ jobs:
           # If unset, just warns (daily cron handles propagation slower).
           if [ "$PUSH_OK" = "1" ]; then
             if [ -n "${{ secrets.MISTER_FRONTIER_DISPATCH_TOKEN }}" ]; then
-              echo "Triggering MiSTer_Frontier DB rebuild..."
-              GH_TOKEN="${{ secrets.MISTER_FRONTIER_DISPATCH_TOKEN }}" \
-                gh workflow run "Build Custom Database" -R MiSTerOrganize/MiSTer_Frontier \
-                || echo "WARN: DB dispatch failed (token may be expired)"
+              # CDN PROPAGATION GATE. build_db.py FETCHES the
+              # raw.githubusercontent URLs in external_files.csv -- it does not
+              # read a checkout -- so dispatching the instant `git push`
+              # returns races propagation and db.json can record the PREVIOUS
+              # hash for a file this run just replaced. Measured 2026-08-24:
+              # commit-back 23:26:19Z, rebuild 23:26:22Z; the binary had
+              # propagated, bios.p8 had not, and db.json shipped a stale bios
+              # hash -- the update_all failure of 2026-05-26, where the
+              # downloader DELETES the mismatched file. Full reasoning and the
+              # per-POP caveat: .github/scripts/cdn_ready.sh
+              #
+              # NOT exit 1 on timeout, deliberately: the ship itself SUCCEEDED
+              # (binary pushed, correct). Failing the job would report a good
+              # ship as broken. Skipping is the safe direction -- the daily
+              # cron then publishes from a long-since-propagated CDN.
+              #
+              # rc 2 is a usage error, NOT propagation lag; keep them apart or
+              # the next reader chases a CDN that is fine.
+              CDN_RC=0
+              bash .github/scripts/cdn_ready.sh games/PICO-8/PICO-8 games/PICO-8/bios.p8 || CDN_RC=$?
+              if [ "$CDN_RC" = "2" ]; then
+                echo "::error::cdn_ready.sh usage error (rc=2) -- a CI bug in the call, not propagation. Skipping the DB dispatch; the daily cron will publish."
+              elif [ "$CDN_RC" != "0" ]; then
+                echo "::error::raw.githubusercontent has not served this run's files after ~2.5 min. SKIPPING the DB rebuild dispatch so db.json cannot record stale hashes. The push IS on main and correct -- only propagation lagged. The daily DB cron will publish it; to ship sooner, re-run 'Build Custom Database' on MiSTer_Frontier once the raw URLs serve the new bytes."
+              else
+                echo "Triggering MiSTer_Frontier DB rebuild..."
+                GH_TOKEN="${{ secrets.MISTER_FRONTIER_DISPATCH_TOKEN }}" \
+                  gh workflow run "Build Custom Database" -R MiSTerOrganize/MiSTer_Frontier \
+                  || echo "WARN: DB dispatch failed (token may be expired)"
+              fi
               # Refresh the rolling 'latest' GitHub Release so its zip asset
               # matches the just-committed binary. The commit-back push above
               # used GITHUB_TOKEN, which does NOT re-trigger refresh_release's
