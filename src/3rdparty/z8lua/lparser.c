@@ -1290,18 +1290,28 @@ static void whilestat (LexState *ls, int line) {
   enterblock(fs, &bl, 1);
   int short_while = ls->t.token != TK_DO && ls->t.token != TK_EOS
                  && ls->braces == 0 && line == ls->linenumber;
-  if (short_while)
+  if (short_while) {
     ls->emiteol = 1;
+    ls->shortdepth++;
+  }
   else
     checknext(ls, TK_DO);
   block(ls);
   luaK_jumpto(fs, whileinit);
   if (!short_while)
     check_match(ls, TK_END, TK_WHILE, line);
-  else if (ls->t.token == TK_EOL || ls->t.token == TK_EOS)
-    luaX_next(ls);  /* eat EOL or EOS */
-  else if (block_follow(ls, 1))
-    ls->emiteol = 0;  /* close the short WHILE */
+  else if (ls->t.token == TK_EOL || ls->t.token == TK_EOS) {
+    /* Only the OUTERMOST short construct may consume the terminator: one
+     * TK_EOL is emitted per line, and an enclosing short IF/WHILE still
+     * needs to see it. Leaving it in place lets it close each level in
+     * turn (block_follow treats TK_EOL as a block terminator). */
+    if (--ls->shortdepth == 0)
+      luaX_next(ls);  /* eat EOL or EOS */
+  }
+  else if (block_follow(ls, 1)) {
+    if (--ls->shortdepth == 0)
+      ls->emiteol = 0;  /* close the short WHILE */
+  }
   else
     check_match(ls, TK_EOL, TK_WHILE, line);  /* we expected EOL */
   leaveblock(fs);
@@ -1449,8 +1459,10 @@ static int test_then_block (LexState *ls, int *escapelist) {
    * DO here is the block keyword, never the short-if form. */
   short_if &= ls->t.token != TK_THEN && ls->t.token != TK_DO && ls->t.token != TK_EOS
            && ls->braces == 0 && line == ls->linenumber;
-  if (short_if)
+  if (short_if) {
     ls->emiteol = 1;
+    ls->shortdepth++;
+  }
   else if (!testnext(ls, TK_DO))
     checknext(ls, TK_THEN);
   if (ls->t.token == TK_GOTO || ls->t.token == TK_BREAK) {
@@ -1491,10 +1503,15 @@ static void ifstat (LexState *ls, int line) {
     block(ls);  /* `else' part */
   if (!short_if)
     check_match(ls, TK_END, TK_IF, line);
-  else if (ls->t.token == TK_EOL || ls->t.token == TK_EOS)
-    luaX_next(ls);  /* eat EOL or EOS */
-  else if (block_follow(ls, 1))
-    ls->emiteol = 0;  /* close the short IF */
+  else if (ls->t.token == TK_EOL || ls->t.token == TK_EOS) {
+    /* See whilestat: only the outermost short construct eats the EOL. */
+    if (--ls->shortdepth == 0)
+      luaX_next(ls);  /* eat EOL or EOS */
+  }
+  else if (block_follow(ls, 1)) {
+    if (--ls->shortdepth == 0)
+      ls->emiteol = 0;  /* close the short IF */
+  }
   else
     check_match(ls, TK_EOL, TK_IF, line);  /* we expected EOL */
   luaK_patchtohere(fs, escapelist);  /* patch escape list to 'if' end */

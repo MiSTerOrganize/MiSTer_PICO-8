@@ -869,3 +869,104 @@ FIXED list, and a render-diff sweep is the honest way to size it.
 
 Not fixed here: this is `grammar.h`, not a BIOS edit, and it needs its own
 verification cycle.
+
+## 2026-08-24 (later) -- causes 3 and 4 fixed; the save-state item measured and DECLINED
+
+Follow-up to the item-13 entry above. A and B are fixed and verified; C is
+measured to a conclusion and deliberately not fixed.
+
+### A -- `count()` on a non-table returns NO VALUE
+
+Two-line guard in `count`, plus a correction to the comment above it. That
+comment asserted the reference RAISES for `count(nil)` / `count("x")`; measured
+on 0.2.7a6 it does not, and the wrong note is why the guard was missing.
+Verified: our `count(6/0/true/"xy"/nil)` output is now byte-identical to the
+reference, and **Samurise is CLEAN**.
+
+### B -- a nested short-if no longer swallows the following line
+
+Root cause, read out of `z8lua` after the behaviour was pinned:
+
+* `llex.c` emits exactly ONE `TK_EOL` per line and CLEARS `emiteol` doing so.
+* `emiteol` is a FLAG, so N nested short constructs on one line all set it to
+  1, but only one `TK_EOL` token ever exists.
+* `lparser.c`'s `ifstat`/`whilestat` tail does `luaX_next(ls)` on that token --
+  so the INNERMOST construct eats it and the enclosing one never sees its
+  terminator. Its `statlist` therefore keeps parsing the FOLLOWING LINES as
+  part of its own body.
+
+Fix: a `shortdepth` counter on `LexState`; only the OUTERMOST short construct
+consumes the EOL, so it propagates outward and closes each level in turn
+(`block_follow` already treats `TK_EOL` as a block terminator). Applied
+identically to `if` and `while`.
+
+🛑 The first hypothesis was WRONG and cost a build: the PEGTL `one_line_seq` /
+`nocrlf` counter in `src/pico8/grammar.h` looks like the culprit and is not --
+`grammar.h` is not on the execution path at all. `preprocess_code()` only
+expands `#include`; PICO-8 shorthand is handled by z8lua. Don't instrument
+grammar.h for this.
+
+Measured trigger (matrix vs the reference, all now identical): ANY nested
+short-form `if(...)` or `while(...)` in a short-if body, whatever it contains;
+a plain second statement, a `for`, or a long-form `if...then...end` are all
+fine.
+
+Verification: conformance **26/26**; the six short-if probe carts byte-identical
+to the reference; **Libryinth CLEAN**, so all five carts from the 2026-08-22
+list now run.
+
+**Population, since an error-based scan cannot size a silent bug.** Counting
+the pattern directly in cart source across the library: **123 of 8,570 carts,
+646 lines** (~1.4%). Top offenders carry 13-20 lines each (`Holy Torrent`,
+`Mini GUNN`, `Pole Station`, `worldwide`, `Picocraft`, `Demons of the Great
+Beyond`). Nearly all of that was mis-parsed with NO error before this fix.
+
+🛑 The first count said 113/583 and was wrong in BOTH directions, which is worth
+recording because the mistake is easy to repeat: the detector rejected any line
+containing `" then"`, so it (a) counted `if(c)then` long-form blocks as short --
+carts write it with no space -- and (b) discarded genuine nested-short-if lines
+that merely had a `then` elsewhere on them. The fix is to walk to the matching
+close-paren and test the keyword immediately after it. Validated against eight
+cases including Libryinth's real line, a string decoy and a comment decoy, then
+spot-checked on the top hit in real cart source before the number was believed.
+
+### C -- save-state `_update`/`_draw` phase: MEASURED, and NOT fixed
+
+The earlier entry called the round-trip "not faithful in general". That
+overstates it, and the correction matters. Measured with a cart that reports
+its own logic clock across both passes of `--savestate-test 30:61`:
+
+```
+pass 1 (save@30, run to 61):  T=1 .. T=30
+pass 2 (load@30, run to 61):  T=16 .. T=31
+```
+
+Pass 2 starts at **T=16**, i.e. the state IS restored exactly (t was 15 at the
+save) -- and ends one update further on. So the divergence is precisely **one
+extra `_update` across the interval: a single 60 Hz tick of timing, with NO
+state divergence.** Even spans match; odd spans differ by that one tick;
+`_update60` carts never differ, because they have only one suspend point.
+
+🛑 **CLOSED — DO NOT REVISIT (2026-08-24 user directive: "save states are
+perfect").** This is not a deferred item, a backlog entry, or a "revisit if"
+— it is settled. Do not re-open it, do not re-measure it, and do not propose
+the canonicalisation fix sketched below; it was considered and declined.
+
+Why it is closed, so the reasoning does not have to be re-derived by whoever
+finds the odd-span numbers next:
+
+1. There is no reference to match. Save states are OUR feature, not PICO-8's,
+   so "correct" here is a UX judgement, not parity — the usual
+   measure-against-the-reference move does not apply and cannot settle it.
+2. State is restored EXACTLY. The measurement above is the proof: pass 2
+   resumes at the saved logic clock. The only difference is one 60 Hz tick of
+   timing at the moment of load. Nothing is corrupted, nothing desyncs.
+3. The proper fix — persisting the coroutine — is recorded in `vm.cpp` as
+   attempted in v4 and abandoned over eris `_G`-identity problems. The cheap
+   alternative would add a deferral state machine to the save-state path of a
+   shipped, working feature: strictly more risk than the ~17 ms it removes.
+
+🛑 A future session WILL rediscover this the moment it runs
+`--savestate-test` on an odd span, because odd spans report MISMATCH. That
+report is EXPECTED and is not a bug. Treat an odd-span mismatch on a 30 fps
+`_update` cart as known-and-closed rather than as a finding.

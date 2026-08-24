@@ -174,6 +174,7 @@ void luaX_setinput (lua_State *L, LexState *ls, ZIO *z, TString *source,
   ls->fs = NULL;
   ls->linenumber = 1;
   ls->emiteol = 0;
+  ls->shortdepth = 0;
   ls->lastline = 1;
   ls->braces = -1;
   ls->source = source;

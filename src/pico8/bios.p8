@@ -79,8 +79,10 @@ end
 -- the tables.p8 unit test cart for more details.
 --
 -- We also try to mimic the PICO-8 error messages:
---  count(nil) → attempt to get length of local 'c' (a nil value)
---  count("x") → attempt to index local 'c' (a string value)
+--  count(nil), count("x"), count(6), count(true) → NO VALUE, no error.
+--  (Measured 2026-08-24 against the reference. An older note here claimed
+--   these RAISED, matching Lua's own #/index errors -- they do not, and that
+--   wrong note is why the type guard below was missing for so long.)
 function count(c, v)
     -- Two PICO-8-documented forms:
     --   count(tbl)        -- number of non-nil entries in array part
@@ -89,6 +91,9 @@ function count(c, v)
     -- the second (e.g., count(D, tile_value) > 0 for collision)
     -- always got the array length back and treated everything as a
     -- match. oblivion_eve training was completely broken by this.
+    -- Non-table -> return nothing, as the reference does. Without this,
+    -- `#c` raised on a number/bool/nil and mis-counted a string.
+    if (type(c) ~= "table") return
     local cnt, max = 0, #c
     if v == nil then
         for i = 1, max do if (c[i] != nil) cnt += 1 end
