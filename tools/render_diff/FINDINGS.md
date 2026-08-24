@@ -696,3 +696,176 @@ Two consequences that follow from the project's own rules and are easy to miss:
    those same objects, so mapping *should* still work -- but that is reasoning,
    not a measurement, and save/restore is not covered by any headless harness
    here. Verify it on hardware before shipping.
+
+## 2026-08-24 -- shipped, plus a save-state limitation found on the way
+
+The 2026-08-23 fixes above went out. What actually shipped is **four** BIOS
+changes, not two: the two from that entry, the `add()` decision below, and a
+bare-name `load()` rung that was **already sitting uncommitted in the working
+tree** when this started (`Enoshima Picnic`, `Pourlandia`, `Kaioken God Mode`,
+`super mario-16`, `Frostpunk Pico` restart themselves via `load("<lid>")`, which
+never reached the `.p8.png` variant). Pushing `main` IS the ship, so that was
+surfaced and confirmed rather than swept along; every number below was then
+re-measured on the combined baseline, because the prototypes predated it.
+
+### `add()` out-of-range -- decided: match the reference
+
+Measured earlier: the reference RAISES `position out of bounds` for a position
+outside `1..#c+1`; we clamped. Now matched. Verified index by index against the
+reference -- `i` in 1..#c+1 place identically, `0 / 5 / 9 / -1` raise at the
+cart's own line, `2.7` truncates to 2. Free: **0 of 8,508** carts reach it, so
+this is parity with no blast radius.
+
+### Verification of the combined ship
+
+| gate | result |
+|---|---|
+| all 127 API names under an `_ENV` swap | identical to the reference |
+| `deli` / `deli2` / `split` / `sub` / `unpack` / `inext` / `tonum` probes | identical |
+| `add` index matrix | identical, aborts included |
+| syntax scan, 8,508 carts | **0 newly broken** |
+| golden gate, 3,302 carts | **3,246 MATCH / 56 DIFF** |
+| those 56 classified | **56 DET**, 0 NONDET, 0 crash, 0 hang |
+
+56, not the 53 from the `_ENV` fix alone -- the extra three come from `deli`,
+`add` and the bare-name rung each shifting the heap a little further. All 56
+re-baselined, with the reason recorded in the golden README.
+
+### Save states: a harness, then a real (pre-existing) limitation
+
+The 2026-08-23 entry listed "verify save states" as reasoning rather than
+measurement. It is measured now. `tools/z8headless.cpp` gained
+**`--savestate-test A:B`**: run to A, save slot 0, run to B and hash the frame;
+then load slot 0 and run to B again. A faithful round-trip makes the hashes
+equal. This matters here specifically because save states persist
+`__z8_sandbox` -- the cart's `_ENV` **table** -- and say nothing about chunk
+locals, which is exactly what the prelude adds.
+
+🛑 The first probe passed and proved nothing: it was a static cart, so the two
+hashes matched trivially. Negative-tested with an animating one, which is how
+the following surfaced.
+
+**Result: card and ship behave IDENTICALLY on every span tested**, including a
+cart that overrides `circfill` and `flr` at top level -- the one interaction the
+prelude introduces (an override now lives in a chunk local, outside the
+persisted sandbox). No regression.
+
+**But the round-trip is not faithful in general, and never was.** On a 30 fps
+`_update` cart:
+
+| span (save@A, run to B) | card | ship |
+|---|---|---|
+| 30:60 (even) | MATCH | MATCH |
+| 30:61 (odd) | **MISMATCH** | **MISMATCH** |
+| 30:63 (odd) | **MISMATCH** | **MISMATCH** |
+| 45:76 (odd) | **MISMATCH** | **MISMATCH** |
+
+Save states restore the sandbox table but **not the coroutine's position in the
+`_update`/`_draw` cadence**. A `_update` cart yields every other frame, so a
+restore that resumes with an odd frame offset lands on the opposite phase and
+diverges. An `_update60` cart shows no such split (verified: 20:51 matches),
+which confirms the cause is the yield cadence rather than state corruption.
+**Pre-existing, identical on the shipped card build, and out of scope for this
+ship** -- but it is a real defect and it is now measured rather than suspected.
+
+### Item 13 groundwork: how to build an editable repro (and how not to)
+
+For the still-open Samurise/Libryinth cause the obvious move is to wrap a
+`--dumpcode` dump as a `.p8` text cart so it can be edited and instrumented.
+
+Wrapping Samurise's dump -- byte-exact, code-section md5 identical, all 78
+P8SCII bytes preserved -- produces a cart that fails in the REFERENCE with
+`attempt to call global '_upd' (a nil value)`, while the original `.p8.png` runs
+clean there. 🛑 That is NOT a general failure of the technique, which was the
+first (wrong) conclusion: the same wrap of a simple cart (`13 Jumps`) runs clean
+in the reference. What the wrap loses is the cart's **data sections** --
+`__gfx__` / `__map__` / `__sfx__` are not in a code dump, and Samurise's `_init`
+walks the map (`mget` over 2,048 rows) before the DSL that defines `_upd`.
+
+So the repro is buildable, just not this way. Use **shrinko8**'s p8 <-> png
+conversion, which carries every section
+([[shrinko8-gold-standard-pico8-tool]]; the local clone at
+`%TEMP%/shrinko8` is gone and needs re-cloning). Two facts already established
+that the next attempt should not re-derive: neither cart calls `load()`, so the
+`-x` no-op-load gotcha does NOT apply and their reference-clean result is real;
+and the failure is inside the cart's embedded **Parens-8** Lisp compiler, which
+also ships standalone as `[Tools]/Parens-8 Repl.p8.png` (runs clean on its own --
+a vehicle, not a repro).
+
+## 2026-08-24 (item 13) -- the remaining two carts are TWO more causes, both found
+
+The 2026-08-23 entry left Samurise and Libryinth as "a third, separate cause".
+They are not one cause, they are two, and both are now identified with minimal
+repros. The vehicle that made this tractable was **shrinko8's p8 -> p8**
+conversion (`python shrinko8.py <cart>.p8.png out.p8`), which carries every
+section; the `--dumpcode` wrap fails precisely because it drops `__gfx__` /
+`__map__`. Converted carts reproduce the differential exactly -- reference
+clean, ours erroring -- and are freely editable, so they can be instrumented.
+
+### Cause 3 -- `count()` on a non-table (fixes Samurise)
+
+Measured: the reference returns **NO VALUE** from `count(x)` for a number,
+string, boolean or nil. Ours does `#c` unguarded, so it ERRORS on a
+number/boolean/nil and, worse, silently returns a wrong count for a string
+(`count("xy")` -> 2 here, nothing there).
+
+Carts use `count` as an *is-this-a-list* test. Samurise embeds a Lisp
+interpreter (**Parens-8**) whose `builtin.table` walks a form with
+`(when (count elem) ...)`; where the reference gets nil-and-falsy for an
+atom, we raised.
+
+🛑 The BIOS comment above `count` claims the reference gives
+`count(nil) -> attempt to get length of local 'c' (a nil value)` and
+`count("x") -> attempt to index local 'c' (a string value)`. **Both are false
+for 0.2.7a6** -- measured. That comment is why the guard was never added.
+🛑 This one hid for a whole session because the `count(<number>)` probe TIMED
+OUT in the first matrix and the empty result was never chased; the earlier
+entry's "`all(5)` errors on both engines" was true and irrelevant, because
+`all` and `count` are different functions with different tolerance.
+
+Verified: `if (type(c) ~= "table") return` at the top of `count` makes
+**Samurise CLEAN**. NOT SHIPPED -- it wants its own corpus + golden pass.
+
+### Cause 4 -- a nested short-if makes the OUTER short-if swallow the next line
+
+Libryinth survives cause 3. Its own cause is a **parser** bug, and it is the
+more serious of the two because it is normally SILENT.
+
+`grammar.h` bounds a short-if body to one line with `one_line_seq`, and the
+comment there notes the rule "re-enables CRLF (even when rule failed)". When
+the body itself contains another short-if, that inner rule re-enables CRLF
+early, so the OUTER if keeps consuming statements **past the end of its line**.
+
+Minimal repro -- the trigger is a nested `if(...)` in the body; its contents
+are irrelevant (`return`, `local`, `print` all trigger it), while a plain
+second statement or a `for` does not:
+
+```lua
+local function t1()
+ local out="not-reached"
+ if(false)local e={1} if(false)local q=1
+ out="reached"
+ return out
+end
+```
+
+| | reference | ours |
+|---|---|---|
+| `t1()` (nested if, condition FALSE) | `"reached"` | **nil** -- both following lines swallowed, `return` never ran |
+| same without the nested if | `"reached"` | `"reached"` |
+| two following lines, counted | 11 | (swallowed) |
+
+In Libryinth this is `if(n~="")local e=h(e..","..n,12)if(#e>2...)return`: the
+nested if extends the outer body over the next line, so `local a=ea(o) return
+e,l,...` executes *inside* that block, where `e` is the table from `h()` rather
+than the title string -- hence `attempt to concatenate local 'n' (a table
+value)` two frames up in `nw`.
+
+🛑 **Expect this class to be under-reported by every error-based scan we run.**
+Swallowing lines into a TRUE branch usually produces wrong behaviour with no
+error at all; Libryinth only surfaced because the wrong value happened to reach
+a concatenation. The corpus impact is therefore NOT bounded by the 13-cart
+FIXED list, and a render-diff sweep is the honest way to size it.
+
+Not fixed here: this is `grammar.h`, not a BIOS edit, and it needs its own
+verification cycle.
