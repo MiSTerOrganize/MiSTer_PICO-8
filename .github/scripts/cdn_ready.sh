@@ -70,7 +70,7 @@ for i in $(seq 1 "$TRIES"); do
         fi
     done
     if [ "$all_ok" = "1" ]; then
-        echo "CDN serves this commit's files (attempt $i) -- safe to dispatch."
+        echo "CDN serves this commit's files (attempt $i) -- proceeding."
         exit 0
     fi
     if [ "$i" -lt "$TRIES" ]; then
