@@ -1875,7 +1875,38 @@ var<bool, int16_t, fix32, std::string, std::nullptr_t> vm::api_stat(int16_t id)
         return int16_t(m_ram.draw_state.misc_features.multi_screen ? m_multiscreen_current : 0);
 
     if (id == 4)
-        return std::string(); // TODO (clipboard)
+    {
+        // Clipboard. MiSTer has no system clipboard, so it is a FILE -- which
+        // is the useful form here anyway: it lets a save move between carts,
+        // and lets the user edit it from the SD card. Cartdata Editor's whole
+        // purpose (transferring saves in/out) rests on this and stat(4)
+        // returning "" made it inert.
+        //
+        // Routed through get_path_save() rather than building a path here: it
+        // already resolves the saves dir, honours Z8_SAVES_DIR so the harness
+        // never touches real user data, creates the directory, and REGISTERS
+        // THE FILE WITH THE RECORDER. That last one is load-bearing -- a cart
+        // that reads the clipboard makes its contents part of the run, so the
+        // file has to travel inside a .inp or the replay diverges.
+        //
+        // The '@' keeps it out of the cartdata namespace: a cartdata id is
+        // alphanumeric, so no cart can ever collide with this name.
+        std::string path = get_path_save("@clipboard");
+        std::string out;
+        if (FILE *f = fopen(path.c_str(), "rb"))
+        {
+            char buf[4096];
+            size_t n;
+            while ((n = fread(buf, 1, sizeof(buf), f)) > 0)
+                out.append(buf, n);
+            fclose(f);
+        }
+        // printh() encodes P8SCII -> UTF-8 on the way out, so decode on the way
+        // back in. Without this the round trip is only correct for plain ASCII
+        // and silently mangles anything else -- which is most of PICO-8's own
+        // glyph range.
+        return charset::utf8_to_pico8(out);
+    }
 
     if (id == 5)
     {
@@ -2095,7 +2126,28 @@ void vm::api_printh(rich_string str, opt<std::string> filename, opt<bool> overwr
     for (uint8_t ch : str)
         decoded += charset::to_utf8[ch];
 
-    // TODO: if filename is "@clip" the message should replaces the contents of the system clipboard instead of writing to a file
+    // "@clip" is the clipboard, not a filename. Without this the fopen below
+    // took it literally and created a file called "@clip" in the working
+    // directory -- so the call neither worked nor failed quietly, it littered
+    // the games folder. See stat(4) for why the clipboard is a file here.
+    if (filename.has_value() && filename.value() == "@clip")
+    {
+        std::string path = get_path_save("@clipboard");
+        // Always truncate: a clipboard REPLACES its contents, and no trailing
+        // newline is added -- stat(4) must hand back exactly what was copied.
+        if (FILE *f = fopen(path.c_str(), "wb"))
+        {
+            fwrite(decoded.data(), sizeof(char), decoded.size(), f);
+            fclose(f);
+        }
+        else
+        {
+            lol::msg::info("printh cannot open clipboard file %s
+", path.c_str());
+        }
+        return;
+    }
+
     if (filename.has_value())
     {
         FILE* file = fopen(filename.value().c_str(), overwrite.value_or(false) ? "w" : "a");

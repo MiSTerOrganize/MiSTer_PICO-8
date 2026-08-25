@@ -1521,6 +1521,68 @@ static std::unique_ptr<z8::pico8::vm> g_vm;
 static bool g_joystick_connected = false;
 static SDL_Joystick* g_sdl_joystick = NULL;  // SDL joystick for polling hat/axis state
 
+// ── Keyboard -> PICO-8 buttons ────────────────────────────────────────
+// PICO-8's documented defaults, from the manual's btn() section:
+//
+//   player 0: [DPAD] cursors,  [O] Z C N,   [X] X V M
+//   player 1: [DPAD] S F E D,  [O] LSHIFT,  [X] TAB W Q A
+//
+// Enter/P give player 0 the pause menu. That is not decoration: with no pad
+// attached there would otherwise be no way to reach the menu at all, so a
+// keyboard-only player could never pause, reset or quit.
+//
+// This is SDL 1.2 (<SDL/SDL.h>), so it is SDL_GetKeyState, not SDL2's
+// SDL_GetKeyboardState.
+static bool p8_keyboard_allowed()
+{
+    // MiSTer Main remaps a gamepad's buttons to KEYSTROKES (A->Enter,
+    // B->Escape, X->X). So with a pad attached the keyboard is not a second
+    // input device, it is an echo of the first: every pad press would arrive
+    // twice, and A would open the pause menu instead of pressing O.
+    // cart_browser.h blocks the keyboard for exactly this reason; the same
+    // rule has to hold here. Re-checked so hot-plugging is picked up.
+    static int allowed = -1;
+    static Uint32 checked = 0;
+    Uint32 now = SDL_GetTicks();
+    if (allowed < 0 || now - checked > 1000) {
+        allowed = (access("/dev/input/js0", F_OK) == 0) ? 0 : 1;
+        checked = now;
+    }
+    return allowed == 1;
+}
+
+// -> 4 players x 7 bits (0=L 1=R 2=U 3=D 4=O 5=X 6=Pause), same packing the
+// joystick path uses, so the caller can simply OR them together.
+static uint32_t p8_keyboard_bits()
+{
+    if (!p8_keyboard_allowed()) return 0;
+
+    // Nothing else pumps SDL during gameplay -- only the cart browser did --
+    // so without this the key state is never refreshed. Draining also pumps.
+    SDL_Event ev;
+    while (SDL_PollEvent(&ev)) { /* state is read below; events themselves unused */ }
+
+    Uint8 *k = SDL_GetKeyState(NULL);
+    if (!k) return 0;
+
+    uint32_t p0 = (k[SDLK_LEFT]  ? 1u << 0 : 0)
+                | (k[SDLK_RIGHT] ? 1u << 1 : 0)
+                | (k[SDLK_UP]    ? 1u << 2 : 0)
+                | (k[SDLK_DOWN]  ? 1u << 3 : 0)
+                | ((k[SDLK_z] || k[SDLK_c] || k[SDLK_n]) ? 1u << 4 : 0)
+                | ((k[SDLK_x] || k[SDLK_v] || k[SDLK_m]) ? 1u << 5 : 0)
+                | ((k[SDLK_RETURN] || k[SDLK_p])         ? 1u << 6 : 0);
+
+    uint32_t p1 = (k[SDLK_s] ? 1u << 0 : 0)
+                | (k[SDLK_f] ? 1u << 1 : 0)
+                | (k[SDLK_e] ? 1u << 2 : 0)
+                | (k[SDLK_d] ? 1u << 3 : 0)
+                | (k[SDLK_LSHIFT] ? 1u << 4 : 0)
+                | ((k[SDLK_TAB] || k[SDLK_w] || k[SDLK_q] || k[SDLK_a]) ? 1u << 5 : 0);
+
+    return p0 | (p1 << 7);
+}
+
 // ── Timing ────────────────────────────────────────────────────────────
 
 static uint64_t get_time_ns()
@@ -2767,6 +2829,13 @@ int main(int argc, char **argv)
                            | (((joy >> 6) & 1) << 6);/* Pause <- Start  */
                 live |= b << (p * 7);
             }
+
+            /* Keyboard joins here, BEFORE the recorder sees the frame. This is
+             * the documented choke point -- "everything the VM ever sees as
+             * input passes through here exactly once per frame" -- so feeding
+             * the keyboard in any later would leave it uncaptured, and every
+             * replay of a keyboard-played take would diverge. */
+            live |= p8_keyboard_bits();
 
             uint32_t use = live;
 
