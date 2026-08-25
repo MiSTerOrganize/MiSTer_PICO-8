@@ -2142,8 +2142,7 @@ void vm::api_printh(rich_string str, opt<std::string> filename, opt<bool> overwr
         }
         else
         {
-            lol::msg::info("printh cannot open clipboard file %s
-", path.c_str());
+            lol::msg::info("printh cannot open clipboard file %s\n", path.c_str());
         }
         return;
     }
