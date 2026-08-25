@@ -90,7 +90,14 @@ static volatile bool g_return_to_browser = false;
  * receiving a newer take is routine, so it needs its own answer. */
 #define P8REC_MAGIC      "P8REC"
 #define P8REC_MAGIC_LEN  5
-#define P8REC_CONTAINER  5u        /* framing version; bump on any layout change */
+#define P8REC_CONTAINER  6u        /* framing version; bump on any layout change */
+#define P8REC_CONTAINER_MIN 5u     /* oldest layout this build can still READ.
+                                    * v6 = v5 + a mouse block and a text block
+                                    * appended between the frames and the
+                                    * snapshot, so a v5 file stays unambiguous.
+                                    * Refusing it would have invalidated every
+                                    * take already recorded, for a change that
+                                    * adds to the end of the file. */
 /* v5 adds the identity section (step 19): a manifest of (name, sha1) for every
  * cart file the run opened. v4 identified content by its PATH, which was wrong
  * in both directions -- a renamed v2 matched v1's name, played, and desynced
@@ -117,6 +124,8 @@ static volatile bool g_return_to_browser = false;
 //     of 3,302 golden traces moved, all DET.
 #define P8REC_ENGINE_VER 2u
 #define P8REC_MAX_FRAMES 2000000u   /* ~9.2 h at 60 fps; caps a runaway file */
+#define P8REC_TEXT_MAX   1000000u   /* sparse typed chars; bounds a hostile file's
+                                     * allocation the way the frame cap does */
 #define P8REC_CART_LEN   256   /* holds a relative path now, not just a basename */
 
 /* The ONE cartdata suffix. Both the snapshot writer and the snapshot reader
@@ -151,6 +160,15 @@ static int         g_rec_mode = 0;   /* 0 = idle, 1 = recording, 2 = playing */
  * g_test_trace, which is defined further down) so p8rec_reset can see it. */
 static bool        g_test_trace_enabled = false;
 static std::vector<uint32_t> g_rec_frames;
+/* Mouse, one word per frame, same packing the FPGA publishes:
+ * [7:0] x, [15:8] y, [18:16] buttons, [31:24] running wheel counter.
+ * Dense because a mouse moves on most frames. */
+static std::vector<uint32_t> g_rec_mouse;
+/* Typed characters, SPARSE: (frame index, char). Typing is rare, and a
+ * dense per-frame byte would cost nearly as much as the frame block for
+ * something almost always empty. */
+struct P8RecText { uint32_t frame; uint8_t ch; };
+static std::vector<P8RecText> g_rec_text;
 static size_t      g_rec_pos  = 0;
 static int32_t     g_rec_seed = 0;
 /* The extcmd lambdas are converted to std::function and cannot capture,
@@ -1006,6 +1024,25 @@ static bool p8rec_write(std::string const &cart_path)
     }
 
     if (ok) ok = fwrite(&g_rec_frames[0], sizeof(uint32_t), n, f) == (size_t)n;
+
+    /* v6: mouse then text, between the frames and the snapshot. Counts are
+     * written even when zero so the layout is fixed and the reader never has to
+     * infer whether a block is present. */
+    if (ok)
+    {
+        uint32_t mn = (uint32_t)g_rec_mouse.size();
+        ok = fwrite(&mn, sizeof(mn), 1, f) == 1;
+        if (ok && mn)
+            ok = fwrite(&g_rec_mouse[0], sizeof(uint32_t), mn, f) == (size_t)mn;
+    }
+    if (ok)
+    {
+        uint32_t tn = (uint32_t)g_rec_text.size();
+        ok = fwrite(&tn, sizeof(tn), 1, f) == 1;
+        for (size_t i = 0; ok && i < g_rec_text.size(); i++)
+            ok = fwrite(&g_rec_text[i].frame, sizeof(uint32_t), 1, f) == 1
+              && fwrite(&g_rec_text[i].ch, sizeof(uint8_t), 1, f) == 1;
+    }
     /* The save state this run STARTED from, embedded so the take is one file. */
     std::vector<P8SnapFile> snap = p8snap_from_dir(P8REC_ARMSNAP);
     if (ok) ok = p8snap_write(f, snap);
@@ -1152,7 +1189,11 @@ static bool p8rec_probe(std::string const &cart_path,
     if (!ok) { fclose(f); snprintf(why, whysz, "That file is not a valid recording"); return false; }
     if (container > P8REC_CONTAINER)
     { fclose(f); snprintf(why, whysz, "Made by a newer core - update to play it"); return false; }
-    if (container < P8REC_CONTAINER)
+    /* v6 appends mouse and text blocks AFTER the v5 layout, so a v5 file is
+     * still readable and refusing it would invalidate every existing take for a
+     * change that only adds to the end. Anything older than v5 genuinely has a
+     * different layout and is still refused. */
+    if (container < P8REC_CONTAINER_MIN)
     { fclose(f); snprintf(why, whysz, "Recorded by an older core - re-record it"); return false; }
 
     /* 🛑 And CHECK the engine version here, not only at load. This probe
@@ -1195,9 +1236,22 @@ static bool p8rec_probe(std::string const &cart_path,
          * means there is no payload to worry about, so it plays. */
         uint32_t pc = 0;
         long here = ftell(f);
-        if (here >= 0
-         && fseek(f, here + (long)nfr * (long)sizeof(uint32_t), SEEK_SET) == 0
-         && fread(&pc, sizeof(pc), 1, f) == 1 && pc > 0u)
+        bool walked = here >= 0
+                   && fseek(f, here + (long)nfr * (long)sizeof(uint32_t), SEEK_SET) == 0;
+        /* v6 puts the mouse and text blocks between the frames and the payload.
+         * Without skipping them this reads the MOUSE COUNT as the payload count
+         * and refuses any take that happens to carry mouse input. */
+        if (walked && container >= 6u)
+        {
+            uint32_t mn = 0, tn = 0;
+            walked = fread(&mn, sizeof(mn), 1, f) == 1
+                  && mn <= nfr
+                  && fseek(f, (long)mn * (long)sizeof(uint32_t), SEEK_CUR) == 0
+                  && fread(&tn, sizeof(tn), 1, f) == 1
+                  && tn <= P8REC_TEXT_MAX
+                  && fseek(f, (long)tn * 5L, SEEK_CUR) == 0;  /* uint32 + uint8 */
+        }
+        if (walked && fread(&pc, sizeof(pc), 1, f) == 1 && pc > 0u)
         {
             fclose(f);
             snprintf(why, whysz, "Recording does not say which game - not playing");
@@ -1294,7 +1348,12 @@ static bool p8rec_load(std::string const &cart_path,
         NativeVideoWriter_Notice("Made by a newer core - update to play it", 6);
         return false;
     }
-    if (ok && container < P8REC_CONTAINER)
+    /* Must match the probe's bound exactly. They ran different tests for one
+     * release of this edit -- probe accepting v5 and the loader refusing it --
+     * which is the worst shape available: the pick is accepted, the content
+     * RESETS, and only then does the take refuse. That is precisely the cost
+     * the probe exists to avoid. */
+    if (ok && container < P8REC_CONTAINER_MIN)
     {
         fclose(f);
         fprintf(stderr, "[REC] %s uses an older container (v%u)\n", in.c_str(), container);
@@ -1427,7 +1486,41 @@ static bool p8rec_load(std::string const &cart_path,
         NativeVideoWriter_Notice("Recording is damaged - not playing", 5);
         return false;
     }
-    bool snap_ok = (got == n) && p8snap_read(f, g_rec_snap);
+    /* v6 blocks sit between the frames and the snapshot. A v5 take simply has
+     * neither, and plays with no mouse and no typed input -- which is exactly
+     * what it was recorded with. */
+    g_rec_mouse.clear();
+    g_rec_text.clear();
+    bool blocks_ok = (got == n);
+    if (blocks_ok && container >= 6u)
+    {
+        uint32_t mn = 0;
+        blocks_ok = fread(&mn, sizeof(mn), 1, f) == 1 && mn <= n;
+        if (blocks_ok && mn)
+        {
+            g_rec_mouse.assign(mn, 0u);
+            blocks_ok = fread(&g_rec_mouse[0], sizeof(uint32_t), mn, f) == (size_t)mn;
+        }
+        uint32_t tn = 0;
+        if (blocks_ok) blocks_ok = fread(&tn, sizeof(tn), 1, f) == 1
+                                && tn <= P8REC_TEXT_MAX;
+        for (uint32_t i = 0; blocks_ok && i < tn; i++)
+        {
+            P8RecText t;
+            blocks_ok = fread(&t.frame, sizeof(uint32_t), 1, f) == 1
+                     && fread(&t.ch, sizeof(uint8_t), 1, f) == 1;
+            if (blocks_ok) g_rec_text.push_back(t);
+        }
+        if (!blocks_ok)
+        {
+            fclose(f);
+            g_rec_frames.clear(); g_rec_mouse.clear(); g_rec_text.clear();
+            fprintf(stderr, "[REC] %s has a damaged input block -- not playing\n", in.c_str());
+            NativeVideoWriter_Notice("Recording is damaged - not playing", 5);
+            return false;
+        }
+    }
+    bool snap_ok = blocks_ok && p8snap_read(f, g_rec_snap);
     fclose(f);
     /* 🛑 A TAKE THAT DOES NOT SAY WHICH CART IT IS MAY NOT RESTORE FILES.
      *
@@ -1495,6 +1588,10 @@ static void p8rec_reset()
     g_rec_cap_failed = false;
     g_rec_frames.clear();
     g_rec_frames.shrink_to_fit();   /* clear() alone keeps the capacity forever */
+    g_rec_mouse.clear();
+    g_rec_mouse.shrink_to_fit();    /* same size as the frames -- same reasoning */
+    g_rec_text.clear();
+    g_rec_text.shrink_to_fit();
     g_rec_snap.clear();             /* same reason, and it can hold real bytes */
     g_rec_snap.shrink_to_fit();
     g_rec_used.clear();             /* the used-set belongs to one take only */
@@ -1553,14 +1650,32 @@ static bool p8_keyboard_allowed()
 
 // -> 4 players x 7 bits (0=L 1=R 2=U 3=D 4=O 5=X 6=Pause), same packing the
 // joystick path uses, so the caller can simply OR them together.
+// Characters typed this frame, filled by p8_keyboard_bits(). Small and
+// cleared every frame -- this is one frame of typing, not a history.
+static std::vector<uint8_t> g_kbd_text;
+
 static uint32_t p8_keyboard_bits()
 {
+    g_kbd_text.clear();
     if (!p8_keyboard_allowed()) return 0;
 
     // Nothing else pumps SDL during gameplay -- only the cart browser did --
     // so without this the key state is never refreshed. Draining also pumps.
+    //
+    // The events are no longer discarded: KEYDOWNs carry the typed character
+    // that stat(30)/stat(31) want. Held-key STATE still comes from
+    // SDL_GetKeyState below -- a button is a level, a character is an edge, and
+    // reading either from the other's source gets repeat behaviour wrong.
     SDL_Event ev;
-    while (SDL_PollEvent(&ev)) { /* state is read below; events themselves unused */ }
+    while (SDL_PollEvent(&ev)) {
+        if (ev.type != SDL_KEYDOWN) continue;
+        uint16_t u = ev.key.keysym.unicode;   /* needs SDL_EnableUNICODE(1) */
+        uint8_t ch = 0;
+        if (u >= 32 && u < 127)                     ch = (uint8_t)u;
+        else if (ev.key.keysym.sym == SDLK_BACKSPACE) ch = 8;
+        else if (ev.key.keysym.sym == SDLK_RETURN)    ch = 13;
+        if (ch && g_kbd_text.size() < 32) g_kbd_text.push_back(ch);
+    }
 
     Uint8 *k = SDL_GetKeyState(NULL);
     if (!k) return 0;
@@ -1973,6 +2088,10 @@ int main(int argc, char **argv)
             fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
             return 1;
         }
+        /* SDL 1.2 leaves keysym.unicode at 0 unless this is on, so stat(31)
+         * would stay empty forever and the failure would read as "the
+         * keyboard does not work" rather than a missing init call. */
+        SDL_EnableUNICODE(1);
         // Create a dummy surface — SDL needs this for the event pump
         screen = SDL_SetVideoMode(SCREEN_W, SCREEN_H, SCREEN_BPP, SDL_SWSURFACE);
         // screen may be NULL with dummy driver — that's okay
@@ -1982,6 +2101,10 @@ int main(int argc, char **argv)
             fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
             return 1;
         }
+        /* SDL 1.2 leaves keysym.unicode at 0 unless this is on, so stat(31)
+         * would stay empty forever and the failure would read as "the
+         * keyboard does not work" rather than a missing init call. */
+        SDL_EnableUNICODE(1);
 
         // vmode is set by pico-8.sh launcher script (320x240 rgb16)
         // Redundant call here as fallback for direct invocation
@@ -2837,7 +2960,14 @@ int main(int argc, char **argv)
              * replay of a keyboard-played take would diverge. */
             live |= p8_keyboard_bits();
 
+            /* Mouse joins the same choke point as the buttons. Read ONCE here
+             * so the value recorded and the value the VM sees are the same
+             * word -- reading it again later would let them differ by a frame
+             * and desync a replay for no visible reason. */
+            uint32_t live_mouse = NativeVideoWriter_ReadMouse();
+
             uint32_t use = live;
+            uint32_t use_mouse = live_mouse;
 
             if (g_rec_mode == 1) {
                 if (g_rec_frames.size() < P8REC_MAX_FRAMES) {
@@ -2864,6 +2994,15 @@ int main(int argc, char **argv)
                      * numbers and overstated it by roughly 20x. */
                     try {
                         g_rec_frames.push_back(live);
+                        /* Same guarded block, so the two streams cannot end up
+                         * different lengths -- a mouse array shorter than the
+                         * frames would silently replay the wrong pointer. */
+                        g_rec_mouse.push_back(live_mouse);
+                        for (size_t k = 0; k < g_kbd_text.size(); k++)
+                            if (g_rec_text.size() < P8REC_TEXT_MAX)
+                                g_rec_text.push_back(
+                                    P8RecText{ (uint32_t)(g_rec_frames.size() - 1),
+                                               g_kbd_text[k] });
                     } catch (const std::bad_alloc &) {
                         fprintf(stderr, "[REC] out of memory at %u frames"
                                         " -- recording stopped\n",
@@ -3019,7 +3158,16 @@ int main(int argc, char **argv)
                         NativeVideoWriter_Notice("Took over - saves off until reset.", 6);
                         p8rec_reset();
                     } else {
+                        size_t idx = g_rec_pos;
                         use = g_rec_frames[g_rec_pos++];
+                        /* A v5 take has no mouse block; it then replays with
+                         * the live pointer, which is what it was recorded
+                         * with -- nothing. */
+                        if (idx < g_rec_mouse.size()) use_mouse = g_rec_mouse[idx];
+                        g_kbd_text.clear();
+                        for (size_t t = 0; t < g_rec_text.size(); t++)
+                            if (g_rec_text[t].frame == (uint32_t)idx)
+                                g_kbd_text.push_back(g_rec_text[t].ch);
                     }
                 } else {
                     fprintf(stderr, "[REC] playback finished (%u frames)\n",
@@ -3054,7 +3202,12 @@ int main(int argc, char **argv)
              * Carts only see any of this after poke(0x5f2d,1) -- that devkit
              * gate is upstream behaviour and is left alone. */
             {
-                uint32_t mw = NativeVideoWriter_ReadMouse();
+                /* Deliver typed characters -- live while recording or idle,
+                 * recorded during playback (substituted above). */
+                for (size_t k = 0; k < g_kbd_text.size(); k++)
+                    g_vm->text((char)g_kbd_text[k]);
+
+                uint32_t mw = use_mouse;
                 int mx = (int)(mw & 0xFF);
                 int my = (int)((mw >> 8) & 0xFF);
                 int mb = (int)((mw >> 16) & 0x7);
