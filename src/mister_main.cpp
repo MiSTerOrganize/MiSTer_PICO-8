@@ -3039,6 +3039,39 @@ int main(int argc, char **argv)
                 g_vm->button(p, 5, (b >> 5) & 1);  // X     ← Xbox X
                 g_vm->button(p, 6, (b >> 6) & 1);  // Pause ← Start (per-player)
             }
+
+            /* Mouse. zepto8 already implemented stat(32..39), the devkit gate
+             * and vm::mouse(); what was missing was anything CALLING it, so
+             * this is delivery, not new API. The FPGA hands over an absolute,
+             * already-clamped position because PS/2 packets arrive faster than
+             * this once-per-frame read -- integrating deltas here would drop
+             * motion between frames.
+             *
+             * The wheel arrives as a RUNNING counter, so difference it: the
+             * FPGA cannot know when we read, and a self-clearing register would
+             * lose ticks in the gap. uint8 wraparound differences correctly.
+             *
+             * Carts only see any of this after poke(0x5f2d,1) -- that devkit
+             * gate is upstream behaviour and is left alone. */
+            {
+                uint32_t mw = NativeVideoWriter_ReadMouse();
+                int mx = (int)(mw & 0xFF);
+                int my = (int)((mw >> 8) & 0xFF);
+                int mb = (int)((mw >> 16) & 0x7);
+                uint8_t wheel_now = (uint8_t)((mw >> 24) & 0xFF);
+
+                static int prev_mx = 64, prev_my = 64;
+                static uint8_t prev_wheel = 0;
+                static bool mouse_primed = false;
+                if (!mouse_primed) {          /* first frame: no phantom jump */
+                    prev_mx = mx; prev_my = my; prev_wheel = wheel_now;
+                    mouse_primed = true;
+                }
+                int scroll = (int)(int8_t)(uint8_t)(wheel_now - prev_wheel);
+                g_vm->mouse(lol::ivec2(mx, my),
+                            lol::ivec2(mx - prev_mx, my - prev_my), mb, scroll);
+                prev_mx = mx; prev_my = my; prev_wheel = wheel_now;
+            }
         }
 
         // Check if VM requested exit or user pressed Back — return to browser

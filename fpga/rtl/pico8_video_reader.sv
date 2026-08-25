@@ -17,6 +17,17 @@
 //    0x3A000000 + 0x018    : VSync feedback (vblank_counter[31:2], buffer_status[1:0])
 //    0x3A000000 + 0x020    : Audio WPTR (ARM writes, FPGA reads)
 //    0x3A000000 + 0x028    : Audio RPTR (FPGA writes, ARM reads)
+//    0x3A000000 + 0x050    : Mouse (FPGA writes, ARM reads)
+//                            [7:0] x, [15:8] y  -- absolute, already clamped
+//                            to the 0..127 PICO-8 screen; [18:16] buttons
+//                            L/R/M; [31:24] a RUNNING wheel counter that
+//                            the ARM differences -- a per-read delta would
+//                            need the FPGA to know when a read happened.
+//                            Accumulated in the FPGA on purpose: PS/2 packets
+//                            arrive faster than the ARM's frame loop reads, so
+//                            integrating deltas ARM-side would drop motion.
+//    0x3A000000 + 0x058    : Config for the ARM: [1:0] rotation
+//                            (0 off, 1 90CW, 2 90CCW, 3 180)
 //    0x3A000000 + 0x100    : Buffer 0 (128x128 RGB565 = 32,768 bytes)
 //    0x3A000000 + 0x8100   : Buffer 1 (32,768 bytes)
 //    0x3A000000 + 0x10200  : Audio ring buffer (4096 stereo samples = 16KB)
@@ -67,6 +78,11 @@ module pico8_video_reader (
     input  wire [31:0] joystick_2,
     input  wire [31:0] joystick_3,
     input  wire [15:0] joystick_l_analog_0,
+    // Mouse, already accumulated and clamped upstream. See the memory map:
+    // [7:0] x, [15:8] y, [18:16] buttons, [31:24] wheel.
+    input  wire [31:0] mouse_word,
+    // Config the ARM reads: [1:0] rotation (0 off, 1 CW, 2 CCW, 3 180).
+    input  wire [31:0] misc_word,
 
     // Save state triggers (clk_sys domain — ddr_clk domain)
     input  wire        ss_save,
@@ -114,6 +130,8 @@ localparam [28:0] JOY1_ADDR   = 29'h07400006;  // 0x3A000030 >> 3 (P2 joystick)
 localparam [28:0] JOY2_ADDR   = 29'h07400007;  // 0x3A000038 >> 3 (P3 joystick)
 localparam [28:0] JOY3_ADDR   = 29'h07400008;  // 0x3A000040 >> 3 (P4 joystick)
 localparam [28:0] SS_ADDR     = 29'h07400009;  // 0x3A000048 >> 3 (save state control word)
+localparam [28:0] MOUSE_ADDR  = 29'h0740000A;  // 0x3A000050 >> 3 (mouse; first free qword)
+localparam [28:0] MISC_ADDR   = 29'h0740000B;  // 0x3A000058 >> 3 (config flags for the ARM)
 localparam [28:0] BUF0_ADDR   = 29'h07400020;  // 0x3A000100 >> 3
 localparam [28:0] BUF1_ADDR   = 29'h07401020;  // 0x3A008100 >> 3
 localparam [7:0]  LINE_BURST  = 8'd32;         // 128px * 2B / 8 = 32 beats
@@ -208,6 +226,8 @@ localparam [4:0] ST_WRITE_JOY1  = 5'd17;
 localparam [4:0] ST_WRITE_JOY2  = 5'd18;
 localparam [4:0] ST_WRITE_JOY3  = 5'd19;
 localparam [4:0] ST_WRITE_SS    = 5'd20;
+localparam [4:0] ST_WRITE_MOUSE = 5'd21;
+localparam [4:0] ST_WRITE_MISC  = 5'd22;
 
 // Cart loading DDR3 addresses
 localparam [28:0] CART_CTRL_ADDR = 29'h07400002;  // 0x3A000010 >> 3
@@ -582,6 +602,32 @@ always @(posedge ddr_clk) begin
                 if (!ddr_busy) begin
                     ddr_addr     <= SS_ADDR;
                     ddr_din      <= {40'd0, ss_seq, 6'd0, ss_slot_lat, 6'd0, ss_cmd_lat};
+                    ddr_burstcnt <= 8'd1;
+                    ddr_we       <= 1'b1;
+                    state        <= ST_WRITE_MOUSE;
+                end
+            end
+
+            ST_WRITE_MOUSE: begin
+                // Mouse position/buttons for the ARM. Joins the existing
+                // once-per-frame write chain rather than adding a poll of its
+                // own, so it costs one more qword of DDR3 traffic per frame and
+                // nothing else.
+                if (!ddr_busy) begin
+                    ddr_addr     <= MOUSE_ADDR;
+                    ddr_din      <= {32'd0, mouse_word};
+                    ddr_burstcnt <= 8'd1;
+                    ddr_we       <= 1'b1;
+                    state        <= ST_WRITE_MISC;
+                end
+            end
+
+            ST_WRITE_MISC: begin
+                // OSD config the ARM cannot see for itself -- status bits live
+                // on this side. Joins the same once-per-frame write chain.
+                if (!ddr_busy) begin
+                    ddr_addr     <= MISC_ADDR;
+                    ddr_din      <= {32'd0, misc_word};
                     ddr_burstcnt <= 8'd1;
                     ddr_we       <= 1'b1;
                     state        <= ST_WRITE_FEEDBACK;

@@ -645,11 +645,44 @@ void NativeVideoWriter_WriteFrame(const void* rgba8_pixels, int width, int heigh
      * frame's averaged pixels. That one is not benign. This one is. */
     int total_pixels = NV_FRAME_WIDTH * NV_FRAME_HEIGHT;
     int first_pixel  = nv_notice_rows_now() * NV_FRAME_WIDTH;
-    for (int i = first_pixel; i < total_pixels; i++) {
-        uint8_t r = src[i * 4 + 0];
-        uint8_t g = src[i * 4 + 1];
-        uint8_t b = src[i * 4 + 2];
-        dst[i] = (uint16_t)(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3));
+
+    /* Rotation (OSD "Rotate", for a physically rotated monitor). Done here
+     * rather than in the video reader: that reads a source LINE as one DDR3
+     * burst, and a 90-degree turn needs a source COLUMN per output line, which
+     * would mean shredding the burst pattern or buffering the frame in M10K --
+     * surgery on the one path whose timing is already closed. The frame is
+     * square and is being copied anyway, so here it is just an index change.
+     *
+     * The signal stays landscape; the IMAGE turns. That is what a rotated
+     * monitor wants, and it leaves the CRT timing contract alone. */
+    int rot = (int)(NativeVideoWriter_ReadMisc() & 0x3u);
+    if (rot == 0) {
+        for (int i = first_pixel; i < total_pixels; i++) {
+            uint8_t r = src[i * 4 + 0];
+            uint8_t g = src[i * 4 + 1];
+            uint8_t b = src[i * 4 + 2];
+            dst[i] = (uint16_t)(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3));
+        }
+    } else {
+        const int W = NV_FRAME_WIDTH, H = NV_FRAME_HEIGHT;
+        for (int y = 0; y < H; y++) {
+            for (int x = 0; x < W; x++) {
+                int dx, dy;
+                if (rot == 1)      { dx = H - 1 - y; dy = x; }          /* 90 CW  */
+                else if (rot == 2) { dx = y;         dy = W - 1 - x; }  /* 90 CCW */
+                else               { dx = W - 1 - x; dy = H - 1 - y; }  /* 180    */
+                int di = dy * W + dx;
+                /* 🛑 tested on the DESTINATION index: after rotation a source
+                 * row is not a destination row, and writing into the notice
+                 * band is what the static-notice rule forbids. */
+                if (di < first_pixel) continue;
+                int si = y * W + x;
+                uint8_t r = src[si * 4 + 0];
+                uint8_t g = src[si * 4 + 1];
+                uint8_t b = src[si * 4 + 2];
+                dst[di] = (uint16_t)(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3));
+            }
+        }
     }
 
     /* Overlays: after the pixel conversion, before the control-word flip, so
@@ -754,6 +787,23 @@ uint32_t NativeVideoWriter_ReadJoystick(int player) {
     };
     volatile uint32_t *joy = (volatile uint32_t *)(ddr_base + joy_offsets[player]);
     return *joy;
+}
+
+/* Mouse, as published by the FPGA at NV_MOUSE_OFFSET. Position is already
+ * absolute and clamped to the 0..127 PICO-8 screen, so the caller can pass it
+ * straight to vm::mouse() without integrating anything. */
+uint32_t NativeVideoWriter_ReadMouse(void) {
+    if (!ddr_base) return 0;
+    volatile uint32_t *m = (volatile uint32_t *)(ddr_base + NV_MOUSE_OFFSET);
+    return *m;
+}
+
+/* OSD config published by the FPGA -- status bits live on that side, so this is
+ * the only way the ARM can see them. [1:0] is rotation. */
+uint32_t NativeVideoWriter_ReadMisc(void) {
+    if (!ddr_base) return 0;
+    volatile uint32_t *m = (volatile uint32_t *)(ddr_base + NV_MISC_OFFSET);
+    return *m;
 }
 
 uint32_t NativeVideoWriter_ReadFeedback(void) {

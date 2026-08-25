@@ -71,6 +71,13 @@
 #define NV_JOY2_OFFSET      0x00000038u  /* P3 joystick_2 */
 #define NV_JOY3_OFFSET      0x00000040u  /* P4 joystick_3 */
 #define NV_SS_OFFSET        0x00000048u  /* save state ctrl word (FPGA writes, ARM reads) */
+#define NV_MISC_OFFSET      0x00000058u  /* OSD config the ARM cannot see for
+                                       itself: [1:0] rotation, 0 off,
+                                       1 = 90 CW, 2 = 90 CCW, 3 = 180 */
+#define NV_MOUSE_OFFSET     0x00000050u  /* mouse: [7:0] x, [15:8] y, [18:16] buttons,
+                                       [31:24] running wheel counter.
+                                       FPGA accumulates because PS/2 packets
+                                       outpace this once-per-frame read. */
                                          /* layout (LE): byte 0 = cmd (0=idle 1=save 2=load),
                                           *              byte 1 = slot (0..3),
                                           *              byte 2 = sequence counter (changes each event) */
@@ -148,6 +155,8 @@ void NativeVideoWriter_AckCart(void);
 /// bit4=A, bit5=B, bit6=X, bit7=Y, bit10=Select, bit11=Start
 /// @param player  0..3 (P1..P4); out-of-range returns 0
 uint32_t NativeVideoWriter_ReadJoystick(int player);
+uint32_t NativeVideoWriter_ReadMouse(void);
+uint32_t NativeVideoWriter_ReadMisc(void);
 
 /* OSD replay-slot picker (see rtl/replay_slot_ui.sv). ReadReplay returns the
  * raw FPGA->ARM word: cmd [1:0], slot [10:8] (0-based), seq [23:16].

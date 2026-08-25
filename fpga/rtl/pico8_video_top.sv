@@ -59,6 +59,8 @@ module pico8_video_top (
     input  wire [31:0] joystick_2,
     input  wire [31:0] joystick_3,
     input  wire [15:0] joystick_l_analog_0,
+    input  wire [31:0] mouse_word,
+    input  wire [31:0] misc_word,
 
     // Cart loading via ioctl
     input  wire        ioctl_download,
@@ -172,6 +174,8 @@ pico8_video_reader reader (
     .joystick_2     (joystick_2),
     .joystick_3     (joystick_3),
     .joystick_l_analog_0 (joystick_l_analog_0),
+    .mouse_word     (mouse_word),
+    .misc_word      (misc_word),
 
     .ioctl_download (ioctl_download),
     .ioctl_wr       (ioctl_wr),

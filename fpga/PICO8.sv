@@ -244,6 +244,9 @@ localparam CONF_STR = {
 	"OOP,Scale,Normal,V-Integer,Narrower HV-Integer,Wider HV-Integer;",
 	"OQ,Swap Joysticks,No,Yes;",
 	"OR,Native Scale,Fill,1:1 Centered;",
+	// Rotation is applied ARM-side when the frame is written; see
+	// native_video_writer.c. The signal stays landscape.
+	"O45,Rotate,Off,90 CW,90 CCW,180;",
 	"-;",
 	"OKL,Save Slot,1,2,3,4;",
 	"TI,Save State;",
@@ -292,6 +295,44 @@ wire        ss_info_req;    // info-text overlay (unused — no info system)
 wire  [7:0] ss_info;
 wire        ss_statusUpdate; // tells hps_io to write status_in back as new status
 wire [10:0] ps2_key;
+
+//============================================================================
+// Mouse -> PICO-8 stat(32,33,34)
+//
+// zepto8 already implements the whole mouse API -- stat(32..39), the devkit
+// gate, and vm::mouse() -- and had NOTHING calling it. The missing piece was
+// never the API, it was an input source, so this is only about delivering
+// packets to something already waiting for them.
+//
+// The position is integrated HERE rather than on the ARM. PS/2 packets arrive
+// faster than the ARM's once-per-frame read, so accumulating ARM-side would
+// quietly drop motion between reads and make fast movement lag. The FPGA sees
+// every packet, so it keeps the truth and the ARM samples it.
+//
+// Clamped to 0..127: that is PICO-8's screen, and a cart that reads stat(32)
+// expects a coordinate on it, not a free-running counter to clip itself.
+//============================================================================
+wire [24:0] ps2_mouse;
+wire [15:0] ps2_mouse_ext;
+
+reg  [7:0]  mouse_x = 8'd64;   // start centred, like a fresh pointer
+reg  [7:0]  mouse_y = 8'd64;
+reg  [7:0]  mouse_wheel = 8'd0;
+reg         ps2_mouse_tog = 1'b0;
+
+// MiSTer packs a PS/2 packet as: [24] toggles per packet, [23:16] dy,
+// [15:8] dx, [7:0] flags -- bit0 left, bit1 right, bit2 middle, bit4/5 the
+// sign bits for dx/dy.
+wire signed [8:0] mouse_dx = {ps2_mouse[4], ps2_mouse[15:8]};
+wire signed [8:0] mouse_dy = {ps2_mouse[5], ps2_mouse[23:16]};
+
+wire signed [9:0] mouse_x_next = $signed({2'b00, mouse_x}) + mouse_dx;
+// PS/2 y grows UPWARD, screen y grows downward, so it subtracts.
+wire signed [9:0] mouse_y_next = $signed({2'b00, mouse_y}) - mouse_dy;
+
+// The accumulator itself lives below, with the other clk_sys logic --
+// clk_sys is not declared until further down this file.
+
 
 // Replay slot UI signals. ONE slot value is shared with the ARM's in-game
 // pause-menu picker, so moving it in either place moves the other; see
@@ -361,6 +402,8 @@ hps_io #(.CONF_STR(CONF_STR), .VDNUM(2)) hps_io
 	.info_req(ss_info_req),
 	.info(ss_info),
 	.ps2_key(ps2_key),
+	.ps2_mouse(ps2_mouse),
+	.ps2_mouse_ext(ps2_mouse_ext),
 	.joystick_0(joystick_0),
 	.joystick_1(joystick_1),
 	.joystick_2(joystick_2),
@@ -424,6 +467,32 @@ replay_slot_ui replay_slot_ui_inst
 
 ////////////////////   CLOCKS   ///////////////////
 wire locked, clk_sys;
+
+// -- Mouse accumulator (declarations are up with the other input wires) --
+always @(posedge clk_sys) begin
+	ps2_mouse_tog <= ps2_mouse[24];
+	if (ps2_mouse_tog != ps2_mouse[24]) begin
+		mouse_x <= (mouse_x_next < 0)   ? 8'd0
+		         : (mouse_x_next > 127) ? 8'd127
+		         : mouse_x_next[7:0];
+		mouse_y <= (mouse_y_next < 0)   ? 8'd0
+		         : (mouse_y_next > 127) ? 8'd127
+		         : mouse_y_next[7:0];
+		// Wheel is a delta, not a position: the ARM consumes it per frame, so
+		// accumulate between reads rather than overwrite and lose ticks.
+		mouse_wheel <= mouse_wheel + ps2_mouse_ext[7:0];
+	end
+end
+
+// Packed exactly as the reader's memory-map comment describes.
+wire [31:0] mouse_word = {mouse_wheel, 5'd0, ps2_mouse[2:0], mouse_y, mouse_x};
+
+// Config the ARM needs to see. Its own qword rather than spare bits in an
+// unrelated one: borrowing space in the mouse or joystick word saves a
+// write and costs the next reader an hour working out why rotation lives
+// inside the mouse.
+//   [1:0] rotation: 0 off, 1 90 CW, 2 90 CCW, 3 180
+wire [31:0] misc_word = {30'd0, status[5:4]};
 wire clk_20m;   // PLL outclk_1 (unused, kept for future use)
 wire clk_pix;   // PLL outclk_2: 21.477 MHz (CLK_VIDEO, divided by 4 for 5.369 MHz — exact NES)
 pll pll
@@ -759,6 +828,8 @@ pico8_video_top native_video
 	.joystick_2     (joystick_2),
 	.joystick_3     (joystick_3),
 	.joystick_l_analog_0 (joystick_l_analog_0),
+	.mouse_word          (mouse_word),
+	.misc_word           (misc_word),
 
 	// Cart loading
 	.ioctl_download (ioctl_download),
