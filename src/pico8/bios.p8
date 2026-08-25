@@ -337,26 +337,32 @@ function load(arg, breadcrumb, params)
     else
         color(14)
         success, msg = __load(arg, breadcrumb, params), ""
-        -- Cart-compat fallback: if the cart asked for `foo.p8` (or any
-        -- name without `.png`) and that file doesn't exist, transparently
-        -- try the `.p8.png` steganography variant. Many BBS-distributed
-        -- multicart games ship sub-carts only as `.p8.png` but the cart's
-        -- hardcoded load() calls reference the `.p8` source name. Cart
-        -- authors seem to assume the loader will try both — we haven't
-        -- verified this against any explicit PICO-8 doc, but it's how
-        -- carts in the wild are written.
+        -- Reference PICO-8 resolves a load() name in three steps, and the
+        -- third was missing here. Per the manual's own changelog:
+        --
+        --     "Changed: load() tries adding .p8.png, .png if file
+        --      doesn't exist"
+        --
+        -- and, for the first step, "the .P8 extension can be omitted and is
+        -- added automatically" -- which vm::private_load already does when
+        -- the name carries no recognised extension. So the full order is
+        -- the name as given (.p8 auto-added), then .p8.png, then .png.
+        --
+        -- We had .p8 and .png but never .p8.png, so a BARE name could not
+        -- reach a steganographic cart at all: arg..".png" builds "foo.png",
+        -- not "foo.p8.png". A BBS download is named <lid>.p8.png and carts
+        -- routinely reference companion carts by bare name, so those loads
+        -- silently did nothing. .p8.png is tried FIRST to match the
+        -- documented order; it matters only when both files exist.
         if not success and not string.match(arg, '%.png$') then
-            success = __load(arg .. ".png", breadcrumb, params)
-        end
-        -- A BARE name (no extension at all) never reaches the
-        -- steganography variant above: arg.."png" gives "foo.png", not
-        -- "foo.p8.png". A BBS download IS named <lid>.p8.png, and carts
-        -- restart themselves with load("<lid>") -- Enoshima Picnic,
-        -- Pourlandia, Kaioken God Mode, super mario-16, Frostpunk Pico --
-        -- so without this rung those restarts silently do nothing.
-        if not success and not string.match(arg, '%.png$')
-                       and not string.match(arg, '%.p8$') then
-            success = __load(arg .. ".p8.png", breadcrumb, params)
+            -- skip for a name already ending .p8: the .png rung below
+            -- turns "foo.p8" into "foo.p8.png" on its own.
+            if not string.match(arg, '%.p8$') then
+                success = __load(arg .. ".p8.png", breadcrumb, params)
+            end
+            if not success then
+                success = __load(arg .. ".png", breadcrumb, params)
+            end
         end
     end
     if success then
