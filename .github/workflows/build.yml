@@ -136,8 +136,21 @@ jobs:
                 fi
               done
 
-              apt-get -o Acquire::Check-Valid-Until=false update -qq
-              apt-get install -y -qq g++ cmake make wget libasound2-dev >/dev/null 2>&1
+              # snapshot.debian.org throttles and resets connections mid-download
+              # (2026-09-15: Connection reset by peer on cpp-10 / g++-10). Per-file
+              # retries inside apt plus whole-step retries with a growing wait;
+              # errors stay visible, and the step still fails if every try fails.
+              _apt_ok=0
+              for _apt_try in 1 2 3 4 5; do
+                if apt-get -o Acquire::Check-Valid-Until=false -o Acquire::Retries=5 update -qq \
+                   && apt-get -o Acquire::Retries=5 install -y -qq g++ cmake make wget libasound2-dev >/dev/null; then
+                  _apt_ok=1
+                  break
+                fi
+                echo "WARN: apt attempt $_apt_try of 5 failed; retrying in $((_apt_try * 20)) s" >&2
+                sleep $((_apt_try * 20))
+              done
+              if [ "$_apt_ok" != 1 ]; then echo "ERROR: apt-get failed after 5 attempts" >&2; exit 1; fi
 
               # ── Step 1: Build SDL 1.2.15 as static library ──────────────
               SDL_PREFIX=/tmp/sdl12
