@@ -124,14 +124,19 @@ jobs:
               # Debian 11 left LTS 2026-08-31. Mid-move to archive.debian.org,
               # the live bullseye-security index lists versions whose pool files
               # are already gone (404 on deb.debian.org and security.debian.org),
-              # so every install fails. Plain bullseye + bullseye-updates still
-              # resolve. This container only BUILDS; nothing from its security
-              # updates ships, and bullseye itself sets the glibc 2.31 target.
+              # so every install fails. Dropping the security suite is NOT
+              # enough: the image libc6 is already a security build, so g++
+              # needs the matching libc6-dev ("held broken packages"). The image
+              # ships commented snapshot.debian.org lines pinned to its build
+              # date; use exactly those -- the versions it was made from, and a
+              # snapshot is never purged.
               for _src in /etc/apt/sources.list /etc/apt/sources.list.d/*; do
-                if [ -f "$_src" ]; then sed -i "/-security/d" "$_src"; fi
+                if [ -f "$_src" ]; then
+                  sed -i -e "/^deb /d" -e "s|^# deb http://snapshot|deb http://snapshot|" "$_src"
+                fi
               done
 
-              apt-get update -qq
+              apt-get -o Acquire::Check-Valid-Until=false update -qq
               apt-get install -y -qq g++ cmake make wget libasound2-dev >/dev/null 2>&1
 
               # ── Step 1: Build SDL 1.2.15 as static library ──────────────
