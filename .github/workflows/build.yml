@@ -121,6 +121,16 @@ jobs:
             bash -c '
               set -e
 
+              # Debian 11 left LTS 2026-08-31. Mid-move to archive.debian.org,
+              # the live bullseye-security index lists versions whose pool files
+              # are already gone (404 on deb.debian.org and security.debian.org),
+              # so every install fails. Plain bullseye + bullseye-updates still
+              # resolve. This container only BUILDS; nothing from its security
+              # updates ships, and bullseye itself sets the glibc 2.31 target.
+              for _src in /etc/apt/sources.list /etc/apt/sources.list.d/*; do
+                if [ -f "$_src" ]; then sed -i "/-security/d" "$_src"; fi
+              done
+
               apt-get update -qq
               apt-get install -y -qq g++ cmake make wget libasound2-dev >/dev/null 2>&1
 
