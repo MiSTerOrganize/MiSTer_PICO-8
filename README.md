@@ -1,5 +1,7 @@
 # MiSTer PICO-8
 
+<a href="https://github.com/sponsors/MiSTerOrganize"><img src="https://img.shields.io/badge/Sponsor-%E2%9D%A4-db61a2?logo=GitHub&style=for-the-badge" alt="Sponsor" width="190"></a>
+
 A PICO-8 fantasy console emulator for MiSTer FPGA with native video and audio output. The FPGA handles video timing and output directly, bypassing the MiSTer scaler for zero-lag CRT support.
 
 ## Features
@@ -325,3 +327,11 @@ Requires Intel Quartus Prime Lite 17.0. Project in `fpga/`, RTL in `fpga/rtl/`, 
 ## License
 
 GPL-3.0
+
+## Support
+
+<p align="center">
+  <a href="https://www.patreon.com/join/MiSTer_Organize">
+    <img src="assets/patreon_banner.png" alt="Support MiSTer Organize on Patreon" width="500">
+  </a>
+</p>
